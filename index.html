@@ -684,6 +684,8 @@ function renderDetail(t){
     +'<div class="sect'+oc('Löschen')+'" data-sect="Löschen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⚠ Task löschen</div><div class="sect-body">'
       +'<button class="inline-btn danger" style="width:100%" onclick="deleteTask()">🗑 Task löschen</button>'
     +'</div></div>';
+  // Authentifizierte Thumbnails nachladen (Blob-URL via Drive API)
+  try{hydrateFotoThumbs();}catch(e){console.warn('hydrateFotoThumbs:',e);}
 }
 
 // ══ FELD-EDITS ══
@@ -937,13 +939,54 @@ function removeNotiz(i){
 
 // ══ FOTOS & ATTACHMENTS ══
 // Mobile zeigt beide Listen: t.fotos (Drive-Uploads mit Thumbnail) + t.attachments (Desktop-Upload mit base64-Datei).
+// Cache für Blob-URLs (driveId -> ObjectURL). Einträge werden beim Verlassen des Detail-Screens NICHT freigegeben,
+// damit bei Re-Renders nicht jedes Mal neu geladen wird. Bei Logout/Reload gibt der Browser sie automatisch frei.
+const _fotoBlobCache=new Map();
+const _fotoBlobInflight=new Map();
+async function _fetchFotoBlob(driveId){
+  if(!driveId)return null;
+  if(_fotoBlobCache.has(driveId))return _fotoBlobCache.get(driveId);
+  if(_fotoBlobInflight.has(driveId))return _fotoBlobInflight.get(driveId);
+  const p=(async()=>{
+    if(!(await ensureToken()))throw new Error('Kein Token');
+    const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(driveId)+'?alt=media',
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    if(!r.ok){throw new Error('HTTP '+r.status);}
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    _fotoBlobCache.set(driveId,url);
+    return url;
+  })();
+  _fotoBlobInflight.set(driveId,p);
+  try{const url=await p;return url;}
+  catch(e){console.warn('Thumb-Fetch fehlgeschlagen für',driveId,e);return null;}
+  finally{_fotoBlobInflight.delete(driveId);}
+}
+async function loadFotoThumb(imgEl,driveId){
+  if(!imgEl||!driveId)return;
+  const url=await _fetchFotoBlob(driveId);
+  if(url){imgEl.src=url;}
+  else{imgEl.style.display='none';const p=imgEl.parentElement;if(p)p.classList.add('fallback');}
+}
+function hydrateFotoThumbs(){
+  document.querySelectorAll('img[data-foto-id]').forEach(img=>{
+    if(img.dataset.hydrated==='1')return;
+    const id=img.getAttribute('data-foto-id');
+    if(id){img.dataset.hydrated='1';loadFotoThumb(img,id);}
+  });
+}
 function renderFotos(list){
   if(!list||!list.length)return '';
   return list.map((f,i)=>{
-    const thumb=f.thumbnail||f.thumb||f.url||'';
     const name=f.name||'';
+    const id=f.driveId||'';
+    // Cache-Hit? Dann sofort src setzen, sonst erst nach hydrateFotoThumbs
+    const cached=id?_fotoBlobCache.get(id):null;
+    const srcAttr=cached?('src="'+escAttr(cached)+'" ')
+                 :(id?'data-foto-id="'+escAttr(id)+'" '
+                     :(f.thumbnail?'src="'+escAttr(f.thumbnail)+'" ':''));
     return '<div class="foto-thumb" onclick="openFotoFullscreen('+i+')" title="'+escAttr(name)+'">'
-      +(thumb?'<img src="'+escAttr(thumb)+'" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'fallback\')">':'')
+      +'<img '+srcAttr+'alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'fallback\')">'
       +'<button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button>'
       +'</div>';
   }).join('');
@@ -1058,21 +1101,21 @@ async function uploadFoto(files){
   else toast('✗ Upload fehlgeschlagen: '+lastErr,'error');
 }
 // Tap auf Thumbnail → Lightbox in der App (mit Fallback-Link zum Drive-Viewer)
-function openFotoFullscreen(i){
+async function openFotoFullscreen(i){
   const t=currentTask();if(!t||!t.fotos||!t.fotos[i])return;
   const f=t.fotos[i];
-  // Grössere Vorschau: Wenn Drive-thumbnailLink vorliegt (z.B. lh3.googleusercontent.com/...=s220),
-  // die Grösse auf s1600 hochsetzen. Sonst direkt den generischen thumbnail-Endpunkt nutzen.
-  let big='';
-  if(f.thumbnail&&/=s\d+(-[a-z]+)?$/i.test(f.thumbnail)){
-    big=f.thumbnail.replace(/=s\d+(-[a-z]+)?$/i,'=s1600');
-  } else if(f.driveId){
-    big='https://drive.google.com/thumbnail?id='+encodeURIComponent(f.driveId)+'&sz=w1600';
-  } else {
-    big=f.thumbnail||f.thumb||'';
-  }
   const viewUrl=f.url||(f.driveId?'https://drive.google.com/file/d/'+f.driveId+'/view':'');
-  openLightbox(big,f.name||'Foto',viewUrl);
+  // Erst Lightbox öffnen (mit Cache-Hit, falls vorhanden), dann ggf. nachladen.
+  const cached=f.driveId?_fotoBlobCache.get(f.driveId):null;
+  openLightbox(cached||'',f.name||'Foto',viewUrl);
+  if(!cached&&f.driveId){
+    const url=await _fetchFotoBlob(f.driveId);
+    if(url){
+      const img=document.getElementById('lbImg');
+      // Nur setzen, wenn die Lightbox noch offen ist und dasselbe Bild gemeint ist
+      if(img&&document.getElementById('lightbox').classList.contains('open')){img.src=url;}
+    }
+  }
 }
 async function removeFoto(i){
   const t=currentTask();if(!t||!t.fotos||!t.fotos[i])return;
@@ -1170,10 +1213,10 @@ function openLightbox(src,name,externalUrl){
   const cap=document.getElementById('lbCaption');
   const btnOrig=document.getElementById('lbOpenOrig');
   img.onerror=()=>{img.style.display='none';cap.textContent=(name||'')+' — Vorschau nicht verfügbar';};
-  img.onload=()=>{img.style.display='';};
-  img.style.display='';
-  img.src=src||externalUrl||'';
-  cap.textContent=name||'';
+  img.onload=()=>{img.style.display='';cap.textContent=name||'';};
+  img.style.display=src?'':'none';
+  if(src){img.src=src;}else{img.removeAttribute('src');}
+  cap.textContent=src?(name||''):((name||'')+' — lade…');
   _lbCurrentUrl=externalUrl||'';
   btnOrig.style.display=_lbCurrentUrl?'':'none';
   lb.classList.add('open');
