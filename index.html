@@ -97,7 +97,15 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .foto-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
 .foto-thumb{position:relative;aspect-ratio:1;background:var(--bg3);border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid var(--border)}
 .foto-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.foto-thumb .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:white;border:none;width:22px;height:22px;border-radius:11px;font-size:12px;cursor:pointer}
+.foto-thumb .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:white;border:none;width:22px;height:22px;border-radius:11px;font-size:12px;cursor:pointer;z-index:2}
+.foto-thumb.fallback::before{content:'🖼️';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--text2)}
+/* ── LIGHTBOX (Vollbild-Vorschau) ── */
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:none;align-items:center;justify-content:center;padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);touch-action:manipulation;}
+.lightbox.open{display:flex;}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain;display:block;user-select:none;-webkit-user-select:none;pointer-events:none;}
+.lightbox .lb-close{position:absolute;top:calc(env(safe-area-inset-top,0) + 10px);right:12px;background:rgba(0,0,0,.7);color:#fff;border:2px solid rgba(255,255,255,.35);width:44px;height:44px;border-radius:50%;font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2;}
+.lightbox .lb-open{position:absolute;bottom:calc(env(safe-area-inset-bottom,0) + 14px);right:12px;background:rgba(255,255,255,.92);color:#000;border:none;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;z-index:2;}
+.lightbox .lb-caption{position:absolute;top:calc(env(safe-area-inset-top,0) + 14px);left:14px;color:#fff;font-size:13px;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:rgba(0,0,0,.45);padding:6px 10px;border-radius:6px;}
 .foto-placeholder{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--text2)}
 /* Anhänge (vom Desktop übertragen) */
 .attach-row-mob{display:flex;align-items:center;gap:10px;padding:8px;margin-bottom:6px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)}
@@ -658,11 +666,18 @@ function renderDetail(t){
     +'</div></div>'
     // ── FOTOS & ANHÄNGE ──
     +'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos & Anhänge ('+medienCount+')</div><div class="sect-body">'
-      +(fotos.length?'<div style="font-size:11px;color:var(--text2);margin:4px 0">Fotos (Handy-Verweise)</div><div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'')
+      +(fotos.length?'<div style="font-size:11px;color:var(--text2);margin:4px 0">Fotos (in Drive-Ordner)</div><div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'')
       +(attachments.length?'<div style="font-size:11px;color:var(--text2);margin:10px 0 4px">Anhänge vom Desktop</div><div id="attachListMob">'+renderAttachmentsMob(attachments)+'</div>':'')
       +(!fotos.length&&!attachments.length?'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos oder Anhänge.</div>':'')
-      +'<button class="add-btn" style="margin-top:10px" onclick="document.getElementById(\'fotoInput\').click()">📷 Foto aufnehmen / wählen</button>'
-      +'<input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files)">'
+      +(extractDriveFolderId(t.gdrive)
+        ? '<div style="font-size:11px;color:var(--green);margin-top:10px">✓ Drive-Ordner ist verknüpft</div>'
+          +'<div class="field-row" style="gap:6px;margin-top:6px">'
+            +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Neues Foto</button>'
+            +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼️ Aus Galerie</button>'
+          +'</div>'
+        : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Zum Foto-Upload zuerst einen Drive-Ordner-Link unten eintragen.</div>')
+      +'<input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files);this.value=\'\'">'
+      +'<input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="uploadFoto(this.files);this.value=\'\'">'
       +'<div class="field" style="margin-top:8px"><label>Drive-Ordner für Fotos</label><input type="text" value="'+escAttr(t.gdrive||'')+'" placeholder="Google Drive-Ordner-Link" oninput="updateField(\'gdrive\',this.value)"></div>'
     +'</div></div>'
     // ── LÖSCHEN ──
@@ -921,10 +936,17 @@ function removeNotiz(i){
 }
 
 // ══ FOTOS & ATTACHMENTS ══
-// Mobile zeigt beide Listen: t.fotos (einfache Thumbnail-Liste) + t.attachments (Desktop-Upload mit base64-Datei).
+// Mobile zeigt beide Listen: t.fotos (Drive-Uploads mit Thumbnail) + t.attachments (Desktop-Upload mit base64-Datei).
 function renderFotos(list){
   if(!list||!list.length)return '';
-  return list.map((f,i)=>'<div class="foto-thumb"><img src="'+escAttr(f.thumb||f.url||'')+'" alt=""><button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button></div>').join('');
+  return list.map((f,i)=>{
+    const thumb=f.thumbnail||f.thumb||f.url||'';
+    const name=f.name||'';
+    return '<div class="foto-thumb" onclick="openFotoFullscreen('+i+')" title="'+escAttr(name)+'">'
+      +(thumb?'<img src="'+escAttr(thumb)+'" alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'fallback\')">':'')
+      +'<button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button>'
+      +'</div>';
+  }).join('');
 }
 function attachIconMob(type){
   if(!type)return'📄';
@@ -951,8 +973,8 @@ function openAttachMob(i){
   const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
   const a=t.attachments[i];
   if(!a.data)return;
-  const w=window.open('','_blank');
-  if(w)w.document.write('<title>'+esc(a.name)+'</title><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="'+escAttr(a.data)+'" style="max-width:100%;max-height:100vh"></body>');
+  // In-App-Lightbox statt window.open (auf Handy unzuverlässig)
+  openLightbox(a.data,a.name||'Anhang','');
 }
 function downloadAttachMob(i){
   const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
@@ -962,13 +984,108 @@ function downloadAttachMob(i){
   link.href=a.data;link.download=a.name||'datei';
   document.body.appendChild(link);link.click();document.body.removeChild(link);
 }
-function uploadFoto(files){
-  toast('Foto-Upload kommt in Etappe 3','error');
+// ── DRIVE-FOTO-UPLOAD (Etappe 3) ──
+// Zieht die Drive-Ordner-ID aus einer URL wie
+// https://drive.google.com/drive/u/0/folders/1MvhZG... oder https://drive.google.com/drive/folders/1MvhZG...
+function extractDriveFolderId(url){
+  if(!url)return null;
+  const m=String(url).match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if(m)return m[1];
+  // Falls nur die ID eingetragen ist
+  const m2=String(url).trim().match(/^([a-zA-Z0-9_-]{20,})$/);
+  return m2?m2[1]:null;
 }
-function removeFoto(i){
-  const t=currentTask();if(!t)return;
-  if(!confirm('Foto-Verweis entfernen? (Die Datei in Drive bleibt bestehen.)'))return;
-  t.fotos.splice(i,1);_mOpenSections['Fotos']=true;forceSave();renderDetail(t);
+async function _uploadOneFotoToDrive(file,folderId){
+  const ts=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const stamp=ts.getFullYear()+pad(ts.getMonth()+1)+pad(ts.getDate())+'_'+pad(ts.getHours())+pad(ts.getMinutes())+pad(ts.getSeconds());
+  // Sinnvoller Dateiname: Zeitstempel_Originalname
+  const origName=file.name||'foto.jpg';
+  const safeName=stamp+'_'+origName.replace(/[^\w.\-]+/g,'_');
+  const metadata={name:safeName,parents:[folderId],description:'PTP Mobile Upload'};
+  const body=new FormData();
+  body.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}));
+  body.append('file',file);
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,mimeType,thumbnailLink,webViewLink,webContentLink',
+    {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body});
+  if(!r.ok){const txt=await r.text().catch(()=>'');throw new Error('HTTP '+r.status+(txt?': '+txt.slice(0,120):''));}
+  return await r.json();
+}
+async function uploadFoto(files){
+  if(!files||!files.length)return;
+  // Sofort in ein Array kopieren – das input-Element wird direkt nach dem Aufruf
+  // mit this.value='' zurückgesetzt, wodurch die FileList ungültig werden kann.
+  const fileArr=Array.from(files);
+  const t=currentTask();
+  if(!t){toast('Keine Task geöffnet','error');return;}
+  const folderId=extractDriveFolderId(t.gdrive);
+  if(!folderId){
+    toast('❗ Zuerst den Drive-Ordner für Fotos eintragen','error');
+    // Fotos-Sektion offen lassen, damit der Nutzer das gdrive-Feld sieht
+    _mOpenSections['Fotos']=true;
+    renderDetail(t);
+    return;
+  }
+  if(!(await ensureToken())){toast('Nicht angemeldet','error');return;}
+  const n=fileArr.length;
+  toast('⬆ Lade '+n+' Foto(s) hoch …','info');
+  if(!t.fotos)t.fotos=[];
+  let success=0,failed=0,lastErr='';
+  for(let i=0;i<n;i++){
+    const file=fileArr[i];
+    try{
+      const meta=await _uploadOneFotoToDrive(file,folderId);
+      t.fotos.push({
+        driveId:meta.id,
+        name:meta.name,
+        mimeType:meta.mimeType||file.type||'image/jpeg',
+        size:Number(meta.size)||file.size||0,
+        thumbnail:meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400'),
+        url:meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view'),
+        download:meta.webContentLink||'',
+        uploadedAt:new Date().toISOString(),
+        source:'mobile'
+      });
+      success++;
+      _mOpenSections['Fotos']=true;
+    }catch(e){failed++;lastErr=e.message||String(e);console.error('Foto-Upload-Fehler:',e);}
+  }
+  // Immer sichern & neu rendern
+  forceSave();
+  renderDetail(t);
+  if(success&&!failed)toast('✓ '+success+' Foto(s) in Drive hochgeladen','success');
+  else if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' fehlgeschlagen','error');
+  else toast('✗ Upload fehlgeschlagen: '+lastErr,'error');
+}
+// Tap auf Thumbnail → Lightbox in der App (mit Fallback-Link zum Drive-Viewer)
+function openFotoFullscreen(i){
+  const t=currentTask();if(!t||!t.fotos||!t.fotos[i])return;
+  const f=t.fotos[i];
+  // Grössere Vorschau: Wenn Drive-thumbnailLink vorliegt (z.B. lh3.googleusercontent.com/...=s220),
+  // die Grösse auf s1600 hochsetzen. Sonst direkt den generischen thumbnail-Endpunkt nutzen.
+  let big='';
+  if(f.thumbnail&&/=s\d+(-[a-z]+)?$/i.test(f.thumbnail)){
+    big=f.thumbnail.replace(/=s\d+(-[a-z]+)?$/i,'=s1600');
+  } else if(f.driveId){
+    big='https://drive.google.com/thumbnail?id='+encodeURIComponent(f.driveId)+'&sz=w1600';
+  } else {
+    big=f.thumbnail||f.thumb||'';
+  }
+  const viewUrl=f.url||(f.driveId?'https://drive.google.com/file/d/'+f.driveId+'/view':'');
+  openLightbox(big,f.name||'Foto',viewUrl);
+}
+async function removeFoto(i){
+  const t=currentTask();if(!t||!t.fotos||!t.fotos[i])return;
+  const f=t.fotos[i];
+  const hasDrive=!!f.driveId;
+  const msg=hasDrive
+    ? 'Foto entfernen?\n\nOK = nur den Verweis hier entfernen (Datei in Drive bleibt)\nAbbrechen = nichts tun\n\nLöschung AUCH in Drive: erst Verweis entfernen, danach in Drive manuell löschen.'
+    : 'Foto-Eintrag entfernen?';
+  if(!confirm(msg))return;
+  t.fotos.splice(i,1);
+  _mOpenSections['Fotos']=true;
+  forceSave();
+  renderDetail(t);
 }
 
 // ══ TASK ANLEGEN / LÖSCHEN ══
@@ -1035,6 +1152,45 @@ window.addEventListener('load',async()=>{
 // Auto-Speichern beim Schließen
 window.addEventListener('beforeunload',(e)=>{if(dirty){saveFile();}});
 window.addEventListener('pagehide',()=>{if(dirty){saveFile();}});
+</script>
+
+<!-- ══ LIGHTBOX (Vollbild-Vorschau) ══ -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
+  <div class="lb-caption" id="lbCaption"></div>
+  <img id="lbImg" alt="">
+  <button class="lb-close" onclick="event.stopPropagation();closeLightbox()" aria-label="Schließen">✕</button>
+  <button class="lb-open" id="lbOpenOrig" onclick="event.stopPropagation();lbOpenOriginal()" style="display:none">📂 Original öffnen</button>
+</div>
+<script>
+let _lbCurrentUrl='';
+function openLightbox(src,name,externalUrl){
+  if(!src&&!externalUrl){return;}
+  const lb=document.getElementById('lightbox');
+  const img=document.getElementById('lbImg');
+  const cap=document.getElementById('lbCaption');
+  const btnOrig=document.getElementById('lbOpenOrig');
+  img.onerror=()=>{img.style.display='none';cap.textContent=(name||'')+' — Vorschau nicht verfügbar';};
+  img.onload=()=>{img.style.display='';};
+  img.style.display='';
+  img.src=src||externalUrl||'';
+  cap.textContent=name||'';
+  _lbCurrentUrl=externalUrl||'';
+  btnOrig.style.display=_lbCurrentUrl?'':'none';
+  lb.classList.add('open');
+  // ESC-Taste
+  document.addEventListener('keydown',_lbOnKey);
+}
+function closeLightbox(){
+  // Buttons im Overlay rufen stopPropagation – alles andere schließt das Overlay.
+  const lb=document.getElementById('lightbox');
+  lb.classList.remove('open');
+  const img=document.getElementById('lbImg');
+  img.src='';img.onerror=null;img.onload=null;
+  _lbCurrentUrl='';
+  document.removeEventListener('keydown',_lbOnKey);
+}
+function _lbOnKey(e){if(e.key==='Escape'){closeLightbox();}}
+function lbOpenOriginal(){if(_lbCurrentUrl)window.open(_lbCurrentUrl,'_blank');}
 </script>
 </body>
 </html>
