@@ -81,9 +81,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .inline-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap;min-height:42px}
 .inline-btn.primary{background:var(--accent);border-color:var(--accent);color:white}
 .inline-btn.danger{color:var(--red);border-color:var(--red)}
-.termin-row,.zeit-row{display:grid;grid-template-columns:1fr 68px 68px 1fr 36px;gap:6px;margin-bottom:6px;align-items:center}
-.termin-row input,.zeit-row input{padding:8px;font-size:13px}
-.rm-btn{background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;height:38px;cursor:pointer;font-size:14px}
+.termin-row,.zeit-row{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px}
+.row-times{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+.row-times input[type=date]{flex:1.5;min-width:0}
+.row-times input[type=time]{flex:1;min-width:0}
+.row-desc{display:flex;gap:6px;align-items:center}
+.row-desc input[type=text]{flex:1;min-width:0}
+.termin-row input,.zeit-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box}
+.rm-btn{background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;height:38px;min-width:38px;cursor:pointer;font-size:16px;flex-shrink:0}
 .add-btn{width:100%;background:transparent;border:1px dashed var(--border);color:var(--accent2);padding:10px;border-radius:8px;margin-top:6px;cursor:pointer;font-size:14px}
 .kontakt-entry{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px}
 .kontakt-entry-head{display:flex;gap:6px;margin-bottom:8px}
@@ -865,13 +870,17 @@ function renderTermineRows(list){
   if(!list||!list.length)return '<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Termine.</div>';
   return list.map((t,i)=>''
     +'<div class="termin-row">'
-      +'<input type="date" value="'+escAttr(t.date||'')+'" onchange="updateTermin('+i+',\'date\',this.value)">'
-      +'<input type="time" value="'+escAttr(t.von||'')+'" onchange="updateTermin('+i+',\'von\',this.value);updateTermineGesamt()">'
-      +'<input type="time" value="'+escAttr(t.bis||'')+'" onchange="updateTermin('+i+',\'bis\',this.value);updateTermineGesamt()">'
-      +'<input type="text" placeholder="Beschreibung" value="'+escAttr(t.beschreibung||'')+'" oninput="updateTermin('+i+',\'beschreibung\',this.value)">'
-      +'<button class="rm-btn" onclick="removeTermin('+i+')">✕</button>'
+      +'<div class="row-times">'
+        +'<input type="date" value="'+escAttr(t.date||'')+'" onchange="updateTermin('+i+',\'date\',this.value)">'
+        +'<input type="time" value="'+escAttr(t.von||'')+'" onchange="updateTermin('+i+',\'von\',this.value);updateTermineGesamt()" placeholder="von">'
+        +'<input type="time" value="'+escAttr(t.bis||'')+'" onchange="updateTermin('+i+',\'bis\',this.value);updateTermineGesamt()" placeholder="bis">'
+      +'</div>'
+      +'<div class="row-desc">'
+        +'<input type="text" placeholder="Beschreibung" value="'+escAttr(t.beschreibung||'')+'" oninput="updateTermin('+i+',\'beschreibung\',this.value)">'
+        +'<button class="rm-btn" onclick="removeTermin('+i+')">✕</button>'
+      +'</div>'
+      +'<button class="inline-btn" style="width:100%;margin-top:6px" onclick="openGcal('+i+')">📅 In Google Kalender</button>'
     +'</div>'
-    +'<button class="inline-btn" style="width:100%;margin:2px 0 8px" onclick="openGcal('+i+')">📅 In Google Kalender</button>'
   ).join('');
 }
 function addTermin(){
@@ -1007,11 +1016,15 @@ function renderZeitenRows(list){
   if(!list||!list.length)return '<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Einträge.</div>';
   return list.map((z,i)=>''
     +'<div class="zeit-row">'
-      +'<input type="date" value="'+escAttr(z.date||'')+'" onchange="updateZeit('+i+',\'date\',this.value)">'
-      +'<input type="time" value="'+escAttr(z.von||'')+'" onchange="updateZeit('+i+',\'von\',this.value);updateZeitGesamt()">'
-      +'<input type="time" value="'+escAttr(z.bis||'')+'" onchange="updateZeit('+i+',\'bis\',this.value);updateZeitGesamt()">'
-      +'<input type="text" placeholder="Beschreibung" value="'+escAttr(z.beschreibung||'')+'" oninput="updateZeit('+i+',\'beschreibung\',this.value)">'
-      +'<button class="rm-btn" onclick="removeZeit('+i+')">✕</button>'
+      +'<div class="row-times">'
+        +'<input type="date" value="'+escAttr(z.date||'')+'" onchange="updateZeit('+i+',\'date\',this.value)">'
+        +'<input type="time" value="'+escAttr(z.von||'')+'" onchange="updateZeit('+i+',\'von\',this.value);updateZeitGesamt()" placeholder="von">'
+        +'<input type="time" value="'+escAttr(z.bis||'')+'" onchange="updateZeit('+i+',\'bis\',this.value);updateZeitGesamt()" placeholder="bis">'
+      +'</div>'
+      +'<div class="row-desc">'
+        +'<input type="text" placeholder="Beschreibung" value="'+escAttr(z.beschreibung||'')+'" oninput="updateZeit('+i+',\'beschreibung\',this.value)">'
+        +'<button class="rm-btn" onclick="removeZeit('+i+')">✕</button>'
+      +'</div>'
     +'</div>'
   ).join('');
 }
