@@ -99,6 +99,13 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .foto-thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .foto-thumb .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:white;border:none;width:22px;height:22px;border-radius:11px;font-size:12px;cursor:pointer}
 .foto-placeholder{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--text2)}
+/* Anhänge (vom Desktop übertragen) */
+.attach-row-mob{display:flex;align-items:center;gap:10px;padding:8px;margin-bottom:6px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)}
+.attach-thumb-mob{width:54px;height:54px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--bg2);cursor:pointer}
+.attach-icon-mob{width:54px;height:54px;display:flex;align-items:center;justify-content:center;font-size:28px;background:var(--bg2);border-radius:6px;flex-shrink:0}
+.attach-meta-mob{flex:1;min-width:0}
+.attach-name-mob{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attach-size-mob{font-size:11px;color:var(--text2);margin-top:2px}
 /* ── NOTIZ VERLAUF ── */
 .notiz-entry{background:var(--bg3);border-left:3px solid var(--accent);padding:8px 10px;margin-bottom:6px;border-radius:4px;font-size:13px}
 .notiz-entry .ts{display:block;color:var(--text2);font-size:11px;margin-bottom:2px}
@@ -211,7 +218,15 @@ function _resetOpenSectionsForTask(taskId){
   }
 }
 function isSectOpen(key){return !!_mOpenSections[key];}
-function toggleExpandTA(ta){if(!ta)return;ta.classList.toggle('expanded');if(ta.classList.contains('expanded'))ta.focus();}
+function toggleExpandTA(ta){
+  if(!ta)return;
+  ta.classList.toggle('expanded');
+  const exp=ta.classList.contains('expanded');
+  // Button-Label aktualisieren (falls Toggle-Button daneben liegt)
+  const fld=ta.closest('.field');
+  if(fld){const btn=fld.querySelector('button.inline-btn');if(btn)btn.textContent=exp?'🔽 verkleinern':'🔍 vergrößern';}
+  if(exp)ta.focus();
+}
 // Debounced Section-Toggle: verhindert, dass schneller Doppelklick den Zustand „open-close" selbst auslöscht.
 const _mSectLastToggle=new WeakMap();
 function toggleMSect(el){
@@ -449,6 +464,7 @@ async function saveFile(){
                     mergedTask.zeitEntries=_mergeListByKey(rt.zeitEntries,localTask.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
                     mergedTask.ausserhausTermine=_mergeListByKey(rt.ausserhausTermine,localTask.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
                     mergedTask.fotos=_mergeListByKey(rt.fotos,localTask.fotos,f=>(f.id||f.driveId||f.path||f.name||''));
+                    mergedTask.attachments=_mergeListByKey(rt.attachments,localTask.attachments,f=>((f.name||'')+'|'+(f.size||0)));
                     remoteVisible[bn][idx]=mergedTask;
                     placed=true;break;
                   }
@@ -479,15 +495,32 @@ async function saveFile(){
     try{const rm=await r.json();if(rm&&rm.modifiedTime)fileLastModified=rm.modifiedTime;}catch(e){}
     setSaveInd('saved','✓ Gespeichert');
     dirty=false;
+    _saveRetryCount=0;
     // Nicht renderDetail(), sonst verliert der Nutzer während der Eingabe den Fokus
     // und aktive Sektionen wie Zeiterfassung/Notizen wirken als ob sie „zuklappen".
-  }catch(e){setSaveInd('error','✗ '+e.message);}
+  }catch(e){
+    setSaveInd('error','✗ '+e.message);
+    // Automatischer Retry — sonst gehen Notizen/Zeiten verloren wenn das Netz kurz weg ist
+    _saveRetryCount=(_saveRetryCount||0)+1;
+    if(_saveRetryCount<=3){
+      const delay=1500*_saveRetryCount;
+      clearTimeout(saveTimer);
+      saveTimer=setTimeout(()=>{saveFile();},delay);
+    }
+  }
 }
+let _saveRetryCount=0;
 function scheduleSave(){
   dirty=true;
   setSaveInd('saving','…');
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{saveFile();},1200);
+}
+// Sofort-Speichern (nicht debouncen) — für strukturelle Änderungen wie addNotiz/addZeit/addTermin
+function forceSave(){
+  dirty=true;
+  clearTimeout(saveTimer);
+  saveFile();
 }
 function setSaveInd(cls,msg){
   const el=document.getElementById('saveInd');if(!el)return;
@@ -577,6 +610,8 @@ function renderDetail(t){
   const zeiten=t.zeitEntries||[];
   const notizVerlauf=t.notizVerlauf||[];
   const fotos=t.fotos||[];
+  const attachments=t.attachments||[];
+  const medienCount=fotos.length+attachments.length;
   const oc=k=>isSectOpen(k)?' open':''; // open-class nach gemerktem Zustand
 
   body.innerHTML=''
@@ -596,7 +631,7 @@ function renderDetail(t){
       +'<div class="field"><label>Ausführungsdatum</label><input type="date" value="'+escAttr(t.ausführungsdatum||'')+'" onchange="updateField(\'ausführungsdatum\',this.value)"></div>'
       +'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="updateField(\'adresse\',this.value);updateNavBtn()"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>'
       +'<div class="field"><label>Hausverwaltung</label><input type="text" value="'+escAttr(t.hausverwaltung||'')+'" oninput="updateField(\'hausverwaltung\',this.value)"></div>'
-      +'<div class="field"><label>Schaden / Beschreibung <span style="font-weight:normal;color:var(--text2);font-size:11px">(Doppeltipp zum Vergrößern)</span></label><textarea class="expandable-ta" ondblclick="toggleExpandTA(this)" oninput="updateField(\'schadensbild\',this.value)">'+esc(t.schadensbild||'')+'</textarea></div>'
+      +'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">Schaden / Beschreibung</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)">'+esc(t.schadensbild||'')+'</textarea></div>'
     +'</div></div>'
     // ── KONTAKTE ──
     +'<div class="sect'+oc('Kontakte')+'" data-sect="Kontakte"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Kontakte ('+kontakte.length+')</div><div class="sect-body">'
@@ -621,10 +656,12 @@ function renderDetail(t){
       +'<div class="field"><label>Chronologische Einträge</label><div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
       +'<div class="field-row" style="margin-top:6px"><input type="text" id="newNotizInput" placeholder="Kurze Notiz mit Zeitstempel…"><button class="inline-btn primary" onclick="addNotiz()">+</button></div></div>'
     +'</div></div>'
-    // ── FOTOS ──
-    +'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos ('+fotos.length+')</div><div class="sect-body">'
-      +'<div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>'
-      +'<button class="add-btn" onclick="document.getElementById(\'fotoInput\').click()">📷 Foto aufnehmen / wählen</button>'
+    // ── FOTOS & ANHÄNGE ──
+    +'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos & Anhänge ('+medienCount+')</div><div class="sect-body">'
+      +(fotos.length?'<div style="font-size:11px;color:var(--text2);margin:4px 0">Fotos (Handy-Verweise)</div><div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'')
+      +(attachments.length?'<div style="font-size:11px;color:var(--text2);margin:10px 0 4px">Anhänge vom Desktop</div><div id="attachListMob">'+renderAttachmentsMob(attachments)+'</div>':'')
+      +(!fotos.length&&!attachments.length?'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos oder Anhänge.</div>':'')
+      +'<button class="add-btn" style="margin-top:10px" onclick="document.getElementById(\'fotoInput\').click()">📷 Foto aufnehmen / wählen</button>'
       +'<input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files)">'
       +'<div class="field" style="margin-top:8px"><label>Drive-Ordner für Fotos</label><input type="text" value="'+escAttr(t.gdrive||'')+'" placeholder="Google Drive-Ordner-Link" oninput="updateField(\'gdrive\',this.value)"></div>'
     +'</div></div>'
@@ -669,11 +706,12 @@ function addKontakt(){
   const t=currentTask();if(!t)return;
   if(!t.kontakte)t.kontakte=[];
   t.kontakte.push({rolle:'mieter',name:'',tel:'',email:''});
-  scheduleSave();renderDetail(t);
+  _mOpenSections['Kontakte']=true;
+  forceSave();renderDetail(t);
 }
 function removeKontakt(i){
   const t=currentTask();if(!t)return;
-  t.kontakte.splice(i,1);scheduleSave();renderDetail(t);
+  t.kontakte.splice(i,1);forceSave();renderDetail(t);
 }
 function updateKontakt(i,f,v){
   const t=currentTask();if(!t)return;
@@ -699,11 +737,12 @@ function addTermin(){
   const t=currentTask();if(!t)return;
   if(!t.ausserhausTermine)t.ausserhausTermine=[];
   t.ausserhausTermine.push({date:'',von:'',bis:'',beschreibung:''});
-  scheduleSave();renderDetail(t);
+  _mOpenSections['Termine']=true;
+  forceSave();renderDetail(t);
 }
 function removeTermin(i){
   const t=currentTask();if(!t)return;
-  t.ausserhausTermine.splice(i,1);scheduleSave();renderDetail(t);
+  t.ausserhausTermine.splice(i,1);forceSave();renderDetail(t);
 }
 function updateTermin(i,f,v){
   const t=currentTask();if(!t)return;
@@ -773,7 +812,8 @@ function toggleMobileTimer(taskId){
     if(!t.zeitEntries)t.zeitEntries=[];
     t.zeitEntries.push(entry);
     _saveTimerState(null);_stopTickLoop();
-    scheduleSave();
+    _mOpenSections['Zeiterfassung']=true;
+    forceSave();
     renderDetail(t);
     toast('⏹ Stoppuhr beendet: '+entry.von+' – '+entry.bis,'success');
   }else{
@@ -795,7 +835,7 @@ function toggleMobileTimer(taskId){
     t.timeEntries.push({start:now,end:null});
     _saveTimerState({taskId,startMs:now});
     _startTickLoop();
-    scheduleSave();
+    forceSave();
     renderDetail(t);
     toast('▶ Stoppuhr läuft','success');
   }
@@ -842,11 +882,12 @@ function addZeit(){
   if(!t.zeitEntries)t.zeitEntries=[];
   const today=new Date().toISOString().split('T')[0];
   t.zeitEntries.push({date:today,von:'',bis:'',beschreibung:''});
-  scheduleSave();renderDetail(t);
+  _mOpenSections['Zeiterfassung']=true;
+  forceSave();renderDetail(t);
 }
 function removeZeit(i){
   const t=currentTask();if(!t)return;
-  t.zeitEntries.splice(i,1);scheduleSave();renderDetail(t);
+  t.zeitEntries.splice(i,1);forceSave();renderDetail(t);
 }
 function updateZeit(i,f,v){
   const t=currentTask();if(!t)return;
@@ -871,17 +912,55 @@ function addNotiz(){
   const ts=new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   t.notizVerlauf.push({ts,text});
   inp.value='';
-  scheduleSave();renderDetail(t);
+  _mOpenSections['Notizen']=true;
+  forceSave();renderDetail(t);
 }
 function removeNotiz(i){
   const t=currentTask();if(!t)return;
-  t.notizVerlauf.splice(i,1);scheduleSave();renderDetail(t);
+  t.notizVerlauf.splice(i,1);forceSave();renderDetail(t);
 }
 
-// ══ FOTOS (Platzhalter, Upload in Etappe 3) ══
+// ══ FOTOS & ATTACHMENTS ══
+// Mobile zeigt beide Listen: t.fotos (einfache Thumbnail-Liste) + t.attachments (Desktop-Upload mit base64-Datei).
 function renderFotos(list){
-  if(!list||!list.length)return '<div style="color:var(--text2);font-size:13px;padding:6px 0;grid-column:1/-1">Noch keine Fotos.</div>';
+  if(!list||!list.length)return '';
   return list.map((f,i)=>'<div class="foto-thumb"><img src="'+escAttr(f.thumb||f.url||'')+'" alt=""><button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button></div>').join('');
+}
+function attachIconMob(type){
+  if(!type)return'📄';
+  if(type.startsWith('image/'))return'🖼️';
+  if(type==='application/pdf')return'📕';
+  if(type.includes('word'))return'📝';
+  if(type.includes('excel')||type.includes('sheet'))return'📊';
+  if(type.includes('zip')||type.includes('rar'))return'🗜️';
+  return'📄';
+}
+function formatBytesMob(n){if(!n)return'';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
+function renderAttachmentsMob(list){
+  if(!list||!list.length)return '';
+  return list.map((a,i)=>{
+    const isImg=a.type&&a.type.startsWith('image/');
+    return '<div class="attach-row-mob">'
+      +(isImg?'<img class="attach-thumb-mob" src="'+escAttr(a.data||'')+'" onclick="openAttachMob('+i+')">':'<div class="attach-icon-mob">'+attachIconMob(a.type)+'</div>')
+      +'<div class="attach-meta-mob"><div class="attach-name-mob">'+esc(a.name||'Datei')+'</div><div class="attach-size-mob">'+formatBytesMob(a.size)+'</div></div>'
+      +'<button class="inline-btn" style="padding:6px 10px;font-size:12px" onclick="downloadAttachMob('+i+')">↓</button>'
+      +'</div>';
+  }).join('');
+}
+function openAttachMob(i){
+  const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
+  const a=t.attachments[i];
+  if(!a.data)return;
+  const w=window.open('','_blank');
+  if(w)w.document.write('<title>'+esc(a.name)+'</title><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh"><img src="'+escAttr(a.data)+'" style="max-width:100%;max-height:100vh"></body>');
+}
+function downloadAttachMob(i){
+  const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
+  const a=t.attachments[i];
+  if(!a.data)return;
+  const link=document.createElement('a');
+  link.href=a.data;link.download=a.name||'datei';
+  document.body.appendChild(link);link.click();document.body.removeChild(link);
 }
 function uploadFoto(files){
   toast('Foto-Upload kommt in Etappe 3','error');
@@ -889,7 +968,7 @@ function uploadFoto(files){
 function removeFoto(i){
   const t=currentTask();if(!t)return;
   if(!confirm('Foto-Verweis entfernen? (Die Datei in Drive bleibt bestehen.)'))return;
-  t.fotos.splice(i,1);scheduleSave();renderDetail(t);
+  t.fotos.splice(i,1);_mOpenSections['Fotos']=true;forceSave();renderDetail(t);
 }
 
 // ══ TASK ANLEGEN / LÖSCHEN ══
