@@ -186,7 +186,9 @@ let gdriveTokenClient=null;
 let fileId=null;
 let fileName='workboard.json';
 let userEmail='';
-let boards={};
+let boards={};            // Sichtbare Boards (nach Mobile-Whitelist gefiltert)
+let hiddenBoards={};      // Desktop-only Boards: wir fassen sie nie an, schreiben sie unverändert zurück
+let mobileWhitelist=[];   // Aus _mobileBoards; leer = keine Einschränkung
 let statuses=[];
 let currentBoard='';
 let currentTaskId=null;
@@ -294,6 +296,19 @@ async function findOrPickFile(){
     if(ok){showList();renderList();}
   }catch(e){document.getElementById('loginStatus').textContent='Drive-Fehler: '+e.message;}
 }
+// Splittet rohe Drive-Daten in statuses / sichtbare boards / hiddenBoards / Whitelist
+function _applyMobileFilter(data){
+  statuses=Array.isArray(data._statuses)?data._statuses:[];
+  mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
+  boards={};hiddenBoards={};
+  const hasWhitelist=mobileWhitelist.length>0;
+  for(const[k,v]of Object.entries(data)){
+    if(k.startsWith('_'))continue;
+    if(!Array.isArray(v))continue;
+    if(hasWhitelist && !mobileWhitelist.includes(k)){hiddenBoards[k]=v;}
+    else{boards[k]=v;}
+  }
+}
 async function loadFile(){
   if(!fileId)return false;
   if(!(await ensureToken()))return false;
@@ -302,9 +317,7 @@ async function loadFile(){
       {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const data=await r.json();
-    statuses=Array.isArray(data._statuses)?data._statuses:[];
-    boards={};
-    for(const[k,v]of Object.entries(data)){if(k!=='_statuses'&&Array.isArray(v))boards[k]=v;}
+    _applyMobileFilter(data);
     const bk=Object.keys(boards);
     if(!currentBoard||!boards[currentBoard])currentBoard=bk[0]||'';
     // modifiedTime für Poll-Vergleich aktualisieren
@@ -341,9 +354,8 @@ async function pollForChanges(){
       {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
     if(!r.ok)return;
     const data=await r.json();
-    statuses=Array.isArray(data._statuses)?data._statuses:[];
-    boards={};
-    for(const[k,v]of Object.entries(data)){if(k!=='_statuses'&&Array.isArray(v))boards[k]=v;}
+    _applyMobileFilter(data);
+    if(currentBoard && !boards[currentBoard]){const bk=Object.keys(boards);currentBoard=bk[0]||'';}
     fileLastModified=meta.modifiedTime;
     if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
     else renderList();
@@ -357,6 +369,15 @@ function startPolling(){
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollForChanges();});
     window._ptpmVisHooked=true;
   }
+}
+// Merge-Helper: Listen per Schlüssel unionen (Remote zuerst, lokale neue hinten)
+function _mergeListByKey(remoteList,localList,keyFn){
+  const a=Array.isArray(remoteList)?remoteList:[];
+  const b=Array.isArray(localList)?localList:[];
+  const out=[];const seen=new Set();
+  for(const it of a){const k=keyFn(it||{});if(k&&!seen.has(k)){seen.add(k);out.push(it);}else if(!k){out.push(it);}}
+  for(const it of b){const k=keyFn(it||{});if(k&&!seen.has(k)){seen.add(k);out.push(it);}else if(!k){out.push(it);}}
+  return out;
 }
 async function saveFile(){
   if(!fileId||!gdriveToken)return;
@@ -376,31 +397,54 @@ async function saveFile(){
           if(fr.ok){
             const remote=await fr.json();
             const remoteStatuses=Array.isArray(remote._statuses)?remote._statuses:statuses;
-            const remoteBoards={};
-            for(const[k,v]of Object.entries(remote)){if(k!=='_statuses'&&Array.isArray(v))remoteBoards[k]=v;}
-            // Lokale Änderung der gerade offenen Task in die Remote-Version mergen
+            // Remote-Whitelist auslesen — überschreibt lokale (Desktop ist Quelle der Wahrheit)
+            const rWhite=Array.isArray(remote._mobileBoards)?remote._mobileBoards.slice():[];
+            const rHasWhitelist=rWhite.length>0;
+            // Sichtbare + versteckte Boards aus Remote aufteilen
+            const remoteVisible={},remoteHidden={};
+            for(const[k,v]of Object.entries(remote)){
+              if(k.startsWith('_'))continue;
+              if(!Array.isArray(v))continue;
+              if(rHasWhitelist && !rWhite.includes(k))remoteHidden[k]=v;
+              else remoteVisible[k]=v;
+            }
+            // Lokale Änderung der gerade offenen Task in die sichtbaren Remote-Boards mergen
             if(currentTaskId){
               const localTask=findTaskById(currentTaskId);
               if(localTask){
                 let placed=false;
-                for(const bn of Object.keys(remoteBoards)){
-                  const idx=remoteBoards[bn].findIndex(t=>t&&t.id===currentTaskId);
-                  if(idx>=0){remoteBoards[bn][idx]=localTask;placed=true;break;}
+                for(const bn of Object.keys(remoteVisible)){
+                  const idx=remoteVisible[bn].findIndex(t=>t&&t.id===currentTaskId);
+                  if(idx>=0){
+                    const rt=remoteVisible[bn][idx];
+                    const mergedTask={...rt,...localTask};
+                    mergedTask.notizVerlauf=_mergeListByKey(rt.notizVerlauf,localTask.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
+                    mergedTask.zeitEntries=_mergeListByKey(rt.zeitEntries,localTask.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+                    mergedTask.ausserhausTermine=_mergeListByKey(rt.ausserhausTermine,localTask.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+                    mergedTask.fotos=_mergeListByKey(rt.fotos,localTask.fotos,f=>(f.id||f.driveId||f.path||f.name||''));
+                    remoteVisible[bn][idx]=mergedTask;
+                    placed=true;break;
+                  }
                 }
-                // Falls Task remote noch nicht existiert (neu angelegt) → in passendes Board einfügen
                 if(!placed){
-                  const target=currentBoard&&remoteBoards[currentBoard]?currentBoard:Object.keys(remoteBoards)[0];
-                  if(target){if(!remoteBoards[target])remoteBoards[target]=[];remoteBoards[target].push(localTask);}
+                  const target=currentBoard&&remoteVisible[currentBoard]?currentBoard:Object.keys(remoteVisible)[0];
+                  if(target){if(!remoteVisible[target])remoteVisible[target]=[];remoteVisible[target].push(localTask);}
                 }
               }
             }
             statuses=remoteStatuses;
-            boards=remoteBoards;
+            mobileWhitelist=rWhite;
+            boards=remoteVisible;
+            hiddenBoards=remoteHidden;
           }
         }
       }
     }catch(e){/* Konflikt-Check best-effort */}
-    const obj={_statuses:statuses,...boards};
+    // Save-Objekt: Whitelist erhalten, versteckte Desktop-Boards unverändert durchreichen, dann sichtbare
+    const obj={_statuses:statuses};
+    if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
+    for(const[k,v]of Object.entries(hiddenBoards||{}))obj[k]=v;
+    for(const[k,v]of Object.entries(boards||{}))obj[k]=v;
     const content=JSON.stringify(obj,null,2);
     const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media&fields=modifiedTime',
       {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:content});
