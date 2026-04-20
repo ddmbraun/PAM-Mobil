@@ -154,14 +154,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   </div>
   <div class="detail-body">
     <div class="sect open">
-      <div class="sect-head" onclick="this.parentElement.classList.toggle('open')">Datei-Info</div>
+      <div class="sect-head" onclick="toggleMSect(this.parentElement)">Datei-Info</div>
       <div class="sect-body">
         <div class="field"><label>Verbundene Datei</label><div id="settFileName" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px"></div></div>
         <div class="field"><label>Eingeloggt als</label><div id="settUserEmail" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)"></div></div>
       </div>
     </div>
     <div class="sect open">
-      <div class="sect-head" onclick="this.parentElement.classList.toggle('open')">Aktionen</div>
+      <div class="sect-head" onclick="toggleMSect(this.parentElement)">Aktionen</div>
       <div class="sect-body">
         <button class="inline-btn" style="width:100%;margin-bottom:8px" onclick="refreshData()">🔄 Daten neu laden</button>
         <button class="inline-btn danger" style="width:100%" onclick="logout()">🚪 Abmelden</button>
@@ -199,6 +199,16 @@ let dirty=false;
 // ── UTILS ──
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
 function escAttr(s){return String(s==null?'':s).replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+// Debounced Section-Toggle: verhindert, dass schneller Doppelklick den Zustand „open-close" selbst auslöscht.
+const _mSectLastToggle=new WeakMap();
+function toggleMSect(el){
+  if(!el)return;
+  const now=Date.now();
+  const last=_mSectLastToggle.get(el)||0;
+  if(now-last<350){_mSectLastToggle.set(el,now);return;}
+  _mSectLastToggle.set(el,now);
+  el.classList.toggle('open');
+}
 function generateId(){return 't_'+Date.now()+'_'+Math.random().toString(36).substr(2,6);}
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2500);}
 function parseMinutes(von,bis){try{if(!von||!bis)return 0;const[vh,vm]=von.split(':').map(Number);const[bh,bm]=bis.split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(e){return 0;}}
@@ -558,7 +568,7 @@ function renderDetail(t){
       +'<button id="timerBtn" class="timer-btn '+(isTimerRunningForTask(t.id)?'stop':'start')+'" onclick="toggleMobileTimer(\''+escAttr(t.id)+'\')">'+(isTimerRunningForTask(t.id)?'⏹ Stopp':'▶ Start')+'</button>'
     +'</div>'
     // ── STAMMDATEN ──
-    +'<div class="sect open"><div class="sect-head" onclick="this.parentElement.classList.toggle(\'open\')">Stammdaten</div><div class="sect-body">'
+    +'<div class="sect open"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Stammdaten</div><div class="sect-body">'
       +'<div class="field"><label>Titel</label><input type="text" value="'+escAttr(t.title||'')+'" oninput="updateField(\'title\',this.value);document.getElementById(\'detailTitle\').textContent=this.value||\'(ohne Titel)\'"></div>'
       +'<div class="field-row"><div class="field"><label>Kostenstelle / Tags</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)"></div></div>'
       +'<div class="field-row"><div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>'
@@ -571,36 +581,37 @@ function renderDetail(t){
       +'<div class="field"><label>Schaden / Beschreibung</label><textarea oninput="updateField(\'schadensbild\',this.value)">'+esc(t.schadensbild||'')+'</textarea></div>'
     +'</div></div>'
     // ── KONTAKTE ──
-    +'<div class="sect'+(kontakte.length?' open':'')+'"><div class="sect-head" onclick="this.parentElement.classList.toggle(\'open\')">Kontakte ('+kontakte.length+')</div><div class="sect-body">'
+    +'<div class="sect"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Kontakte ('+kontakte.length+')</div><div class="sect-body">'
       +'<div id="kontakteList">'+kontakteHtml+'</div>'
       +'<button class="add-btn" onclick="addKontakt()">+ Kontakt hinzufügen</button>'
     +'</div></div>'
     // ── TERMINE ──
-    +'<div class="sect'+(termine.length?' open':'')+'"><div class="sect-head" onclick="this.parentElement.classList.toggle(\'open\')">📅 Außer-Haus-Termine ('+termine.length+')</div><div class="sect-body">'
+    +'<div class="sect"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Außer-Haus-Termine ('+termine.length+')</div><div class="sect-body">'
       +'<div id="termineList">'+renderTermineRows(termine)+'</div>'
       +'<button class="add-btn" onclick="addTermin()">+ Termin hinzufügen</button>'
+      +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
     +'</div></div>'
     // ── ZEITERFASSUNG ──
-    +'<div class="sect open"><div class="sect-head" onclick="this.parentElement.classList.toggle(\'open\')">⏱ Zeiterfassung ('+zeiten.length+')</div><div class="sect-body">'
+    +'<div class="sect"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⏱ Zeiterfassung ('+zeiten.length+')</div><div class="sect-body">'
       +'<div id="zeitenList">'+renderZeitenRows(zeiten)+'</div>'
       +'<button class="add-btn" onclick="addZeit()">+ Zeit manuell hinzufügen</button>'
       +'<div id="zeitGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderZeitGesamtText(zeiten)+'</div>'
     +'</div></div>'
     // ── NOTIZEN ──
-    +'<div class="sect"><div class="sect-head" onclick="this.parentElement.classList.toggle(\'open\')">📝 Notizen</div><div class="sect-body">'
+    +'<div class="sect"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen</div><div class="sect-body">'
       +'<div class="field"><label>Dauerhafte Notiz</label><textarea placeholder="Dauerhafte Notizen zum Task…" oninput="updateField(\'desc\',this.value)">'+esc(t.desc||'')+'</textarea></div>'
       +'<div class="field"><label>Chronologische Einträge</label><div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
       +'<div class="field-row" style="margin-top:6px"><input type="text" id="newNotizInput" placeholder="Kurze Notiz mit Zeitstempel…"><button class="inline-btn primary" onclick="addNotiz()">+</button></div></div>'
     +'</div></div>'
     // ── FOTOS ──
-    +'<div class="sect'+(fotos.length?' open':'')+'"><div class="sect-head" onclick="this.parentElement.classList.toggle(\'open\')">📷 Fotos ('+fotos.length+')</div><div class="sect-body">'
+    +'<div class="sect"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos ('+fotos.length+')</div><div class="sect-body">'
       +'<div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>'
       +'<button class="add-btn" onclick="document.getElementById(\'fotoInput\').click()">📷 Foto aufnehmen / wählen</button>'
       +'<input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files)">'
       +'<div class="field" style="margin-top:8px"><label>Drive-Ordner für Fotos</label><input type="text" value="'+escAttr(t.gdrive||'')+'" placeholder="Google Drive-Ordner-Link" oninput="updateField(\'gdrive\',this.value)"></div>'
     +'</div></div>'
     // ── LÖSCHEN ──
-    +'<div class="sect"><div class="sect-head" onclick="this.parentElement.classList.toggle(\'open\')">⚠ Task löschen</div><div class="sect-body">'
+    +'<div class="sect"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⚠ Task löschen</div><div class="sect-body">'
       +'<button class="inline-btn danger" style="width:100%" onclick="deleteTask()">🗑 Task löschen</button>'
     +'</div></div>';
 }
@@ -658,8 +669,8 @@ function renderTermineRows(list){
   return list.map((t,i)=>''
     +'<div class="termin-row">'
       +'<input type="date" value="'+escAttr(t.date||'')+'" onchange="updateTermin('+i+',\'date\',this.value)">'
-      +'<input type="time" value="'+escAttr(t.von||'')+'" onchange="updateTermin('+i+',\'von\',this.value)">'
-      +'<input type="time" value="'+escAttr(t.bis||'')+'" onchange="updateTermin('+i+',\'bis\',this.value)">'
+      +'<input type="time" value="'+escAttr(t.von||'')+'" onchange="updateTermin('+i+',\'von\',this.value);updateTermineGesamt()">'
+      +'<input type="time" value="'+escAttr(t.bis||'')+'" onchange="updateTermin('+i+',\'bis\',this.value);updateTermineGesamt()">'
       +'<input type="text" placeholder="Beschreibung" value="'+escAttr(t.beschreibung||'')+'" oninput="updateTermin('+i+',\'beschreibung\',this.value)">'
       +'<button class="rm-btn" onclick="removeTermin('+i+')">✕</button>'
     +'</div>'
@@ -795,9 +806,18 @@ function renderZeitGesamtText(list){
   const h=Math.floor(min/60),m=min%60;
   return 'Gesamt: '+(h>0?h+'h ':'')+m+' min';
 }
+function renderTermineGesamtText(list){
+  const min=(list||[]).reduce((s,z)=>s+parseMinutes(z.von,z.bis),0);
+  const h=Math.floor(min/60),m=min%60;
+  return 'Gesamt: '+(h>0?h+'h ':'')+m+' min';
+}
 function updateZeitGesamt(){
   const t=currentTask();if(!t)return;
   const el=document.getElementById('zeitGesamt');if(el)el.textContent=renderZeitGesamtText(t.zeitEntries||[]);
+}
+function updateTermineGesamt(){
+  const t=currentTask();if(!t)return;
+  const el=document.getElementById('termineGesamt');if(el)el.textContent=renderTermineGesamtText(t.ausserhausTermine||[]);
 }
 function addZeit(){
   const t=currentTask();if(!t)return;
