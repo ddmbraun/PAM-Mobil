@@ -141,7 +141,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 #pannellumContainer{display:none;position:absolute;inset:0;z-index:1;}
 #pannellumContainer.active{display:block;}
 /* ── Zeichen-Canvas ── */
-#drawCanvas{display:none;position:absolute;inset:0;cursor:crosshair;touch-action:none;z-index:2;}
+#drawCanvas{display:none;position:absolute;inset:0;cursor:crosshair;touch-action:none;z-index:20;}
 #drawCanvas.active{display:block;}
 /* ── Zeichen-Toolbar ── */
 .lb-draw-bar{position:absolute;top:calc(env(safe-area-inset-top,0) + 60px);left:0;right:0;display:none;justify-content:center;flex-wrap:wrap;gap:6px;align-items:center;z-index:10003;padding:0 10px;}
@@ -807,7 +807,7 @@ function renderDetail(t){
       +'<div id="zeitGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderZeitGesamtText(zeiten)+'</div>'
     +'</div></div>'
     // ── NOTIZEN ──
-    +'<div class="sect open" data-sect="Notizen"><div class="sect-head">📝 Notizen</div><div class="sect-body">'
+    +'<div class="sect open" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen</div><div class="sect-body">'
       +'<div class="field"><label>Dauerhafte Notiz</label><textarea rows="3" style="resize:none;transition:height .2s" placeholder="Dauerhafte Notizen zum Task…" oninput="updateField(\'desc\',this.value)" onfocus="this.rows=8" onblur="if(!this.value)this.rows=3;else this.rows=4">'+esc(t.desc||'')+'</textarea></div>'
       +'<div class="field"><label>Chronologische Einträge</label><div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
       +'<div class="field-row" style="margin-top:6px"><input type="text" id="newNotizInput" placeholder="Kurze Notiz mit Zeitstempel…"><button class="inline-btn primary" onclick="addNotiz()">+</button></div></div>'
@@ -1636,12 +1636,14 @@ function lbStartDraw(){
   if(!img||!img.src||img.style.display==='none')return;
   const canvas=document.getElementById('drawCanvas');
   if(!canvas)return;
-  // Canvas über gesamtes Lightbox-Fenster legen
-  canvas.width=window.innerWidth;
-  canvas.height=window.innerHeight;
-  canvas.style.position='fixed';
+  const lb=document.getElementById('lightbox');
+  // Canvas bleibt position:absolute innerhalb der Lightbox
+  canvas.style.position='absolute';
   canvas.style.left='0';canvas.style.top='0';
-  canvas.style.width='100vw';canvas.style.height='100vh';
+  canvas.style.width='100%';canvas.style.height='100%';
+  // Pixelgröße = Lightbox-Größe (kein fixed, kein devicePixelRatio-Problem)
+  canvas.width=lb.offsetWidth||window.innerWidth;
+  canvas.height=lb.offsetHeight||window.innerHeight;
   _drawCtx=canvas.getContext('2d');
   _drawErasing=false;
   canvas.classList.add('active');
