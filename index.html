@@ -245,8 +245,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
-<script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
+<!-- Pannellum wird erst bei Bedarf (360°-Foto) geladen -->
+<link rel="stylesheet" id="pannellumCSS" href="" disabled>
 <script>
 /* ═══════════════════════════════════════════════
    PTP Mobile – nutzt dieselbe workboard.json wie PTP
@@ -1595,21 +1595,32 @@ function openLightbox(src,name,externalUrl,opts){
   lb.classList.add('open');
   document.addEventListener('keydown',_lbOnKey);
 }
-// ── 360° Pannellum ──
+// ── 360° Pannellum (lazy load) ──
 function _lbInitPannellum(blobUrl){
   const container=document.getElementById('pannellumContainer');
   const img=document.getElementById('lbImg');
   if(!container)return;
   img.style.display='none';
-  container.innerHTML='';
+  container.innerHTML='<div style="color:#fff;font-size:13px;padding:20px;text-align:center">⏳ 360°-Viewer lädt…</div>';
   container.classList.add('active');
-  if(window.pannellum){
+  function _startViewer(){
+    container.innerHTML='';
     _pannellumViewer=pannellum.viewer(container,{
       type:'equirectangular',panorama:blobUrl,
       autoLoad:true,showControls:false,compass:false,
       mouseZoom:true,draggable:true,
     });
-  }else{img.style.display='';container.classList.remove('active');}
+  }
+  if(window.pannellum){_startViewer();return;}
+  // CSS laden
+  const cssLink=document.getElementById('pannellumCSS');
+  if(cssLink){cssLink.href='https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css';cssLink.removeAttribute('disabled');}
+  // JS laden
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js';
+  s.onload=()=>_startViewer();
+  s.onerror=()=>{img.style.display='';container.classList.remove('active');};
+  document.head.appendChild(s);
 }
 function _lbClosePannellum(){
   if(_pannellumViewer){try{_pannellumViewer.destroy();}catch(e){}_pannellumViewer=null;}
@@ -1622,14 +1633,15 @@ function _lbClosePannellum(){
 let _drawPointer=null,_drawCtx=null,_drawErasing=false;
 function lbStartDraw(){
   const img=document.getElementById('lbImg');
-  if(!img||!img.src||img.style.display==='none')return; // kein Zeichnen im 360°-Modus
+  if(!img||!img.src||img.style.display==='none')return;
   const canvas=document.getElementById('drawCanvas');
   if(!canvas)return;
-  const rect=img.getBoundingClientRect();
-  canvas.width=rect.width;canvas.height=rect.height;
-  canvas.style.left=rect.left+'px';canvas.style.top=rect.top+'px';
-  canvas.style.width=rect.width+'px';canvas.style.height=rect.height+'px';
+  // Canvas über gesamtes Lightbox-Fenster legen
+  canvas.width=window.innerWidth;
+  canvas.height=window.innerHeight;
   canvas.style.position='fixed';
+  canvas.style.left='0';canvas.style.top='0';
+  canvas.style.width='100vw';canvas.style.height='100vh';
   _drawCtx=canvas.getContext('2d');
   _drawErasing=false;
   canvas.classList.add('active');
@@ -1688,12 +1700,17 @@ async function lbSaveDraw(){
   const t=currentTask();
   if(!t||_lbFotoIdx<0||!t.fotos||!t.fotos[_lbFotoIdx]){toast('Kein Foto gewählt','error');return;}
   const f=t.fotos[_lbFotoIdx];
-  // Bild + Zeichnung auf neuem Canvas zusammenführen (in Originalauflösung)
+  // Bild-Position im Fenster ermitteln (für Koordinaten-Mapping)
+  const imgRect=img.getBoundingClientRect();
+  // Merge-Canvas in Originalauflösung
   const mc=document.createElement('canvas');
   mc.width=img.naturalWidth;mc.height=img.naturalHeight;
   const mCtx=mc.getContext('2d');
   mCtx.drawImage(img,0,0,mc.width,mc.height);
-  mCtx.drawImage(drawCanvas,0,0,mc.width,mc.height);
+  // Zeichnung skaliert einzeichnen: nur den Bereich über dem Bild
+  mCtx.drawImage(drawCanvas,
+    imgRect.left,imgRect.top,imgRect.width,imgRect.height, // Quelle im Canvas
+    0,0,mc.width,mc.height);                               // Ziel in Originalauflösung
   const blob=await new Promise(r=>mc.toBlob(r,'image/jpeg',0.92));
   if(!blob){toast('Fehler beim Erstellen','error');return;}
   const folderId=extractDriveFolderId(t.gdrive);
