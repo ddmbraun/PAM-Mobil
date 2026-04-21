@@ -277,11 +277,11 @@ function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s
 function escAttr(s){return String(s==null?'':s).replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
 // Offen-Zustand der Detail-Sektionen über Re-Renders hinweg merken.
 // Per-Task, damit beim Wechsel zwischen Tasks der Zustand sauber zurückgesetzt wird.
-let _mOpenSections={'Stammdaten':true,'Notizen':true};
+let _mOpenSections={'Stammdaten':true};
 let _mOpenSectionsForTask=null;
 function _resetOpenSectionsForTask(taskId){
   if(_mOpenSectionsForTask!==taskId){
-    _mOpenSections={'Stammdaten':true,'Notizen':true};
+    _mOpenSections={'Stammdaten':true};
     _mOpenSectionsForTask=taskId;
   }
 }
@@ -747,7 +747,7 @@ async function closeDetail(){
   }
   currentTaskId=null;
   // Sektionen beim Zurückgehen zuklappen — beim nächsten Öffnen beginnen alle frisch
-  _mOpenSections={'Stammdaten':true,'Notizen':true};
+  _mOpenSections={'Stammdaten':true};
   _mOpenSectionsForTask=null;
   _stopTickLoop();
   document.getElementById('detailScreen').classList.add('hidden');
@@ -1764,10 +1764,24 @@ async function lbSaveDraw(){
   body.append('metadata',new Blob([JSON.stringify({name:copyName,parents:[folderId]})],{type:'application/json'}));
   body.append('file',blob,'blob.jpg');
   toast('⬆ Zeichnung wird gespeichert…','info');
-  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType',
     {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body});
-  if(r.ok)toast('✓ Zeichnung in Drive gespeichert','success');
-  else toast('Fehler beim Speichern','error');
+  if(!r.ok){toast('Fehler beim Speichern','error');return;}
+  const meta=await r.json().catch(()=>null);
+  toast('✓ Zeichnung in Drive gespeichert','success');
+  // Neue Datei in t.fotos eintragen → Vorschau wird sofort aktualisiert
+  if(meta&&meta.id){
+    if(!t.fotos)t.fotos=[];
+    const newFoto={driveId:meta.id,name:copyName,mimeType:'image/jpeg',caption:'Zeichnung'};
+    t.fotos.push(newFoto);
+    // Blob-URL im Cache ablegen, damit kein erneuter Drive-Download nötig ist
+    const blobUrl=URL.createObjectURL(blob);
+    _fotoBlobCache.set(meta.id,blobUrl);
+    forceSave();
+    // Foto-Sektion öffnen und Detail neu rendern → Thumbnail erscheint sofort
+    _mOpenSections['Fotos']=true;
+    const tNow=currentTask();if(tNow)renderDetail(tNow);
+  }
   lbDiscardDraw();
 }
 function _lbShowCaption(txt){
