@@ -419,29 +419,46 @@ function showList(){
 }
 
 // ══ DRIVE: Datei finden / laden / speichern ══
+async function _searchWorkboardInDrive(){
+  const r=await fetch("https://www.googleapis.com/drive/v3/files?q=name%3D'workboard.json'%20and%20mimeType%3D'application%2Fjson'%20and%20trashed%3Dfalse&fields=files(id%2Cname%2CmodifiedTime)&orderBy=modifiedTime%20desc",
+    {headers:{Authorization:'Bearer '+gdriveToken}});
+  if(!r.ok)return null;
+  const data=await r.json();
+  const files=data.files||[];
+  return files.length>0?files[0]:null;
+}
+async function _reconnectToNewFile(){
+  // Neue workboard.json finden (z.B. vom Desktop neu erstellt)
+  try{
+    const found=await _searchWorkboardInDrive();
+    if(found&&found.id&&found.id!==fileId){
+      fileId=found.id;fileName=found.name||'workboard.json';
+      try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){}
+      const ok=await loadFile();
+      if(ok){renderList();toast('↻ Neue workboard.json verbunden','success');}
+    }
+  }catch(e){}
+}
 async function findOrPickFile(){
   document.getElementById('loginStatus').textContent='Suche workboard.json in Drive…';
   // Aus localStorage
   try{const c=JSON.parse(localStorage.getItem(FILE_KEY)||'null');if(c&&c.id){fileId=c.id;fileName=c.name||'workboard.json';const ok=await loadFile();if(ok){showList();renderList();return;}}}catch(e){}
   // Auf Drive suchen
   try{
-    const r=await fetch("https://www.googleapis.com/drive/v3/files?q=name%3D'workboard.json'%20and%20mimeType%3D'application%2Fjson'%20and%20trashed%3Dfalse&fields=files(id%2Cname%2CmodifiedTime)&orderBy=modifiedTime%20desc",
-      {headers:{Authorization:'Bearer '+gdriveToken}});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const data=await r.json();
-    const files=data.files||[];
-    if(files.length===0){document.getElementById('loginStatus').textContent='Keine workboard.json gefunden — erst in PTP am Desktop anlegen.';return;}
-    const chosen=files[0];
-    fileId=chosen.id;fileName=chosen.name||'workboard.json';
+    const found=await _searchWorkboardInDrive();
+    if(!found){document.getElementById('loginStatus').textContent='Keine workboard.json gefunden — erst in PTP am Desktop anlegen.';return;}
+    fileId=found.id;fileName=found.name||'workboard.json';
     try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){}
     const ok=await loadFile();
     if(ok){showList();renderList();}
   }catch(e){document.getElementById('loginStatus').textContent='Drive-Fehler: '+e.message;}
 }
 // Splittet rohe Drive-Daten in statuses / sichtbare boards / hiddenBoards / Whitelist
+let _remoteBoardStatuses={}; // wird vom Desktop gesetzt, Mobil schreibt es unverändert zurück
 function _applyMobileFilter(data){
   statuses=Array.isArray(data._statuses)?data._statuses:[];
   mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
+  _remoteBoardStatuses=(data._boardStatuses&&typeof data._boardStatuses==='object')?{...data._boardStatuses}:{};
   boards={};hiddenBoards={};
   const hasWhitelist=mobileWhitelist.length>0;
   for(const[k,v]of Object.entries(data)){
@@ -488,7 +505,11 @@ async function pollForChanges(){
     if(!(await ensureToken()))return;
     const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime&_='+Date.now(),
       {headers:{Authorization:'Bearer '+gdriveToken},cache:'no-store'});
-    if(!mr.ok)return;
+    if(!mr.ok){
+      // 404 = Datei gelöscht (z.B. Neustart vom Desktop) → neue suchen
+      if(mr.status===404)await _reconnectToNewFile();
+      return;
+    }
     const meta=await mr.json();
     if(!fileLastModified){fileLastModified=meta.modifiedTime;return;}
     if(meta.modifiedTime===fileLastModified)return;
@@ -591,12 +612,15 @@ async function saveFile(){
             mobileWhitelist=rWhite;
             boards=remoteVisible;
             hiddenBoards=remoteHidden;
+            if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
+              _remoteBoardStatuses={...remote._boardStatuses};
           }
         }
       }
     }catch(e){/* Konflikt-Check best-effort */}
-    // Save-Objekt: Whitelist erhalten, versteckte Desktop-Boards unverändert durchreichen, dann sichtbare
+    // Save-Objekt: Whitelist + Desktop-Spalten (_boardStatuses) erhalten, versteckte Boards durchreichen
     const obj={_statuses:statuses};
+    if(Object.keys(_remoteBoardStatuses||{}).length)obj._boardStatuses={..._remoteBoardStatuses};
     if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
     for(const[k,v]of Object.entries(hiddenBoards||{}))obj[k]=v;
     for(const[k,v]of Object.entries(boards||{}))obj[k]=v;
