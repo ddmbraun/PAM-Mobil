@@ -496,10 +496,12 @@ async function findOrPickFile(){
 }
 // Splittet rohe Drive-Daten in statuses / sichtbare boards / hiddenBoards / Whitelist
 let _remoteBoardStatuses={}; // wird vom Desktop gesetzt, Mobil schreibt es unverändert zurück
+let boardTypes={}; // 'baustelle' | 'notiz' pro Board-Name
 function _applyMobileFilter(data){
   statuses=Array.isArray(data._statuses)?data._statuses:[];
   mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
   _remoteBoardStatuses=(data._boardStatuses&&typeof data._boardStatuses==='object')?{...data._boardStatuses}:{};
+  boardTypes=(data._boardTypes&&typeof data._boardTypes==='object')?{...data._boardTypes}:{};
   boards={};hiddenBoards={};
   const hasWhitelist=mobileWhitelist.length>0;
   for(const[k,v]of Object.entries(data)){
@@ -773,16 +775,17 @@ function renderList(){
   }
   const timerState=_loadTimerState();
   const runningTaskId=timerState?timerState.taskId:null;
+  const isNotizBoard=(boardTypes[currentBoard]||'baustelle')==='notiz';
   list.innerHTML=filtered.map(t=>{
     const ampel=t.ampel||'grün';
     const status=t.status||'';
     const ausf=t.ausführungsdatum?formatDate(t.ausführungsdatum):'';
     const isRunning=t.id===runningTaskId;
     return '<div class="task-card" onclick="openDetail(\''+escAttr(t.id)+'\')">'
-      +'<div class="task-card-title">'+esc(t.title||'(ohne Titel)')+'</div>'
+      +'<div class="task-card-title">'+(isNotizBoard?'📋 ':'')+esc(t.title||'(ohne Titel)')+'</div>'
       +'<div class="task-card-meta">'
       +(status&&!currentStatus?'<span class="badge status">'+esc(status)+'</span>':'')
-      +'<span class="badge ampel-'+ampel+'">●</span>'
+      +(!isNotizBoard?'<span class="badge ampel-'+ampel+'">●</span>':'')
       +(ausf?'<span>📅 '+esc(ausf)+'</span>':'')
       +(isRunning?'<span class="task-timer-badge" style="color:var(--orange);font-size:12px;font-weight:600;margin-left:auto">⏱ '+formatTimerFor(t.id)+'</span>':'')
       +'</div></div>';
@@ -822,6 +825,9 @@ function renderDetail(t){
   document.getElementById('detailTitle').textContent=t.title||'(ohne Titel)';
   _resetOpenSectionsForTask(t.id);
   const body=document.getElementById('detailBody');
+  // Board-Typ ermitteln (baustelle | notiz)
+  const _tBoard=findBoardByTaskId(t.id)||currentBoard;
+  const isNotiz=(boardTypes[_tBoard]||'baustelle')==='notiz';
   const statusOpts=statuses.map(s=>'<option value="'+escAttr(s)+'"'+(s===t.status?' selected':'')+'>'+esc(s)+'</option>').join('');
   const kontakte=t.kontakte||[];
   const kontakteHtml=kontakte.map((k,i)=>renderKontakt(k,i)).join('');
@@ -851,29 +857,31 @@ function renderDetail(t){
         +'</div>';
     })()
     // ── STAMMDATEN ──
-    +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Stammdaten</div><div class="sect-body">'
+    +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'📋 Notiz':'🏗 Baustelle')+'</div><div class="sect-body">'
       +'<div class="field"><label>Titel</label><input type="text" value="'+escAttr(t.title||'')+'" oninput="updateField(\'title\',this.value);document.getElementById(\'detailTitle\').textContent=this.value||\'(ohne Titel)\'"></div>'
       +'<div class="field-row"><div class="field"><label>Kostenstelle / Tags</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)"></div></div>'
-      +'<div class="field-row"><div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>'
-      +'<div class="field" style="flex:0 0 100px"><label>Ampel</label><select onchange="updateField(\'ampel\',this.value)">'
-        +['grün','orange','rot'].map(a=>'<option value="'+a+'"'+(a===(t.ampel||'grün')?' selected':'')+'>'+({'grün':'🟢','orange':'🟠','rot':'🔴'}[a])+'</option>').join('')
-      +'</select></div></div>'
+      +(isNotiz
+        ? '<div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>'
+        : '<div class="field-row"><div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>'
+          +'<div class="field" style="flex:0 0 100px"><label>Ampel</label><select onchange="updateField(\'ampel\',this.value)">'
+            +['grün','orange','rot'].map(a=>'<option value="'+a+'"'+(a===(t.ampel||'grün')?' selected':'')+'>'+({'grün':'🟢','orange':'🟠','rot':'🔴'}[a])+'</option>').join('')
+          +'</select></div></div>')
       +'<div class="field"><label>Ausführungsdatum</label><input type="date" value="'+escAttr(t.ausführungsdatum||'')+'" onchange="updateField(\'ausführungsdatum\',this.value)"></div>'
-      +'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="updateField(\'adresse\',this.value);updateNavBtn()"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>'
-      +'<div class="field"><label>Hausverwaltung</label><input type="text" value="'+escAttr(t.hausverwaltung||'')+'" oninput="updateField(\'hausverwaltung\',this.value)"></div>'
-      +'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">Schaden / Beschreibung</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)">'+esc(t.schadensbild||'')+'</textarea></div>'
+      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="updateField(\'adresse\',this.value);updateNavBtn()"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
+      +(!isNotiz?'<div class="field"><label>Hausverwaltung</label><input type="text" value="'+escAttr(t.hausverwaltung||'')+'" oninput="updateField(\'hausverwaltung\',this.value)"></div>':'')
+      +'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">'+(isNotiz?'Beschreibung':'Schaden / Beschreibung')+'</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)">'+esc(t.schadensbild||'')+'</textarea></div>'
     +'</div></div>'
-    // ── KONTAKTE ──
-    +'<div class="sect'+oc('Kontakte')+'" data-sect="Kontakte"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Kontakte ('+kontakte.length+')</div><div class="sect-body">'
+    // ── KONTAKTE (nur Baustelle) ──
+    +(!isNotiz?'<div class="sect'+oc('Kontakte')+'" data-sect="Kontakte"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Kontakte ('+kontakte.length+')</div><div class="sect-body">'
       +'<div id="kontakteList">'+kontakteHtml+'</div>'
       +'<button class="add-btn" onclick="addKontakt()">+ Kontakt hinzufügen</button>'
-    +'</div></div>'
-    // ── TERMINE ──
-    +'<div class="sect'+oc('Termine')+'" data-sect="Termine"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Außer-Haus-Termine ('+termine.length+')</div><div class="sect-body">'
+    +'</div></div>':'')
+    // ── TERMINE (nur Baustelle) ──
+    +(!isNotiz?'<div class="sect'+oc('Termine')+'" data-sect="Termine"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Außer-Haus-Termine ('+termine.length+')</div><div class="sect-body">'
       +'<div id="termineList">'+renderTermineRows(termine)+'</div>'
       +'<button class="add-btn" onclick="addTermin()">+ Termin hinzufügen</button>'
       +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
-    +'</div></div>'
+    +'</div></div>':'')
     // ── ZEITERFASSUNG ──
     +'<div class="sect'+oc('Zeiterfassung')+'" data-sect="Zeiterfassung"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⏱ Zeiterfassung ('+zeiten.length+')</div><div class="sect-body">'
       +'<div id="zeitenList">'+renderZeitenRows(zeiten)+'</div>'
@@ -895,8 +903,8 @@ function renderDetail(t){
           : '<div style="padding:8px 10px;background:var(--bg3);border:1px dashed var(--border);border-radius:8px;color:var(--text2);font-size:12px">Noch nicht verknüpft – bitte am Desktop unter Verknüpfungen eintragen.</div>')
       +'</div>'
     +'</div></div>'
-    // ── FOTOS & ANHÄNGE ──
-    +'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos & Anhänge ('+medienCount+')</div><div class="sect-body">'
+    // ── FOTOS & ANHÄNGE (nur Baustelle) ──
+    +(!isNotiz?'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos & Anhänge ('+medienCount+')</div><div class="sect-body">'
       +(fotos.length?'<div style="font-size:11px;color:var(--text2);margin:4px 0">Fotos (in Drive-Ordner)</div><div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'')
       +(attachments.length?'<div style="font-size:11px;color:var(--text2);margin:10px 0 4px">Anhänge vom Desktop</div><div id="attachListMob">'+renderAttachmentsMob(attachments)+'</div>':'')
       +(!fotos.length&&!attachments.length?'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos oder Anhänge.</div>':'')
@@ -909,7 +917,7 @@ function renderDetail(t){
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte am Desktop unter Verknüpfungen → 📷 Foto-Ordner eintragen.</div>')
       +'<input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files);this.value=\'\'">'
       +'<input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="uploadFoto(this.files);this.value=\'\'">'
-    +'</div></div>'
+    +'</div></div>':'')
 ;
   // Authentifizierte Thumbnails nachladen (Blob-URL via Drive API)
   try{hydrateFotoThumbs();}catch(e){console.warn('hydrateFotoThumbs:',e);}
