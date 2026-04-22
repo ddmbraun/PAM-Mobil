@@ -274,6 +274,7 @@ const FILE_KEY='ptpm_file';
 // ── STATE ──
 let gdriveToken=null;
 let gdriveTokenExpires=0;
+let _gdriveRefreshTimer=null;
 let gdriveTokenClient=null;
 let fileId=null;
 let fileName='workboard.json';
@@ -380,6 +381,7 @@ function onTokenResponse(resp){
   gdriveToken=resp.access_token;
   gdriveTokenExpires=Date.now()+(Number(resp.expires_in||3600)-60)*1000;
   try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile]',e);}
+  _scheduleGdriveRefresh(Number(resp.expires_in||3600));
   afterLogin();
 }
 async function afterLogin(){
@@ -391,6 +393,27 @@ async function afterLogin(){
   await findOrPickFile();
 }
 function tokenValid(){return gdriveToken&&Date.now()<gdriveTokenExpires;}
+function _scheduleGdriveRefresh(expiresIn){
+  clearTimeout(_gdriveRefreshTimer);
+  const delay=Math.max(10000,(expiresIn-300))*1000;
+  _gdriveRefreshTimer=setTimeout(()=>{
+    initTokenClient();
+    if(!gdriveTokenClient)return;
+    try{
+      const prev=gdriveTokenClient.callback;
+      gdriveTokenClient.callback=(r)=>{
+        gdriveTokenClient.callback=prev;
+        if(r&&r.access_token){
+          gdriveToken=r.access_token;
+          gdriveTokenExpires=Date.now()+(Number(r.expires_in||3600)-60)*1000;
+          try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){}
+          _scheduleGdriveRefresh(Number(r.expires_in||3600));
+        }
+      };
+      gdriveTokenClient.requestAccessToken({prompt:'none'});
+    }catch(e){console.warn('[PTP-Mobile] Token-Refresh:',e);}
+  },delay);
+}
 function silentRefresh(){
   return new Promise(resolve=>{
     initTokenClient();
@@ -402,6 +425,7 @@ function silentRefresh(){
         gdriveToken=resp.access_token;
         gdriveTokenExpires=Date.now()+(Number(resp.expires_in||3600)-60)*1000;
         try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){}
+        _scheduleGdriveRefresh(Number(resp.expires_in||3600));
         resolve(true);
       }else resolve(false);
     };
