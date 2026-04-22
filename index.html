@@ -10,8 +10,10 @@
 <title>PTP Mobile</title>
 <style>
 :root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#242438;--text:#e8e8f0;--text2:#9090a8;--accent:#6a8aff;--accent2:#8aa0ff;--green:#4ade80;--orange:#fb923c;--red:#f87171;--border:#333350;}
+/* ── HELL-MODUS (Sonnenlicht) ── */
+body.light{--bg:#ffffff;--bg2:#f2f2f7;--bg3:#e5e5ea;--text:#1c1c1e;--text2:#6c6c80;--accent:#3a6adf;--accent2:#5a86f5;--green:#1a8a3c;--orange:#c96a00;--red:#c0392b;--border:#c8c8d4;}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;height:100%;overflow:hidden}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px;height:100%;overflow:hidden}
 .screen{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg)}
 .screen.hidden{display:none}
 /* ── HEADER ── */
@@ -187,6 +189,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 <div id="listScreen" class="screen hidden">
   <div class="hdr">
     <div class="hdr-title">PTP Mobile</div>
+    <button class="hdr-btn icon theme-toggle-btn" onclick="toggleTheme()" title="Hell/Dunkel wechseln">☀️</button>
     <button class="hdr-btn icon" onclick="refreshData()" title="Neu laden">🔄</button>
     <button class="hdr-btn icon" onclick="openSettings()" title="Einstellungen">⚙️</button>
   </div>
@@ -235,6 +238,17 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
       </div>
     </div>
     <div class="sect open">
+      <div class="sect-head" onclick="toggleMSect(this.parentElement)">🎨 Darstellung</div>
+      <div class="sect-body">
+        <div class="field"><label>Modus</label>
+          <div style="display:flex;gap:8px">
+            <button id="themeBtnLight" class="inline-btn" style="flex:1;padding:12px" onclick="setTheme('light')">☀️ Hell (Sonnenlicht)</button>
+            <button id="themeBtnDark"  class="inline-btn" style="flex:1;padding:12px" onclick="setTheme('dark')">🌙 Dunkel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="sect open">
       <div class="sect-head" onclick="toggleMSect(this.parentElement)">Aktionen</div>
       <div class="sect-body">
         <button class="inline-btn" style="width:100%;margin-bottom:8px" onclick="refreshData()">🔄 Daten neu laden</button>
@@ -277,11 +291,11 @@ function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s
 function escAttr(s){return String(s==null?'':s).replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
 // Offen-Zustand der Detail-Sektionen über Re-Renders hinweg merken.
 // Per-Task, damit beim Wechsel zwischen Tasks der Zustand sauber zurückgesetzt wird.
-let _mOpenSections={'Stammdaten':true};
+let _mOpenSections={};
 let _mOpenSectionsForTask=null;
 function _resetOpenSectionsForTask(taskId){
   if(_mOpenSectionsForTask!==taskId){
-    _mOpenSections={'Stammdaten':true};
+    _mOpenSections={};
     _mOpenSectionsForTask=taskId;
   }
 }
@@ -770,8 +784,8 @@ async function closeDetail(){
     try{await saveFile();}catch(e){/* saveFile hat bereits Retry/Toast */}
   }
   currentTaskId=null;
-  // Sektionen beim Zurückgehen zuklappen — beim nächsten Öffnen beginnen alle frisch
-  _mOpenSections={'Stammdaten':true};
+  // Sektionen beim Zurückgehen alle zuklappen — beim nächsten Öffnen beginnen alle frisch
+  _mOpenSections={};
   _mOpenSectionsForTask=null;
   _stopTickLoop();
   document.getElementById('detailScreen').classList.add('hidden');
@@ -1456,6 +1470,33 @@ function deleteTask(){
   toast('Task gelöscht','success');
 }
 
+// ══ HELL/DUNKEL-MODUS ══
+const THEME_KEY='ptpm_theme';
+function setTheme(mode){
+  const isLight=(mode==='light');
+  document.body.classList.toggle('light',isLight);
+  // Browser-Titelleiste anpassen
+  const metaTheme=document.querySelector('meta[name="theme-color"]');
+  if(metaTheme)metaTheme.content=isLight?'#f2f2f7':'#1a1a2e';
+  // Header-Button aktualisieren
+  document.querySelectorAll('.theme-toggle-btn').forEach(btn=>{
+    btn.textContent=isLight?'🌙':'☀️';
+    btn.title=isLight?'Dunkel-Modus':'Hell-Modus (Sonnenlicht)';
+  });
+  // Einstellungs-Buttons hervorheben
+  const bl=document.getElementById('themeBtnLight');
+  const bd=document.getElementById('themeBtnDark');
+  if(bl)bl.style.fontWeight=isLight?'700':'400';
+  if(bd)bd.style.fontWeight=isLight?'400':'700';
+  try{localStorage.setItem(THEME_KEY,mode);}catch(e){}
+}
+function toggleTheme(){
+  setTheme(document.body.classList.contains('light')?'dark':'light');
+}
+function applyStoredTheme(){
+  try{const t=localStorage.getItem(THEME_KEY);setTheme(t||'dark');}catch(e){setTheme('dark');}
+}
+
 // ══ SETTINGS ══
 function openSettings(){
   document.getElementById('settingsScreen').classList.remove('hidden');
@@ -1470,6 +1511,8 @@ function closeSettings(){
 
 // ══ START ══
 window.addEventListener('load',async()=>{
+  // Gespeicherten Theme-Modus sofort anwenden (vor allem anderen)
+  applyStoredTheme();
   // Versuche Auto-Login
   try{
     const stored=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
