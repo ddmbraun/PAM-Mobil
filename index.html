@@ -275,8 +275,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
    ═══════════════════════════════════════════════ */
 const GDRIVE_CLIENT_ID='56419258975-2ri3eujer9p6saph1mesa5hihlcae1pl.apps.googleusercontent.com';
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly';
-const TOKEN_KEY='ptpm_token';
+const TOKEN_KEY='ptp_gdrive_token_v1';  // Synchronisiert mit PC-Version
 const FILE_KEY='ptpm_file';
+const WORKSPACE_FOLDER_KEY='workspace_folder_id';  // Gleicher Key wie PC-Version
+const LEGACY_TOKEN_KEY='ptpm_token';  // Alter Mobile-Token-Key (für Migration)
 
 // ── STATE ──
 let gdriveToken=null;
@@ -286,6 +288,7 @@ let gdriveTokenClient=null;
 let fileId=null;
 let fileName='workboard.json';
 let userEmail='';
+let workspaceFolderId=null;  // Synchronisiert mit PC-Version
 let boards={};            // Sichtbare Boards (nach Mobile-Whitelist gefiltert)
 let hiddenBoards={};      // Desktop-only Boards: wir fassen sie nie an, schreiben sie unverändert zurück
 let mobileWhitelist=[];   // Aus _mobileBoards; leer = keine Einschränkung
@@ -398,6 +401,8 @@ async function afterLogin(){
     const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+gdriveToken}});
     if(r.ok){const j=await r.json();userEmail=j.email||'';}
   }catch(e){console.warn('[PTP-Mobile]',e);}
+  // Workspace-Ordner-ID aus localStorage laden (gleicher Key wie PC-Version)
+  try{workspaceFolderId=localStorage.getItem(WORKSPACE_FOLDER_KEY)||null;}catch(e){console.warn('[PTP-Mobile]',e);}
   await findOrPickFile();
 }
 function tokenValid(){return gdriveToken&&Date.now()<gdriveTokenExpires;}
@@ -467,13 +472,42 @@ function showList(){
   document.getElementById('settingsScreen').classList.add('hidden');
 }
 
+// ── TOKEN-KEY MIGRATION (von altem ptpm_token auf ptp_gdrive_token_v1) ──
+function migrateTokenKey(){
+  try{
+    const legacyToken=localStorage.getItem(LEGACY_TOKEN_KEY);
+    if(legacyToken){
+      // Token im alten Key vorhanden
+      const current=localStorage.getItem(TOKEN_KEY);
+      if(!current){
+        // Neuer Key ist leer → migriere
+        localStorage.setItem(TOKEN_KEY,legacyToken);
+        // Alten Key löschen
+        localStorage.removeItem(LEGACY_TOKEN_KEY);
+        console.log('[PTP-Mobile] Token-Key migriert von '+LEGACY_TOKEN_KEY+' zu '+TOKEN_KEY);
+      }
+    }
+  }catch(e){console.warn('[PTP-Mobile] Token-Migration:',e);}
+}
+
 // ══ DRIVE: Datei finden / laden / speichern ══
 async function _searchWorkboardInDrive(){
-  const r=await fetch("https://www.googleapis.com/drive/v3/files?q=name%3D'workboard.json'%20and%20mimeType%3D'application%2Fjson'%20and%20trashed%3Dfalse&fields=files(id%2Cname%2CmodifiedTime)&orderBy=modifiedTime%20desc",
+  let q="name='workboard.json' and mimeType='application/json' and trashed=false";
+  // Zuerst im Workspace-Ordner suchen (mit Fallback auf Drive-Root)
+  if(workspaceFolderId){
+    q+=" and '"+workspaceFolderId+"' in parents";
+  }
+  const r=await fetch("https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields=files(id%2Cname%2CmodifiedTime)&orderBy=modifiedTime%20desc",
     {headers:{Authorization:'Bearer '+gdriveToken}});
   if(!r.ok)return null;
   const data=await r.json();
-  const files=data.files||[];
+  let files=data.files||[];
+  // Fallback: Datei noch im Drive-Root (vor Migration)
+  if(files.length===0&&workspaceFolderId){
+    const r2=await fetch("https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent("name='workboard.json' and mimeType='application/json' and trashed=false")+"&fields=files(id%2Cname%2CmodifiedTime)&orderBy=modifiedTime%20desc",
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    if(r2.ok){const d2=await r2.json();files=d2.files||[];}
+  }
   return files.length>0?files[0]:null;
 }
 async function _reconnectToNewFile(){
@@ -533,11 +567,19 @@ async function loadFile(){
     _applyMobileFilter(data);
     const bk=Object.keys(boards);
     if(!currentBoard||!boards[currentBoard])currentBoard=bk[0]||'';
-    // modifiedTime für Poll-Vergleich aktualisieren
+    // modifiedTime und parent-Ordner-ID für Poll-Vergleich aktualisieren
     try{
-      const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime&_='+Date.now(),
+      const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime,parents&_='+Date.now(),
         {headers:{Authorization:'Bearer '+gdriveToken},cache:'no-store'});
-      if(mr.ok){const meta=await mr.json();fileLastModified=meta.modifiedTime||fileLastModified;}
+      if(mr.ok){
+        const meta=await mr.json();
+        fileLastModified=meta.modifiedTime||fileLastModified;
+        // Workspace-Ordner-ID aus parent extrahieren (falls vorhanden) und speichern
+        if(meta.parents&&meta.parents.length>0&&!meta.parents.includes('root')){
+          workspaceFolderId=meta.parents[0];
+          try{localStorage.setItem(WORKSPACE_FOLDER_KEY,workspaceFolderId);}catch(e){console.warn('[PTP-Mobile]',e);}
+        }
+      }
     }catch(e){console.warn('[PTP-Mobile]',e);}
     startPolling();
     return true;
@@ -1764,6 +1806,8 @@ function closeSettings(){
 window.addEventListener('load',async()=>{
   // Gespeicherten Theme-Modus sofort anwenden (vor allem anderen)
   applyStoredTheme();
+  // Token-Key Migration (falls vorhanden)
+  migrateTokenKey();
   // Falls ein Timer aus vorheriger Session noch läuft, Auto-Resume
   resumeMobileTimerIfNeeded();
   // Versuche Auto-Login
