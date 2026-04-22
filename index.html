@@ -1196,16 +1196,18 @@ function renderFotos(list){
   if(!list||!list.length)return '';
   return list.map((f,i)=>{
     const name=f.name||'';
-    const id=f.driveId||'';
+    // Bearbeitete Version bevorzugen (editedDriveId)
+    const id=(f.editedDriveId||f.driveId)||'';
     const caption=f.caption||'';
-    // Cache-Hit? Dann sofort src setzen, sonst erst nach hydrateFotoThumbs
     const cached=id?_fotoBlobCache.get(id):null;
     const srcAttr=cached?('src="'+escAttr(cached)+'" ')
                  :(id?'data-foto-id="'+escAttr(id)+'" '
                      :(f.thumbnail?'src="'+escAttr(f.thumbnail)+'" ':''));
     const tip=caption?(caption+' — '+name):name;
+    const editedBadge=f.editedDriveId?'<span style="position:absolute;top:3px;left:3px;background:var(--accent);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;">✏</span>':'';
     return '<div class="foto-thumb" onclick="openFotoFullscreen('+i+')" title="'+escAttr(tip)+'">'
       +'<img '+srcAttr+'alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'fallback\')">'
+      +editedBadge
       +'<button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button>'
       +(caption?'<div class="cap-badge">'+esc(caption)+'</div>':'')
       +'</div>';
@@ -1941,16 +1943,20 @@ async function lbSaveDraw(){
   if(!r.ok){toast('Fehler beim Speichern ('+r.status+')','error');lbDiscardDraw();return;}
   const meta=await r.json().catch(()=>null);
   toast('✓ Zeichnung in Drive gespeichert','success');
-  // Neue Datei in t.fotos eintragen → Vorschau wird sofort aktualisiert
+  // Zeichnung auf dem Original-Eintrag vermerken (editedDriveId) statt neuen Eintrag anzulegen
   if(meta&&meta.id){
     if(!t.fotos)t.fotos=[];
-    const newFoto={driveId:meta.id,name:copyName,mimeType:'image/jpeg',caption:'Zeichnung'};
-    t.fotos.push(newFoto);
-    // Blob-URL im Cache ablegen, damit kein erneuter Drive-Download nötig ist
     const blobUrl=URL.createObjectURL(blob);
     _fotoBlobCache.set(meta.id,blobUrl);
+    const origFoto=t.fotos[_lbFotoIdx];
+    if(origFoto){
+      // Vorherige Zeichnung überschreiben statt neuen Eintrag anlegen
+      origFoto.editedDriveId=meta.id;
+      origFoto.editedName=meta.name||copyName;
+    } else {
+      t.fotos.push({driveId:meta.id,name:copyName,mimeType:'image/jpeg',caption:'Zeichnung'});
+    }
     forceSave();
-    // Foto-Sektion öffnen und Detail neu rendern → Thumbnail erscheint sofort
     _mOpenSections['Fotos']=true;
     const tNow=currentTask();if(tNow)renderDetail(tNow);
   }
