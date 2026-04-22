@@ -813,6 +813,9 @@ function renderDetail(t){
     // ── TIMER-BAR (ganz oben, immer sichtbar) ──
     +'<div id="timerBar" class="timer-bar top'+(isTimerRunningForTask(t.id)?' running':'')+'">'
       +'<div id="timerDisplay" class="timer-display'+(isTimerRunningForTask(t.id)?' running':'')+'">'+formatTimerFor(t.id)+'</div>'
+      +'<input id="timerDesc" type="text" placeholder="Beschreibung…" maxlength="80" '+(isTimerRunningForTask(t.id)?'disabled':'')
+        +' value="'+escAttr((_loadTimerState()&&_loadTimerState().taskId===t.id?_loadTimerState().beschreibung:'')||'')+'"'
+        +' style="flex:1;min-width:0;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:6px 8px;color:var(--text);font-size:13px;outline:none;">'
       +'<button id="timerBtn" class="timer-btn '+(isTimerRunningForTask(t.id)?'stop':'start')+'" onclick="toggleMobileTimer(\''+escAttr(t.id)+'\')">'+(isTimerRunningForTask(t.id)?'⏹ Stopp':'▶ Start')+'</button>'
     +'</div>'
     // ── STAMMDATEN ──
@@ -1009,9 +1012,10 @@ function toggleMobileTimer(taskId){
   const t=findTaskById(taskId);if(!t){toast('Task nicht gefunden','error');return;}
   const s=_loadTimerState();
   if(s&&s.taskId===taskId){
-    // STOPPEN → offenen timeEntry schließen, in zeitEntries als Zeile materialisieren
+    // STOPPEN
     const startMs=s.startMs||Date.now();
     const endMs=Date.now();
+    const beschreibung=(s.beschreibung||'').trim()||'Stoppuhr';
     if(!t.timeEntries)t.timeEntries=[];
     const open=t.timeEntries.find(e=>!e.end);
     if(open){open.end=endMs;}
@@ -1022,7 +1026,7 @@ function toggleMobileTimer(taskId){
       date:d1.toISOString().split('T')[0],
       von:pad(d1.getHours())+':'+pad(d1.getMinutes()),
       bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),
-      beschreibung:'Stoppuhr (Mobile)'
+      beschreibung
     };
     if(!t.zeitEntries)t.zeitEntries=[];
     t.zeitEntries.push(entry);
@@ -1030,9 +1034,12 @@ function toggleMobileTimer(taskId){
     _mOpenSections['Zeiterfassung']=true;
     forceSave();
     renderDetail(t);
-    toast('⏹ Stoppuhr beendet: '+entry.von+' – '+entry.bis,'success');
+    toast('⏹ '+entry.von+' – '+entry.bis+' | '+beschreibung,'success');
   }else{
-    // STARTEN → alten Timer (andere Task) zu Ende bringen, neuen starten
+    // STARTEN → Beschreibung aus Eingabefeld lesen
+    const descInput=document.getElementById('timerDesc');
+    const beschreibung=(descInput?descInput.value.trim():'')||'';
+    // Alten Timer (andere Task) automatisch beenden
     if(s&&s.taskId&&s.taskId!==taskId){
       const other=findTaskById(s.taskId);
       if(other){
@@ -1041,18 +1048,18 @@ function toggleMobileTimer(taskId){
         const open=other.timeEntries.find(e=>!e.end);
         if(open)open.end=endMs;else other.timeEntries.push({start:startMs,end:endMs});
         const d1=new Date(startMs),d2=new Date(endMs);const pad=n=>String(n).padStart(2,'0');
-        if(!other.timeEntries)other.timeEntries=[];
-        other.timeEntries.push({date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung:'Stoppuhr (Mobile, auto-gestoppt)'});
+        if(!other.zeitEntries)other.zeitEntries=[];
+        other.zeitEntries.push({date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung:(s.beschreibung||'Stoppuhr')+' (auto-gestoppt)'});
       }
     }
     const now=Date.now();
     if(!t.timeEntries)t.timeEntries=[];
     t.timeEntries.push({start:now,end:null});
-    _saveTimerState({taskId,startMs:now});
+    _saveTimerState({taskId,startMs:now,beschreibung});
     _startTickLoop();
     forceSave();
     renderDetail(t);
-    toast('▶ Stoppuhr läuft','success');
+    toast('▶ Stoppuhr läuft'+(beschreibung?' – '+beschreibung:''),'success');
   }
 }
 // ── Tick-Loop für Stoppuhr-Anzeige in der Task-Kartenliste ──
@@ -1238,8 +1245,8 @@ function openAttachMob(i){
   const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
   const a=t.attachments[i];
   if(!a.data)return;
+  // PDF → neuer Tab
   if(a.type==='application/pdf'){
-    // PDF als Blob-URL in neuem Tab öffnen
     try{
       const b64=a.data.includes(',')?(a.data.split(',')[1]):a.data;
       const bin=atob(b64);const bytes=new Uint8Array(bin.length);
@@ -1251,8 +1258,43 @@ function openAttachMob(i){
     }catch(e){downloadAttachMob(i);}
     return;
   }
-  // Bilder und sonstiges → Lightbox
-  openLightbox(a.data,a.name||'Anhang','');
+  // Text-Dateien → Text-Viewer
+  if(a.type==='text/plain'||/\.(txt|log|csv|md|json|xml|html|js|css|ini|bat|sh)$/i.test(a.name||'')){
+    try{
+      let text='';
+      if(a.data.includes(',')){
+        const b64=a.data.split(',')[1];
+        text=decodeURIComponent(escape(atob(b64)));
+      } else {
+        text=atob(a.data);
+      }
+      _showTextViewer(a.name||'Textdatei',text);
+    }catch(e){downloadAttachMob(i);}
+    return;
+  }
+  // Bilder → Lightbox
+  if(a.type&&a.type.startsWith('image/')){
+    openLightbox(a.data,a.name||'Anhang','');
+    return;
+  }
+  // Alles andere → herunterladen
+  downloadAttachMob(i);
+}
+function _showTextViewer(name,text){
+  let ov=document.getElementById('mobTextViewerOverlay');
+  if(ov)ov.remove();
+  ov=document.createElement('div');
+  ov.id='mobTextViewerOverlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:9900;display:flex;flex-direction:column;';
+  ov.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span style="flex:1;font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📄 ${esc(name)}</span>
+      <button onclick="document.getElementById('mobTextViewerOverlay').remove()" style="background:rgba(255,255,255,.12);border:none;color:#fff;width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0;">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px;">
+      <pre style="white-space:pre-wrap;word-break:break-word;font-size:13px;color:#e8e8e8;font-family:monospace;margin:0;line-height:1.6;">${esc(text)}</pre>
+    </div>`;
+  document.body.appendChild(ov);
 }
 function downloadAttachMob(i){
   const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
