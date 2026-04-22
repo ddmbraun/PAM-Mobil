@@ -388,7 +388,7 @@ function onTokenResponse(resp){
   if(resp.error){document.getElementById('loginStatus').textContent='Fehler: '+resp.error;return;}
   gdriveToken=resp.access_token;
   gdriveTokenExpires=Date.now()+(Number(resp.expires_in||3600)-60)*1000;
-  try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile]',e);}
+  try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern:',e);}
   _scheduleGdriveRefresh(Number(resp.expires_in||3600));
   afterLogin();
 }
@@ -414,7 +414,7 @@ function _scheduleGdriveRefresh(expiresIn){
         if(r&&r.access_token){
           gdriveToken=r.access_token;
           gdriveTokenExpires=Date.now()+(Number(r.expires_in||3600)-60)*1000;
-          try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){}
+          try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern in Refresh:',e);}
           _scheduleGdriveRefresh(Number(r.expires_in||3600));
         }
       };
@@ -432,7 +432,7 @@ function silentRefresh(){
       if(resp&&resp.access_token){
         gdriveToken=resp.access_token;
         gdriveTokenExpires=Date.now()+(Number(resp.expires_in||3600)-60)*1000;
-        try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){}
+        try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern in silentRefresh:',e);}
         _scheduleGdriveRefresh(Number(resp.expires_in||3600));
         resolve(true);
       }else resolve(false);
@@ -447,7 +447,7 @@ async function ensureToken(){
   return true;
 }
 function logout(){
-  try{localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(FILE_KEY);}catch(e){}
+  try{localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(FILE_KEY);}catch(e){console.warn('[PTP-Mobile] localStorage löschen:',e);}
   const tokenToRevoke=gdriveToken;
   gdriveToken=null;gdriveTokenExpires=0;fileId=null;boards={};statuses=[];
   try{if(window.google&&google.accounts&&google.accounts.oauth2&&tokenToRevoke)google.accounts.oauth2.revoke(tokenToRevoke,()=>{});}catch(e){}
@@ -491,7 +491,7 @@ async function _reconnectToNewFile(){
 async function findOrPickFile(){
   document.getElementById('loginStatus').textContent='Suche workboard.json in Drive…';
   // Aus localStorage
-  try{const c=JSON.parse(localStorage.getItem(FILE_KEY)||'null');if(c&&c.id){fileId=c.id;fileName=c.name||'workboard.json';const ok=await loadFile();if(ok){showList();renderList();return;}}}catch(e){console.warn('[PTP-Mobile]',e);}
+  try{const c=JSON.parse(localStorage.getItem(FILE_KEY)||'null');if(c&&c.id){fileId=c.id;fileName=c.name||'workboard.json';const ok=await loadFile();if(ok){showList();renderList();return;}}}catch(e){console.warn('[PTP-Mobile] localStorage lesen FILE_KEY:',e);}
   // Auf Drive suchen
   try{
     const found=await _searchWorkboardInDrive();
@@ -544,6 +544,7 @@ async function loadFile(){
   }catch(e){toast('Laden fehlgeschlagen: '+e.message,'error');return false;}
 }
 let pollTimer=null;
+let _saveRetryCount=0;
 async function pollForChanges(){
   if(!fileId||!gdriveToken)return;
   // Nicht während der User tippt
@@ -695,7 +696,6 @@ async function saveFile(){
     }
   }
 }
-let _saveRetryCount=0;
 function scheduleSave(){
   dirty=true;
   setSaveInd('saving','…');
@@ -722,7 +722,7 @@ async function refreshData(){
 }
 
 // ══ LISTE ══
-function findTaskById(id){for(const k of Object.keys(boards)){const f=(boards[k]||[]).find(t=>t.id===id);if(f)return f;}return null;}
+function findTaskById(id){for(const k of Object.keys(boards)){const f=(boards[k]||[]).find(t=>t.id===id);if(f)return f;}console.warn('Task nicht gefunden:',id);return null;}
 function findBoardByTaskId(id){for(const k of Object.keys(boards)){if((boards[k]||[]).some(t=>t.id===id))return k;}return null;}
 function renderBoardBar(){
   const bar=document.getElementById('boardBar');
@@ -1249,6 +1249,7 @@ function removeNotiz(i){
 
 // ══ CHECKLISTE ══
 function _mCkTitle(){
+  if(!mTaskCheckliste)return '✅ Checkliste';
   const done=mTaskCheckliste.filter(x=>x.done).length;
   const total=mTaskCheckliste.length;
   return total?`✅ Checkliste <span style="color:var(--accent);font-size:11px;font-weight:400">(${done}/${total})</span>`:'✅ Checkliste';
@@ -1623,13 +1624,6 @@ async function removeFoto(i){
 }
 
 // ══ ABSCHLUSSAKTE ══
-function _extractFolderIdMob(url){
-  if(!url)return null;
-  const m=String(url).match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if(m)return m[1];
-  const m2=String(url).trim().match(/^([a-zA-Z0-9_-]{20,})$/);
-  return m2?m2[1]:null;
-}
 async function _mobDriveCreateFolder(name,parentId){
   const r=await fetch('https://www.googleapis.com/drive/v3/files',{
     method:'POST',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
@@ -1650,7 +1644,7 @@ async function _mobDriveCreateTextFile(name,content,parentId){
 }
 async function createAbschlussakteMobile(){
   const t=currentTask();if(!t)return;
-  const folderId=_extractFolderIdMob(t.gdrive)||_extractFolderIdMob(t.gdriveOrdner);
+  const folderId=extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner);
   if(!folderId){toast('Zuerst Drive-Ordner am Desktop unter Verknüpfungen eintragen','error');return;}
   if(!(await ensureToken())){toast('Nicht angemeldet','error');return;}
   const btn=document.getElementById('abschlussBtn');
@@ -1770,6 +1764,8 @@ function closeSettings(){
 window.addEventListener('load',async()=>{
   // Gespeicherten Theme-Modus sofort anwenden (vor allem anderen)
   applyStoredTheme();
+  // Falls ein Timer aus vorheriger Session noch läuft, Auto-Resume
+  resumeMobileTimerIfNeeded();
   // Versuche Auto-Login
   try{
     const stored=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
@@ -2215,6 +2211,7 @@ async function _uploadTextCopyToDrive(foto,text,folderId){
 // ── Canvas: Text als Balken unten ins Bild einbrennen ──
 function _burnTextOntoBlob(srcBlob,text){
   return new Promise(resolve=>{
+    if(!srcBlob){console.warn('[PTP-Mobile] _burnTextOntoBlob: srcBlob ist null/undefined');resolve(null);return;}
     const img=new Image();
     const url=URL.createObjectURL(srcBlob);
     img.onload=()=>{
