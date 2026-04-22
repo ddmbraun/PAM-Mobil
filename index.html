@@ -168,6 +168,13 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 /* ── NOTIZ VERLAUF ── */
 .notiz-entry{background:var(--bg3);border-left:3px solid var(--accent);padding:8px 10px;margin-bottom:6px;border-radius:4px;font-size:13px}
 .notiz-entry .ts{display:block;color:var(--text2);font-size:11px;margin-bottom:2px}
+/* ── CHECKLISTE ── */
+.ck-item{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.ck-item input[type=checkbox]{width:18px;height:18px;flex-shrink:0;cursor:pointer;accent-color:var(--accent);}
+.ck-item input[type=text]{flex:1;padding:7px 10px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;outline:none;}
+.ck-item input[type=text]:focus{border-color:var(--accent);}
+.ck-item input[type=text].done-text{text-decoration:line-through;opacity:.5;}
+.ck-item .ck-del{padding:4px 10px;font-size:13px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;flex-shrink:0;}
 /* ── TOAST ── */
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg2);color:var(--text);padding:12px 20px;border-radius:10px;border:1px solid var(--border);z-index:100;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.4)}
 .toast.success{border-color:var(--green);color:var(--green)}
@@ -288,6 +295,7 @@ let currentStatus=''; // leer = alle Spalten
 let currentTaskId=null;
 let saveTimer=null;
 let dirty=false;
+let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
 
 // ── UTILS ──
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
@@ -834,6 +842,7 @@ function renderDetail(t){
   const termine=t.ausserhausTermine||[];
   const zeiten=t.zeitEntries||[];
   const notizVerlauf=t.notizVerlauf||[];
+  mTaskCheckliste=JSON.parse(JSON.stringify(t.checkliste||[]));
   const fotos=t.fotos||[];
   const attachments=t.attachments||[];
   const medienCount=fotos.length+attachments.length;
@@ -882,17 +891,25 @@ function renderDetail(t){
       +'<button class="add-btn" onclick="addTermin()">+ Termin hinzufügen</button>'
       +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
     +'</div></div>':'')
-    // ── ZEITERFASSUNG ──
-    +'<div class="sect'+oc('Zeiterfassung')+'" data-sect="Zeiterfassung"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⏱ Zeiterfassung ('+zeiten.length+')</div><div class="sect-body">'
-      +'<div id="zeitenList">'+renderZeitenRows(zeiten)+'</div>'
-      +'<button class="add-btn" onclick="addZeit()">+ Zeit manuell hinzufügen</button>'
-      +'<div id="zeitGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderZeitGesamtText(zeiten)+'</div>'
-    +'</div></div>'
     // ── NOTIZEN ──
     +'<div class="sect'+oc('Notizen')+'" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen</div><div class="sect-body">'
       +'<div class="field"><label>Dauerhafte Notiz</label><textarea rows="3" style="resize:none;transition:height .2s" placeholder="Dauerhafte Notizen zum Task…" oninput="updateField(\'desc\',this.value)" onfocus="this.rows=8" onblur="if(!this.value)this.rows=3;else this.rows=4">'+esc(t.desc||'')+'</textarea></div>'
       +'<div class="field"><label>Chronologische Einträge</label><div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
       +'<div class="field-row" style="margin-top:6px"><input type="text" id="newNotizInput" placeholder="Kurze Notiz mit Zeitstempel…"><button class="inline-btn primary" onclick="addNotiz()">+</button></div></div>'
+    +'</div></div>'
+    // ── CHECKLISTE ──
+    +'<div class="sect'+oc('Checkliste')+'" data-sect="Checkliste"><div class="sect-head" onclick="toggleMSect(this.parentElement)" id="mCkHead">'+_mCkTitle()+'</div><div class="sect-body">'
+      +'<div id="mCkList">'+_renderMCkItems()+'</div>'
+      +'<div style="display:flex;gap:8px;margin-top:6px;">'
+        +'<input type="text" id="mNewCkInput" placeholder="Neue Aufgabe…" style="flex:1;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addMCkItem();}">'
+        +'<button class="add-btn" style="width:44px;flex-shrink:0;font-size:18px;padding:0" onclick="addMCkItem()">+</button>'
+      +'</div>'
+    +'</div></div>'
+    // ── ZEITERFASSUNG ──
+    +'<div class="sect'+oc('Zeiterfassung')+'" data-sect="Zeiterfassung"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⏱ Zeiterfassung ('+zeiten.length+')</div><div class="sect-body">'
+      +'<div id="zeitenList">'+renderZeitenRows(zeiten)+'</div>'
+      +'<button class="add-btn" onclick="addZeit()">+ Zeit manuell hinzufügen</button>'
+      +'<div id="zeitGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderZeitGesamtText(zeiten)+'</div>'
     +'</div></div>'
     // ── VERKNÜPFUNGEN ──
     +'<div class="sect'+oc('Verknuepfungen')+'" data-sect="Verknuepfungen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">🔗 Verknüpfungen</div><div class="sect-body">'
@@ -1228,6 +1245,47 @@ function addNotiz(){
 function removeNotiz(i){
   const t=currentTask();if(!t)return;
   t.notizVerlauf.splice(i,1);forceSave();renderDetail(t);
+}
+
+// ══ CHECKLISTE ══
+function _mCkTitle(){
+  const done=mTaskCheckliste.filter(x=>x.done).length;
+  const total=mTaskCheckliste.length;
+  return total?`✅ Checkliste <span style="color:var(--accent);font-size:11px;font-weight:400">(${done}/${total})</span>`:'✅ Checkliste';
+}
+function _renderMCkItems(){
+  if(!mTaskCheckliste.length)return '';
+  return mTaskCheckliste.map((item,i)=>`
+    <div class="ck-item">
+      <input type="checkbox" ${item.done?'checked':''} onchange="mTaskCheckliste[${i}].done=this.checked;this.nextElementSibling.classList.toggle('done-text',this.checked);_saveMCk()">
+      <input type="text" value="${esc(item.text)}" placeholder="Aufgabe…" class="${item.done?'done-text':''}" oninput="mTaskCheckliste[${i}].text=this.value;_saveMCk()">
+      <button type="button" class="ck-del" onclick="removeMCkItem(${i})">✕</button>
+    </div>`).join('');
+}
+function _saveMCk(){
+  const t=currentTask();if(!t)return;
+  t.checkliste=JSON.parse(JSON.stringify(mTaskCheckliste));
+  scheduleSave();
+  // Titel-Badge aktualisieren
+  const h=document.getElementById('mCkHead');if(h)h.innerHTML=_mCkTitle();
+}
+function addMCkItem(){
+  const inp=document.getElementById('mNewCkInput');
+  const text=(inp?inp.value.trim():'');
+  mTaskCheckliste.push({text,done:false});
+  if(inp)inp.value='';
+  const el=document.getElementById('mCkList');
+  if(el)el.innerHTML=_renderMCkItems();
+  _saveMCk();
+  // Sektion aufklappen
+  const sect=document.querySelector('[data-sect="Checkliste"]');
+  if(sect&&!sect.classList.contains('open'))sect.classList.add('open');
+}
+function removeMCkItem(i){
+  mTaskCheckliste.splice(i,1);
+  const el=document.getElementById('mCkList');
+  if(el)el.innerHTML=_renderMCkItems();
+  _saveMCk();
 }
 
 // ══ FOTOS & ATTACHMENTS ══
