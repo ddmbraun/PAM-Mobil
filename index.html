@@ -772,7 +772,8 @@ function renderBoardBar(){
   const names=Object.keys(boards);
   bar.innerHTML=names.map(n=>{
     const cnt=(boards[n]||[]).length;
-    return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="switchBoard(\''+escAttr(n)+'\')">'+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
+    const bIcon=(boardTypes[n]||'baustelle')==='notiz'?'✅ ':'🏗 ';
+    return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="switchBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
   if(lbl){
     if(names.length<=1){lbl.textContent='Board';}
@@ -786,7 +787,9 @@ function renderStatusBar(){
   const bar=document.getElementById('statusBar');
   if(!sec||!bar)return;
   const tasks=boards[currentBoard]||[];
-  if(!statuses.length){sec.style.display='none';return;}
+  // Board-spezifische Spalten nutzen (analog PC), Fallback auf globale statuses
+  const boardSts=(_remoteBoardStatuses[currentBoard]&&_remoteBoardStatuses[currentBoard].length)?_remoteBoardStatuses[currentBoard]:statuses;
+  if(!boardSts.length){sec.style.display='none';return;}
   sec.style.display='';
   // Zähle Tasks pro Status
   const counts={};
@@ -794,7 +797,7 @@ function renderStatusBar(){
   const allCount=tasks.length;
   bar.innerHTML='<button class="status-chip'+(currentStatus===''?' active':'')+'" onclick="switchStatus(\'\')">'
     +'Alle <span style="opacity:.7;font-size:11px">('+allCount+')</span></button>'
-    +statuses.map(s=>{
+    +boardSts.map(s=>{
       const cnt=counts[s]||0;
       return '<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="switchStatus(\''+escAttr(s)+'\')">'
         +esc(s)+' <span style="opacity:.7;font-size:11px">('+cnt+')</span></button>';
@@ -832,7 +835,7 @@ function renderList(){
     const ausf=t.ausführungsdatum?formatDate(t.ausführungsdatum):'';
     const isRunning=t.id===runningTaskId;
     return '<div class="task-card" onclick="openDetail(\''+escAttr(t.id)+'\')">'
-      +'<div class="task-card-title">'+(isNotizBoard?'📋 ':'')+esc(t.title||'(ohne Titel)')+'</div>'
+      +'<div class="task-card-title">'+(isNotizBoard?'✅ ':'🏗 ')+esc(t.title||'(ohne Titel)')+'</div>'
       +'<div class="task-card-meta">'
       +(status&&!currentStatus?'<span class="badge status">'+esc(status)+'</span>':'')
       +(!isNotizBoard?'<span class="badge ampel-'+ampel+'">●</span>':'')
@@ -878,7 +881,9 @@ function renderDetail(t){
   // Board-Typ ermitteln (baustelle | notiz)
   const _tBoard=findBoardByTaskId(t.id)||currentBoard;
   const isNotiz=(boardTypes[_tBoard]||'baustelle')==='notiz';
-  const statusOpts=statuses.map(s=>'<option value="'+escAttr(s)+'"'+(s===t.status?' selected':'')+'>'+esc(s)+'</option>').join('');
+  // Board-spezifische Spalten nutzen (analog PC)
+  const _tBoardSts=(_remoteBoardStatuses[_tBoard]&&_remoteBoardStatuses[_tBoard].length)?_remoteBoardStatuses[_tBoard]:statuses;
+  const statusOpts=_tBoardSts.map(s=>'<option value="'+escAttr(s)+'"'+(s===t.status?' selected':'')+'>'+esc(s)+'</option>').join('');
   const kontakte=t.kontakte||[];
   const kontakteHtml=kontakte.map((k,i)=>renderKontakt(k,i)).join('');
   const termine=t.ausserhausTermine||[];
@@ -908,7 +913,7 @@ function renderDetail(t){
         +'</div>';
     })()
     // ── STAMMDATEN ──
-    +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'📋 Notiz':'🏗 Baustelle')+'</div><div class="sect-body">'
+    +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'✅ Aufgaben':'🏗 Baustelle')+'</div><div class="sect-body">'
       +'<div class="field"><label>Titel</label><input type="text" value="'+escAttr(t.title||'')+'" oninput="updateField(\'title\',this.value);document.getElementById(\'detailTitle\').textContent=this.value||\'(ohne Titel)\'"></div>'
       +'<div class="field-row"><div class="field"><label>Kostenstelle / Tags</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)"></div></div>'
       +(isNotiz
@@ -1744,7 +1749,7 @@ function newTask(){
   const title=prompt('Titel des neuen Tasks:');
   if(!title||!title.trim())return;
   const newT={
-    id:generateId(),title:title.trim(),desc:'',owner:'',due:'',status:statuses[0]||'',ampel:'grün',
+    id:generateId(),title:title.trim(),desc:'',owner:'',due:'',status:((_remoteBoardStatuses[currentBoard]&&_remoteBoardStatuses[currentBoard].length)?_remoteBoardStatuses[currentBoard]:statuses)[0]||'',ampel:'grün',
     ausführungsdatum:'',tags:[],source:'',hausverwaltung:'',adresse:'',schadensbild:'',
     kontakte:[],gdrive:'',gdriveOrdner:'',nas:'',links:[],attachments:[],timeEntries:[],
     ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]
