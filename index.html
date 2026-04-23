@@ -316,6 +316,7 @@ let currentStatus=''; // leer = alle Spalten
 let currentTaskId=null;
 let saveTimer=null;
 let dirty=false;
+let _dirtyTs=0; // Zeitstempel wann dirty=true gesetzt wurde (Polling-Block max. 60s)
 let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
 
 // ── UTILS ──
@@ -561,7 +562,16 @@ function _applyMobileFilter(data){
   statuses=Array.isArray(data._statuses)?data._statuses:[];
   mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
   _remoteBoardStatuses=(data._boardStatuses&&typeof data._boardStatuses==='object')?{...data._boardStatuses}:{};
-  boardTypes=(data._boardTypes&&typeof data._boardTypes==='object')?{...data._boardTypes}:{};
+  boardTypes=(data._boardTypes&&typeof data._boardTypes==='object'&&Object.keys(data._boardTypes).length)?{...data._boardTypes}:{};
+  // ── AUTO-MIGRATION: boardTypes aus Boardname ableiten wenn leer ──
+  if(!Object.keys(boardTypes).length){
+    const _np=/aufgab|notiz|todo|to[\s_-]do/i;
+    for(const k of Object.keys(data)){
+      if(k.startsWith('_')||!Array.isArray(data[k]))continue;
+      boardTypes[k]=_np.test(k)?'notiz':'baustelle';
+    }
+    if(Object.keys(boardTypes).length)console.info('[PTPm] boardTypes auto-migriert:',boardTypes);
+  }
   boards={};hiddenBoards={};
   const hasWhitelist=mobileWhitelist.length>0;
   for(const[k,v]of Object.entries(data)){
@@ -610,8 +620,9 @@ async function pollForChanges(){
   // Nicht während der User tippt
   const ae=document.activeElement;
   if(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName))return;
-  // Nicht während lokale Änderungen auf Speicherung warten
-  if(dirty)return;
+  // Nicht während lokale Änderungen auf Speicherung warten — aber max. 60s blockieren
+  // (verhindert dauerhaften Poll-Stopp wenn Speichern wiederholt scheitert)
+  if(dirty&&(Date.now()-_dirtyTs)<60000)return;
   try{
     if(!(await ensureToken()))return;
     const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime&_='+Date.now(),
@@ -742,8 +753,26 @@ async function saveFile(){
     const content=JSON.stringify(obj,null,2);
     const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media&fields=modifiedTime',
       {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:content});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    try{const rm=await r.json();if(rm&&rm.modifiedTime)fileLastModified=rm.modifiedTime;}catch(e){console.warn('[PTP-Mobile]',e);}
+    // 401 → Token still erneuern und einmal sofort Retry
+    if(r.status===401){
+      setSaveInd('saving','Token erneuern…');
+      const ok=await silentRefresh();
+      if(ok){
+        // Einmaliger direkter Retry nach Token-Erneuerung
+        const r2=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media&fields=modifiedTime',
+          {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:content});
+        if(!r2.ok)throw new Error('HTTP '+r2.status+' (nach Token-Refresh)');
+        try{const rm2=await r2.json();if(rm2&&rm2.modifiedTime)fileLastModified=rm2.modifiedTime;}catch(e){}
+      } else {
+        showLogin('Bitte erneut anmelden');
+        dirty=false;
+        return;
+      }
+    } else if(!r.ok){
+      throw new Error('HTTP '+r.status);
+    } else {
+      try{const rm=await r.json();if(rm&&rm.modifiedTime)fileLastModified=rm.modifiedTime;}catch(e){console.warn('[PTP-Mobile]',e);}
+    }
     _saveMobileBackup(); // Lokales Backup nach erfolgreichem Speichern
     setSaveInd('saved','✓ Gespeichert');
     dirty=false;
@@ -754,25 +783,34 @@ async function saveFile(){
     if(!currentTaskId){try{renderList();}catch(e){}}
   }catch(e){
     _saveMobileBackup(); // Lokal sichern wenn Drive nicht erreichbar
-    setSaveInd('error','✗ Gesichert (Drive-Fehler)');
-    // Automatischer Retry — sonst gehen Notizen/Zeiten verloren wenn das Netz kurz weg ist
     _saveRetryCount=(_saveRetryCount||0)+1;
     if(_saveRetryCount<=3){
+      setSaveInd('error','✗ Fehler – Retry '+_saveRetryCount+'/3…');
       const delay=1500*_saveRetryCount;
       clearTimeout(saveTimer);
       saveTimer=setTimeout(()=>{saveFile();},delay);
+    } else {
+      // Max Retries überschritten: dirty zurücksetzen damit Polling wieder läuft
+      // Backup wurde gesichert – Remote-Stand laden um wieder konsistent zu sein
+      setSaveInd('error','✗ Sync fehlgeschlagen – lade Remote-Stand');
+      dirty=false;
+      _saveRetryCount=0;
+      setTimeout(async()=>{
+        try{await loadFile();renderList();toast('⚠ Offline-Backup gesichert. Remote-Stand geladen.','error',5000);}
+        catch(ex){console.warn('[PTP-Mobile] Fallback-Load:',ex);}
+      },1000);
     }
   }
 }
 function scheduleSave(){
-  dirty=true;
+  dirty=true;_dirtyTs=Date.now();
   setSaveInd('saving','…');
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{saveFile();},1200);
 }
 // Sofort-Speichern (nicht debouncen) — für strukturelle Änderungen wie addNotiz/addZeit/addTermin
 function forceSave(){
-  dirty=true;
+  dirty=true;_dirtyTs=Date.now();
   clearTimeout(saveTimer);
   saveFile();
 }
