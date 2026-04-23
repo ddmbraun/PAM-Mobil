@@ -257,6 +257,16 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
       </div>
     </div>
     <div class="sect open">
+      <div class="sect-head" onclick="toggleMSect(this.parentElement)">📁 Datei wechseln</div>
+      <div class="sect-body">
+        <div class="field"><label>Google Drive – Datei-URL oder ID</label>
+          <input type="url" id="manualFileInput" placeholder="https://drive.google.com/file/d/…" style="width:100%;box-sizing:border-box;">
+        </div>
+        <button class="inline-btn primary" style="width:100%;margin-bottom:8px" onclick="connectManualFile()">🔗 Verbinden</button>
+        <button class="inline-btn" style="width:100%;margin-bottom:8px" onclick="searchAndConnectFile()">🔍 Automatisch suchen</button>
+      </div>
+    </div>
+    <div class="sect open">
       <div class="sect-head" onclick="toggleMSect(this.parentElement)">Aktionen</div>
       <div class="sect-body">
         <button class="inline-btn" style="width:100%;margin-bottom:8px" onclick="refreshData()">🔄 Daten neu laden</button>
@@ -1055,15 +1065,16 @@ function renderDetail(t){
     // ── E-MAIL VORSCHAU (nur lesen, PDFs vom PC) ──
     +(()=>{
       const pdfs=t.emailPdfs||[];
-      if(!pdfs.length)return '';
-      const items=pdfs.map(p=>'<a href="'+escAttr(p.url||'')+'" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;text-decoration:none;color:var(--text);margin-bottom:6px;">'
-        +'<span style="font-size:22px;flex-shrink:0;">📄</span>'
-        +'<span style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(p.name||'E-Mail PDF')+'</div>'
-        +(p.uploadedAt?'<div style="font-size:11px;color:var(--text2);">'+esc(p.uploadedAt)+'</div>':'')
-        +'</span>'
-        +'<span style="font-size:18px;flex-shrink:0;opacity:.6">↗</span>'
-        +'</a>').join('');
-      return '<div class="sect'+oc('EmailPdfs')+'" data-sect="EmailPdfs"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📧 E-Mail Vorschau ('+pdfs.length+')</div><div class="sect-body">'+items+'</div></div>';
+      const items=pdfs.length
+        ? pdfs.map(p=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:6px;">'
+            +'<span style="font-size:22px;flex-shrink:0;">📄</span>'
+            +'<span style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(p.name||'E-Mail PDF')+'</div>'
+            +(p.uploadedAt?'<div style="font-size:11px;color:var(--text2);">'+esc(p.uploadedAt)+'</div>':'')
+            +'</span>'
+            +'<a href="'+escAttr(p.url||'')+'" target="_blank" rel="noopener" style="flex-shrink:0;padding:7px 12px;background:var(--accent);color:#fff;border-radius:7px;font-size:12px;font-weight:600;text-decoration:none;">👁 Öffnen</a>'
+            +'</div>').join('')
+        : '<div style="color:var(--text2);font-size:12px;padding:8px 4px;">Noch keine E-Mail PDFs – auf dem PC eine .eml in den Task hineinziehen.</div>';
+      return '<div class="sect'+oc('EmailPdfs')+'" data-sect="EmailPdfs"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📧 E-Mail Vorschau'+(pdfs.length?' ('+pdfs.length+')':'')+'</div><div class="sect-body">'+items+'</div></div>';
     })()
     // ── FOTOS & ANHÄNGE (nur Baustelle) ──
     +(!isNotiz?'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos & Anhänge ('+medienCount+')</div><div class="sect-body">'
@@ -1905,6 +1916,41 @@ function openSettings(){
 function closeSettings(){
   document.getElementById('settingsScreen').classList.add('hidden');
   document.getElementById('listScreen').classList.remove('hidden');
+}
+async function connectManualFile(){
+  const inp=document.getElementById('manualFileInput');
+  const val=(inp?inp.value:'').trim();
+  if(!val){toast('Bitte eine Drive-URL oder Datei-ID eingeben','error');return;}
+  // ID aus URL extrahieren
+  let id=val;
+  const m=val.match(/\/d\/([a-zA-Z0-9_-]{10,})/)||val.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if(m)id=m[1];
+  if(!id||id.length<10){toast('Ungültige Drive-URL oder ID','error');return;}
+  if(!(await ensureToken())){toast('Bitte zuerst anmelden','error');return;}
+  toast('⏳ Verbinde…','info');
+  try{
+    const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?fields=id,name,mimeType',{headers:{Authorization:'Bearer '+gdriveToken}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const meta=await r.json();
+    fileId=meta.id;fileName=meta.name||'workboard.json';
+    try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){}
+    const ok=await loadFile();
+    if(ok){if(inp)inp.value='';closeSettings();renderList();toast('✓ Verbunden: '+fileName,'success');}
+    else{toast('Datei konnte nicht geladen werden','error');}
+  }catch(e){toast('Fehler: '+e.message,'error');}
+}
+async function searchAndConnectFile(){
+  if(!(await ensureToken())){toast('Bitte zuerst anmelden','error');return;}
+  toast('🔍 Suche workboard.json…','info');
+  try{
+    const found=await _searchWorkboardInDrive();
+    if(!found){toast('Keine workboard.json gefunden','error');return;}
+    fileId=found.id;fileName=found.name||'workboard.json';
+    try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){}
+    const ok=await loadFile();
+    if(ok){closeSettings();renderList();toast('✓ Verbunden: '+fileName,'success');}
+    else{toast('Datei konnte nicht geladen werden','error');}
+  }catch(e){toast('Fehler: '+e.message,'error');}
 }
 
 // ══ START ══
