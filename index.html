@@ -1005,6 +1005,10 @@ function renderDetail(t){
           +(running?' disabled':'')
           +' value="'+escAttr(savedDesc)+'"'
           +' style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;">'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;margin-bottom:10px;">'
+        +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📷 Fotos in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📷 kein Foto-Ordner</span>')
+        +(t.gdriveOrdner?'<a href="'+escAttr(t.gdriveOrdner)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📎 Anhänge in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📎 kein Anhang-Ordner</span>')
         +'</div>';
     })()
     // ── STAMMDATEN ──
