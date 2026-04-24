@@ -43,8 +43,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .status-chip{background:var(--bg3);border:2px solid var(--border);color:var(--text2);padding:7px 13px;border-radius:18px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;min-height:36px;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
 .status-chip:active{transform:scale(.96)}
 .status-chip.active{background:var(--bg2);border-color:var(--orange);color:var(--orange);font-weight:600}
-.search-bar{padding:10px 12px;background:var(--bg2);border-bottom:1px solid var(--border)}
-.search-bar{position:relative}
+.search-bar{padding:10px 12px;background:var(--bg2);border-bottom:1px solid var(--border);position:relative}
 .search-bar input{width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 36px 10px 12px;border-radius:8px;font-size:15px}
 .search-clear{position:absolute;right:20px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;padding:4px;line-height:1;display:none}
 .task-list{flex:1;overflow-y:auto;padding:8px 10px 80px;-webkit-overflow-scrolling:touch}
@@ -437,7 +436,7 @@ async function afterLogin(){
 function tokenValid(){return gdriveToken&&Date.now()<gdriveTokenExpires;}
 function _scheduleGdriveRefresh(expiresIn){
   clearTimeout(_gdriveRefreshTimer);
-  const delay=Math.max(10000,(expiresIn-300))*1000;
+  const delay=Math.max(10000,(expiresIn-300)*1000);
   _gdriveRefreshTimer=setTimeout(()=>{
     initTokenClient();
     if(!gdriveTokenClient)return;
