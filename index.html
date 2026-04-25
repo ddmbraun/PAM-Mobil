@@ -997,14 +997,14 @@ function renderDetail(t){
       const ts=_loadTimerState();
       const savedDesc=(ts&&ts.taskId===t.id?ts.beschreibung:'')||'';
       return '<div id="timerBar" class="timer-bar top'+(running?' running':'')+'" style="flex-direction:column;gap:6px;">'
-        +'<div style="display:flex;gap:8px;align-items:center;width:100%;">'
+        +'<div style="display:flex;gap:8px;align-items:stretch;width:100%;min-height:44px;">'
           +'<div id="timerDisplay" class="timer-display'+(running?' running':'')+'">'+formatTimerFor(t.id)+'</div>'
           +'<button id="timerBtn" class="timer-btn '+(running?'stop':'start')+'" onclick="toggleMobileTimer(\''+escAttr(t.id)+'\')" style="flex-shrink:0;">'+(running?'⏹ Stopp':'▶ Start')+'</button>'
         +'</div>'
         +'<input id="timerDesc" type="text" placeholder="Tätigkeitsbeschreibung vor dem Start eingeben…" maxlength="120"'
           +(running?' disabled':'')
           +' value="'+escAttr(savedDesc)+'"'
-          +' style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;">'
+          +' style="width:100%;box-sizing:border-box;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;outline:none;min-height:44px;">'
         +'</div>'
         +'<div style="display:flex;gap:8px;margin-bottom:10px;">'
         +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📷 Fotos in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📷 kein Foto-Ordner</span>')
@@ -2762,7 +2762,7 @@ function _openEmailThumbnailGridMob(){
     } else {
       previewArea.innerHTML='<span style="font-size:52px">📄</span>';
     }
-    tile.onclick=()=>{_closeGrid();_mobOpenEmailGallery(pi);};
+    tile.onclick=()=>{_mobOpenEmailGallery(pi);};
     const label=document.createElement('div');
     label.style.cssText='padding:7px 9px;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-top:1px solid var(--border);';
     label.textContent='📄 '+(p.name||'E-Mail PDF');
@@ -2829,7 +2829,6 @@ function _openAttachThumbnailGridMob(){
       previewArea.innerHTML='<span style="font-size:42px">'+attachIconMob(a.type)+'</span>';
     }
     tile.onclick=()=>{
-      _closeGrid();
       if(isImg) openAttachMob(i);
       else{const ni=nonImgItems.findIndex(x=>x.i===i);_openAttachGalleryMob(ni>=0?ni:i);}
     };
