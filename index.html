@@ -727,7 +727,7 @@ async function saveFile(){
                       if((lv===''||lv===null||lv===undefined)&&rv){mergedTask[f]=rv;}
                     }
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','checkliste','kontakte','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','bauOrdner'];
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','checkliste','kontakte','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','bauOrdner','pruefberichte'];
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
                     mergedTask.notizVerlauf=_mergeListByKey(rt.notizVerlauf,localTask.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
                     mergedTask.zeitEntries=_mergeListByKey(rt.zeitEntries,localTask.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
@@ -735,7 +735,6 @@ async function saveFile(){
                     mergedTask.fotos=_mergeListByKey(rt.fotos,localTask.fotos,f=>(f.id||f.driveId||f.path||f.name||''));
                     mergedTask.attachments=_mergeListByKey(rt.attachments,localTask.attachments,f=>((f.name||'')+'|'+(f.size||0)));
                     mergedTask.timeEntries=_mergeListByKey(rt.timeEntries,localTask.timeEntries,e=>String(e.start||''));
-                    mergedTask.pruefberichte=_mergeListByKey(rt.pruefberichte,localTask.pruefberichte,b=>(b.id||b.createdAt||((b.titel||'')+'|'+(b.datum||''))));
                     remoteVisible[bn][idx]=mergedTask;
                     placed=true;break;
                   }
