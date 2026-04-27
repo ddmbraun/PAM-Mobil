@@ -1243,7 +1243,7 @@ function _openWartungsprotokollMobil(existingIdx){
   hdr.append(closeBtn,hdrMeta,statsEl);
 
   const body=document.createElement('div');
-  body.style.cssText='flex:1;overflow-y:auto;padding:0 0 90px;';
+  body.style.cssText='flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:0 0 90px;';
 
   const statDef=[
     {v:'ok',   label:'OK',    col:'#1a7a3c',bg:'#e6f5ec'},
@@ -1325,29 +1325,42 @@ function _openWartungsprotokollMobil(existingIdx){
       sekDiv.appendChild(sekHdr);
 
       sek.items.forEach((it)=>{
+        if(!it.fotoRefs)it.fotoRefs=[];
+        const _mobRowBg=()=>{
+          if(it.status==='mangel')return 'rgba(192,57,43,.06)';
+          if(it.status==='repariert')return 'rgba(41,128,185,.06)';
+          if(it.status==='ok')return 'rgba(26,122,60,.05)';
+          return 'transparent';
+        };
         const row=document.createElement('div');
-        row.style.cssText='padding:10px 14px;border-bottom:1px solid var(--border);';
+        row.style.cssText='padding:10px 14px;border-bottom:1px solid var(--border);border-radius:6px;margin:2px 0;background:'+_mobRowBg()+';transition:background .2s;';
         const txt=document.createElement('div');
-        txt.style.cssText='font-size:13px;color:var(--text);line-height:1.35;margin-bottom:8px;';
+        txt.style.cssText='font-size:13px;color:var(--text);line-height:1.35;margin-bottom:8px;font-weight:500;';
         txt.textContent=it.text;
 
         /* 4 Status-Buttons nebeneinander */
         const btnRow=document.createElement('div');
         btnRow.style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:5px;';
+        const _iconMapM={ok:'✓ OK',nv:'– N/V',mangel:'⚠ Mängel',repariert:'✔ Rep.'};
         statDef.forEach(s=>{
-          const btn=document.createElement('button');btn.type='button';btn.textContent=s.label;
+          const btn=document.createElement('button');btn.type='button';
+          btn.textContent=_iconMapM[s.v]||s.label;
           const on=it.status===s.v;
-          btn.style.cssText='padding:7px 4px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;text-align:center;border:2px solid '+(on?s.col:'var(--border)')+';background:'+(on?s.bg:'transparent')+';color:'+(on?s.col:'var(--text2)')+';';
+          btn.style.cssText='padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;border:2px solid '+(on?s.col:'var(--border)')+';background:'+(on?s.bg:'transparent')+';color:'+(on?s.col:'var(--text2)')+';box-shadow:'+(on?'0 1px 4px '+s.col+'44':'none')+';';
           btn.onclick=()=>{
             it.status=it.status===s.v?'offen':s.v;
+            row.style.background=_mobRowBg();
             scheduleSave();_wpMobStats();
             const mw=row.querySelector('.wpm-mw');
             if(mw)mw.style.display=(it.status==='mangel'||it.status==='repariert')?'block':'none';
+            const fra=row.querySelector('.wpm-foto-refs');
+            if(fra)fra.style.display=(it.status==='mangel'||it.status==='repariert')?'block':'none';
             btnRow.querySelectorAll('button').forEach((b2,bi)=>{
               const s2=statDef[bi];const on2=it.status===s2.v;
               b2.style.borderColor=on2?s2.col:'var(--border)';
               b2.style.background=on2?s2.bg:'transparent';
               b2.style.color=on2?s2.col:'var(--text2)';
+              b2.style.boxShadow=on2?'0 1px 4px '+s2.col+'44':'none';
             });
           };
           btnRow.appendChild(btn);
@@ -1357,17 +1370,53 @@ function _openWartungsprotokollMobil(existingIdx){
         massnWrap.style.cssText='margin-top:6px;display:'+(it.status==='mangel'||it.status==='repariert'?'block':'none')+';';
         const massnIn=document.createElement('input');massnIn.type='text';
         massnIn.placeholder='Zusätzliche Maßnahmen…';massnIn.value=it.massnahmen||'';massnIn.autocomplete='off';
-        massnIn.style.cssText='width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 8px;font-size:13px;color:var(--text);';
+        massnIn.style.cssText='width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font-size:13px;color:var(--text);font-family:inherit;';
         massnIn.oninput=()=>{it.massnahmen=massnIn.value;scheduleSave();};
         massnWrap.appendChild(massnIn);
+
+        /* Foto-Verknüpfung pro Mängel-Item */
+        const fotoRefArea=document.createElement('div');
+        fotoRefArea.className='wpm-foto-refs';
+        fotoRefArea.style.cssText='margin-top:8px;display:'+(it.status==='mangel'||it.status==='repariert'?'block':'none')+';';
+        const _mobRenderFotoRefs=()=>{
+          fotoRefArea.innerHTML='';
+          const thumbRow=document.createElement('div');
+          thumbRow.style.cssText='display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px;';
+          (it.fotoRefs||[]).forEach((refId,ri)=>{
+            const th=document.createElement('div');
+            th.style.cssText='position:relative;width:52px;height:52px;border-radius:7px;overflow:hidden;border:1.5px solid var(--border);background:var(--bg3);flex-shrink:0;';
+            const rmv=document.createElement('button');rmv.type='button';rmv.textContent='✕';
+            rmv.style.cssText='position:absolute;top:2px;right:2px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:8px;cursor:pointer;padding:0;line-height:16px;text-align:center;z-index:2;';
+            rmv.onclick=(e)=>{e.stopPropagation();it.fotoRefs.splice(ri,1);scheduleSave();_mobRenderFotoRefs();};
+            const f=bericht.fotos.find(f=>f.driveId===refId||f.localUrl===refId);
+            if(f){
+              const img=document.createElement('img');
+              img.style.cssText='width:100%;height:100%;object-fit:cover;';
+              if(f.localUrl)img.src=f.localUrl;
+              else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
+                fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
+                  .then(r=>r.blob()).then(b=>{img.src=URL.createObjectURL(b);}).catch(()=>{});
+              }
+              th.appendChild(img);
+            }
+            th.append(rmv);
+            thumbRow.appendChild(th);
+          });
+          const lnkBtn=document.createElement('button');lnkBtn.type='button';lnkBtn.textContent='📷 Foto verknüpfen';
+          lnkBtn.style.cssText='font-size:12px;padding:6px 12px;border-radius:8px;border:1.5px solid #c0392b;background:rgba(192,57,43,.08);color:#c0392b;cursor:pointer;font-weight:600;';
+          lnkBtn.onclick=()=>_wpMobFotoPickerForItem(bericht,it,_mobRenderFotoRefs);
+          thumbRow.appendChild(lnkBtn);
+          fotoRefArea.appendChild(thumbRow);
+        };
+        _mobRenderFotoRefs();
 
         if(it.status!=='mangel'&&it.status!=='repariert'&&!it.massnahmen){
           const mBtn=document.createElement('button');mBtn.type='button';mBtn.textContent='+ Maßnahmen';
           mBtn.style.cssText='margin-top:5px;font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;';
           mBtn.onclick=()=>{massnWrap.style.display='block';mBtn.remove();massnIn.focus();};
-          row.append(txt,btnRow,mBtn,massnWrap);
+          row.append(txt,btnRow,mBtn,massnWrap,fotoRefArea);
         } else {
-          row.append(txt,btnRow,massnWrap);
+          row.append(txt,btnRow,massnWrap,fotoRefArea);
         }
         sekDiv.appendChild(row);
       });
@@ -1444,27 +1493,143 @@ function _openWartungsprotokollMobil(existingIdx){
 function _wpMobRenderFotos(bericht,grid){
   grid.innerHTML='';
   if(!bericht.fotos||!bericht.fotos.length){
-    const h=document.createElement('div');h.style.cssText='grid-column:1/-1;font-size:12px;color:var(--text2);padding:4px 0;';
+    const h=document.createElement('div');h.style.cssText='grid-column:1/-1;font-size:12px;color:var(--text2);padding:8px 14px;';
     h.textContent='Noch keine Fotos.';grid.appendChild(h);return;
   }
-  bericht.fotos.forEach((f)=>{
+  bericht.fotos.forEach((f,fi)=>{
     const cell=document.createElement('div');
-    cell.style.cssText='position:relative;border:2px solid '+(f.inReport?'#1a7a3c':'var(--border)')+';border-radius:8px;overflow:hidden;cursor:pointer;background:var(--bg3);aspect-ratio:1;';
-    cell.onclick=()=>{f.inReport=!f.inReport;cell.style.borderColor=f.inReport?'#1a7a3c':'var(--border)';const b=cell.querySelector('.wpmb');if(b)b.style.display=f.inReport?'flex':'none';scheduleSave();};
-    if(f.localUrl){const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;';cell.appendChild(img);}
+    cell.style.cssText='position:relative;border:2px solid '+(f.inReport?'#1a7a3c':'var(--border)')+';border-radius:8px;overflow:hidden;background:var(--bg3);aspect-ratio:1;';
+    // Einfachklick = PDF-Auswahl, Doppeltap = öffnen
+    let _tapTimer=null;
+    cell.onclick=()=>{
+      if(_tapTimer){clearTimeout(_tapTimer);_tapTimer=null;_wpMobOpenFoto(bericht,fi);return;}
+      _tapTimer=setTimeout(()=>{
+        _tapTimer=null;
+        f.inReport=!f.inReport;
+        cell.style.borderColor=f.inReport?'#1a7a3c':'var(--border)';
+        const badge=cell.querySelector('.wpmb');if(badge)badge.style.display=f.inReport?'flex':'none';
+        scheduleSave();
+      },280);
+    };
+    if(f.localUrl){const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';cell.appendChild(img);}
     else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
-      const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;';
-      fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}}).then(r=>r.blob()).then(blob=>{img.src=URL.createObjectURL(blob);}).catch(()=>{});
+      const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
+      fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
+        .then(r=>r.blob()).then(b=>{img.src=URL.createObjectURL(b);}).catch(()=>{});
       cell.appendChild(img);
     }
     const badge=document.createElement('div');badge.className='wpmb';
     badge.style.cssText='display:'+(f.inReport?'flex':'none')+';position:absolute;top:3px;right:3px;background:#1a7a3c;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;align-items:center;justify-content:center;font-weight:700;';
     badge.textContent='✓';
-    const nl=document.createElement('div');nl.style.cssText='position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:8px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    const delB=document.createElement('button');delB.type='button';delB.textContent='✕';
+    delB.style.cssText='position:absolute;bottom:3px;right:3px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;padding:0;line-height:20px;text-align:center;z-index:3;';
+    delB.onclick=(e)=>{e.stopPropagation();bericht.fotos.splice(fi,1);scheduleSave();_wpMobRenderFotos(bericht,grid);};
+    const nl=document.createElement('div');nl.style.cssText='position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:8px;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;';
     nl.textContent=f.name||'Foto';
-    cell.append(badge,nl);grid.appendChild(cell);
+    cell.append(badge,delB,nl);grid.appendChild(cell);
   });
 }
+
+function _wpMobOpenFoto(bericht,startIdx){
+  const fotos=(bericht.fotos||[]);
+  if(!fotos.length)return;
+  let cur=Math.min(startIdx,fotos.length-1);
+  const GID='_wpMobFotoViewer';const old=document.getElementById(GID);if(old)old.remove();
+  const ov=document.createElement('div');ov.id=GID;
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:#000;display:flex;flex-direction:column;';
+  const topBar=document.createElement('div');
+  topBar.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 14px;flex-shrink:0;';
+  const lbl=document.createElement('div');lbl.style.cssText='color:#fff;font-size:13px;font-weight:600;flex:1;';
+  const closeX=document.createElement('button');closeX.type='button';closeX.textContent='✕';
+  closeX.style.cssText='background:rgba(255,255,255,.15);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:16px;cursor:pointer;';
+  closeX.onclick=()=>ov.remove();
+  topBar.append(lbl,closeX);
+  const imgWrap=document.createElement('div');
+  imgWrap.style.cssText='flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;';
+  const imgEl=document.createElement('img');
+  imgEl.style.cssText='max-width:100%;max-height:100%;object-fit:contain;touch-action:pinch-zoom;';
+  imgWrap.appendChild(imgEl);
+  const navBar=document.createElement('div');
+  navBar.style.cssText='display:flex;justify-content:space-between;padding:10px 14px;flex-shrink:0;';
+  const prevBtn=document.createElement('button');prevBtn.type='button';prevBtn.textContent='◀ Zurück';
+  prevBtn.style.cssText='padding:10px 20px;border-radius:20px;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:14px;font-weight:600;cursor:pointer;';
+  prevBtn.onclick=()=>{if(cur>0){cur--;_showMobFoto();}};
+  const nextBtn=document.createElement('button');nextBtn.type='button';nextBtn.textContent='Weiter ▶';
+  nextBtn.style.cssText='padding:10px 20px;border-radius:20px;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:14px;font-weight:600;cursor:pointer;';
+  nextBtn.onclick=()=>{if(cur<fotos.length-1){cur++;_showMobFoto();}};
+  navBar.append(prevBtn,nextBtn);
+  function _showMobFoto(){
+    const f=fotos[cur];
+    lbl.textContent=(f.name||'Foto '+(cur+1))+' ('+(cur+1)+'/'+fotos.length+')';
+    imgEl.src='';imgEl.alt='Lade…';
+    if(f.localUrl){imgEl.src=f.localUrl;}
+    else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
+      fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
+        .then(r=>r.blob()).then(b=>{imgEl.src=URL.createObjectURL(b);}).catch(()=>{imgEl.alt='Fehler';});
+    }
+    prevBtn.style.opacity=cur>0?'1':'0.3';
+    nextBtn.style.opacity=cur<fotos.length-1?'1':'0.3';
+  }
+  ov.append(topBar,imgWrap,navBar);
+  document.body.appendChild(ov);
+  _showMobFoto();
+}
+
+function _wpMobFotoPickerForItem(bericht,it,onChangeCb){
+  const fotos=(bericht.fotos||[]);
+  if(!fotos.length){toast('Bitte zuerst Fotos laden','info');return;}
+  const GID='_wpMobFotoPicker';const old=document.getElementById(GID);if(old)old.remove();
+  const ov=document.createElement('div');ov.id=GID;
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg);border-radius:16px 16px 0 0;padding:16px;width:100%;max-height:75vh;display:flex;flex-direction:column;gap:10px;';
+  box.onclick=e=>e.stopPropagation();
+  const hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:700;color:var(--text);';
+  hdr.innerHTML='📷 Foto verknüpfen';
+  const cX=document.createElement('button');cX.type='button';cX.textContent='✕';
+  cX.style.cssText='background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;';
+  cX.onclick=()=>ov.remove();hdr.appendChild(cX);
+  const hint=document.createElement('div');
+  hint.style.cssText='font-size:12px;color:var(--text2);';
+  hint.textContent='Zum: '+it.text;
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;';
+  fotos.forEach((f,fi)=>{
+    const cell=document.createElement('div');
+    const linked=(it.fotoRefs||[]).includes(f.driveId||f.localUrl||'');
+    cell.style.cssText='position:relative;border:2px solid '+(linked?'#c0392b':'var(--border)')+';border-radius:8px;overflow:hidden;background:var(--bg3);aspect-ratio:1;cursor:pointer;';
+    cell.onclick=()=>{
+      if(!it.fotoRefs)it.fotoRefs=[];
+      const key=f.driveId||f.localUrl||'';
+      const ix=it.fotoRefs.indexOf(key);
+      if(ix>=0)it.fotoRefs.splice(ix,1);else it.fotoRefs.push(key);
+      const lk=it.fotoRefs.includes(key);
+      cell.style.borderColor=lk?'#c0392b':'var(--border)';
+      const fpb=cell.querySelector('.fpbm');if(fpb)fpb.style.display=lk?'flex':'none';
+      scheduleSave();if(onChangeCb)onChangeCb();
+    };
+    if(f.localUrl){const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';cell.appendChild(img);}
+    else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
+      const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
+      fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
+        .then(r=>r.blob()).then(b=>{img.src=URL.createObjectURL(b);}).catch(()=>{});
+      cell.appendChild(img);
+    }
+    const fpb=document.createElement('div');fpb.className='fpbm';
+    fpb.style.cssText='display:'+(linked?'flex':'none')+';position:absolute;top:3px;right:3px;background:#c0392b;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;align-items:center;justify-content:center;font-weight:700;';
+    fpb.textContent='✓';
+    cell.appendChild(fpb);grid.appendChild(cell);
+  });
+  const doneBtn=document.createElement('button');doneBtn.type='button';doneBtn.textContent='✓ Fertig';
+  doneBtn.style.cssText='width:100%;padding:12px;border-radius:10px;background:#1a5c3a;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
+  doneBtn.onclick=()=>ov.remove();
+  box.append(hdr,hint,grid,doneBtn);
+  ov.appendChild(box);
+  ov.onclick=()=>ov.remove();
+  document.body.appendChild(ov);
+}
+
 
 function _wpMobFotoAufnehmen(bericht,grid,camera){
   const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
