@@ -1147,6 +1147,449 @@ async function _generatePruefPdf(bericht,task){
   }catch(e){console.error('Pruef-PDF Fehler:',e);toast('PDF-Fehler: '+e.message,'error');}
 }
 
+/* ══ WARTUNGSPROTOKOLL FLACHDACH (Mobil) ═══════════════════════════════════ */
+const WP_SEKTIONEN_DEF_MOB=[
+  {titel:'1. Sichtprüfung der Dachhaut',items:[
+    'Risse oder Blasenbildung',
+    'Mechanische Beschädigungen',
+    'Zustand des Oberflächenschutzes (Kies, Begrünung)'
+  ]},
+  {titel:'2. Sicherheitseinrichtungen',items:[
+    'Fest montierte Anschlusspunkte',
+    'Geländer',
+    'Sicherheitsseile'
+  ]},
+  {titel:'3. Entwässerung',items:[
+    'Sichtprüfung der Dachgullys',
+    'Sichtprüfung der Dachrinne',
+    'Sichtprüfung der Einbauteile'
+  ]},
+  {titel:'4. Anschlüsse & Ränder',items:[
+    'Wandanschlüsse',
+    'Sichtprüfung aller Silikonfugen',
+    'Sichtprüfung der Dachrandbleche',
+    'Sichtprüfung Mauerabdeckungen',
+    'Sichtprüfung Anschlüsse (Attika, Wand, Aufbauten)'
+  ]},
+  {titel:'5. Aufbauten / Sicherheitsausstattung',items:[
+    'Lichtkuppeln / Dachausstieg',
+    'Sichtprüfung Dunstrohre',
+    'Anschluss an Schornsteine',
+    'Anschluss an Dachdurchdringungen'
+  ]}
+];
+
+function _wpMobNeuerBericht(t){
+  return {
+    id:'wp_'+Date.now(),vorlage:'wartungsprotokoll',
+    titel:'Wartungsprotokoll Flachdach',
+    datum:new Date().toLocaleDateString('de-DE'),
+    createdAt:new Date().toISOString(),
+    kopf:{auftraggeber:t.hausverwaltung||'',kostenstelle:t.repNr||t.kundenNr||'',
+      objektAdresse:t.adresse||t.title||'',
+      abdichtung:[],oberflaechenschutz:[],entwaesserung:[],sicherheit:[]},
+    sektionen:WP_SEKTIONEN_DEF_MOB.map(s=>({titel:s.titel,items:s.items.map(text=>({text,status:'offen',massnahmen:''}))})),
+    maengelEmpfehlungen:'',fotos:[],techniker:''
+  };
+}
+
+function _openWartungsprotokollMobil(existingIdx){
+  const t=currentTask();if(!t)return;
+  if(!t.pruefberichte)t.pruefberichte=[];
+  let bericht;
+  if(typeof existingIdx==='number'&&t.pruefberichte[existingIdx]&&t.pruefberichte[existingIdx].vorlage==='wartungsprotokoll'){
+    bericht=t.pruefberichte[existingIdx];
+  } else {
+    bericht=_wpMobNeuerBericht(t);
+    t.pruefberichte.push(bericht);existingIdx=t.pruefberichte.length-1;scheduleSave();
+  }
+
+  const GID='_wpMobOverlay';const old=document.getElementById(GID);if(old)old.remove();
+  const ov=document.createElement('div');ov.id=GID;
+  ov.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;background:var(--bg);';
+
+  /* Header */
+  const hdr=document.createElement('div');
+  hdr.style.cssText='background:#1a5c3a;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;';
+  const closeBtn=document.createElement('button');closeBtn.type='button';
+  closeBtn.textContent='←';
+  closeBtn.style.cssText='background:rgba(255,255,255,.2);border:none;color:#fff;width:32px;height:32px;border-radius:8px;font-size:18px;cursor:pointer;flex-shrink:0;';
+  closeBtn.onclick=()=>ov.remove();
+  const hdrMeta=document.createElement('div');hdrMeta.style.cssText='flex:1;min-width:0;';
+  hdrMeta.innerHTML='<div style="font-size:14px;font-weight:700;color:#fff;">🏠 Wartungsprotokoll Flachdach</div>'
+    +'<div style="font-size:11px;color:rgba(255,255,255,.75);">'+(t.adresse||t.title||'Baustelle')+' · '+bericht.datum+'</div>';
+  const statsEl=document.createElement('div');statsEl.id='_wpMobStats';
+  statsEl.style.cssText='background:rgba(255,255,255,.15);border-radius:6px;padding:3px 8px;font-size:11px;color:#fff;white-space:nowrap;flex-shrink:0;';
+  hdr.append(closeBtn,hdrMeta,statsEl);
+
+  const body=document.createElement('div');
+  body.style.cssText='flex:1;overflow-y:auto;padding:0 0 90px;';
+
+  const statDef=[
+    {v:'ok',   label:'OK',    col:'#1a7a3c',bg:'#e6f5ec'},
+    {v:'nv',   label:'N/V',   col:'#888',   bg:'var(--bg3)'},
+    {v:'mangel',label:'Mängel',col:'#c0392b',bg:'#fdecea'},
+    {v:'repariert',label:'Rep.',col:'#2980b9',bg:'#e8f4fc'}
+  ];
+
+  function _wpMobStats(){
+    let ok=0,nv=0,mg=0,rep=0,of=0;
+    bericht.sektionen.forEach(s=>s.items.forEach(it=>{
+      if(it.status==='ok')ok++;else if(it.status==='nv')nv++;else if(it.status==='mangel')mg++;else if(it.status==='repariert')rep++;else of++;
+    }));
+    const tot=bericht.sektionen.reduce((a,s)=>a+s.items.length,0);
+    const el=document.getElementById('_wpMobStats');
+    if(el)el.textContent=(tot-of)+'/'+tot+(mg?' · ⚠'+mg:'');
+  }
+
+  function _wpMobRender(){
+    body.innerHTML='';
+
+    /* ── Kopfdaten ── */
+    const kopfSek=document.createElement('div');
+    kopfSek.style.cssText='background:var(--bg2);border-bottom:1px solid var(--border);';
+    const kopfHdr=document.createElement('div');
+    kopfHdr.style.cssText='padding:10px 14px 6px;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;';
+    kopfHdr.textContent='Auftragsdaten & Dachaufbau';
+    kopfSek.appendChild(kopfHdr);
+
+    function _mf(label,key,placeholder){
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;padding:8px 14px;border-top:1px solid var(--border);gap:10px;';
+      const lbl=document.createElement('span');lbl.style.cssText='font-size:12px;color:var(--text2);min-width:105px;flex-shrink:0;';lbl.textContent=label;
+      const inp=document.createElement('input');inp.type='text';inp.value=bericht.kopf[key]||'';inp.placeholder=placeholder||'';inp.autocomplete='off';
+      inp.style.cssText='flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;color:var(--text);';
+      inp.oninput=()=>{bericht.kopf[key]=inp.value;scheduleSave();};
+      row.append(lbl,inp);return row;
+    }
+    function _mcg(label,key,opts){
+      const wrap=document.createElement('div');
+      wrap.style.cssText='padding:8px 14px;border-top:1px solid var(--border);';
+      const lbl=document.createElement('div');lbl.style.cssText='font-size:11px;color:var(--text2);margin-bottom:6px;';lbl.textContent=label;
+      const row=document.createElement('div');row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;';
+      if(!Array.isArray(bericht.kopf[key]))bericht.kopf[key]=[];
+      opts.forEach(opt=>{
+        const btn=document.createElement('button');btn.type='button';btn.textContent=opt;
+        const on=bericht.kopf[key].includes(opt);
+        btn.style.cssText='padding:5px 12px;border-radius:14px;font-size:12px;cursor:pointer;border:1px solid '+(on?'#1a5c3a':'var(--border)')+';background:'+(on?'rgba(26,92,58,.12)':'transparent')+';color:'+(on?'#1a5c3a':'var(--text2)')+';';
+        btn.onclick=()=>{
+          const arr=bericht.kopf[key];const idx=arr.indexOf(opt);
+          if(idx>=0)arr.splice(idx,1);else arr.push(opt);
+          const on2=arr.includes(opt);
+          btn.style.borderColor=on2?'#1a5c3a':'var(--border)';
+          btn.style.background=on2?'rgba(26,92,58,.12)':'transparent';
+          btn.style.color=on2?'#1a5c3a':'var(--text2)';
+          scheduleSave();
+        };
+        row.appendChild(btn);
+      });
+      wrap.append(lbl,row);return wrap;
+    }
+    kopfSek.append(
+      _mf('Auftraggeber','auftraggeber','aus Task'),
+      _mf('Kostenstelle','kostenstelle','z.B. 250133'),
+      _mf('Objektadresse','objektAdresse','aus Task'),
+      _mcg('Abdichtung','abdichtung',['Bitumen','Kunststoff','Flüssigkunststoff','EPDM']),
+      _mcg('Oberflächenschutz','oberflaechenschutz',['Ohne','Kies','Gründach extensiv','Gründach intensiv']),
+      _mcg('Entwässerung','entwaesserung',['Gully','Dachrinne','Notüberlauf']),
+      _mcg('Sicherheit','sicherheit',['Ohne','Fest montierte Anschlagpunkte','Geländer','Sicherheitsseile'])
+    );
+    body.appendChild(kopfSek);
+
+    /* ── Sektionen Zustandsprüfung ── */
+    bericht.sektionen.forEach((sek)=>{
+      const sekDiv=document.createElement('div');
+      const sekHdr=document.createElement('div');
+      sekHdr.style.cssText='padding:8px 14px;font-size:12px;font-weight:700;color:#1a5c3a;background:rgba(26,92,58,.08);border-bottom:1px solid var(--border);border-top:1px solid var(--border);border-left:3px solid #1a5c3a;';
+      sekHdr.textContent=sek.titel;
+      sekDiv.appendChild(sekHdr);
+
+      sek.items.forEach((it)=>{
+        const row=document.createElement('div');
+        row.style.cssText='padding:10px 14px;border-bottom:1px solid var(--border);';
+        const txt=document.createElement('div');
+        txt.style.cssText='font-size:13px;color:var(--text);line-height:1.35;margin-bottom:8px;';
+        txt.textContent=it.text;
+
+        /* 4 Status-Buttons nebeneinander */
+        const btnRow=document.createElement('div');
+        btnRow.style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:5px;';
+        statDef.forEach(s=>{
+          const btn=document.createElement('button');btn.type='button';btn.textContent=s.label;
+          const on=it.status===s.v;
+          btn.style.cssText='padding:7px 4px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;text-align:center;border:2px solid '+(on?s.col:'var(--border)')+';background:'+(on?s.bg:'transparent')+';color:'+(on?s.col:'var(--text2)')+';';
+          btn.onclick=()=>{
+            it.status=it.status===s.v?'offen':s.v;
+            scheduleSave();_wpMobStats();
+            const mw=row.querySelector('.wpm-mw');
+            if(mw)mw.style.display=(it.status==='mangel'||it.status==='repariert')?'block':'none';
+            btnRow.querySelectorAll('button').forEach((b2,bi)=>{
+              const s2=statDef[bi];const on2=it.status===s2.v;
+              b2.style.borderColor=on2?s2.col:'var(--border)';
+              b2.style.background=on2?s2.bg:'transparent';
+              b2.style.color=on2?s2.col:'var(--text2)';
+            });
+          };
+          btnRow.appendChild(btn);
+        });
+
+        const massnWrap=document.createElement('div');massnWrap.className='wpm-mw';
+        massnWrap.style.cssText='margin-top:6px;display:'+(it.status==='mangel'||it.status==='repariert'?'block':'none')+';';
+        const massnIn=document.createElement('input');massnIn.type='text';
+        massnIn.placeholder='Zusätzliche Maßnahmen…';massnIn.value=it.massnahmen||'';massnIn.autocomplete='off';
+        massnIn.style.cssText='width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:7px 8px;font-size:13px;color:var(--text);';
+        massnIn.oninput=()=>{it.massnahmen=massnIn.value;scheduleSave();};
+        massnWrap.appendChild(massnIn);
+
+        if(it.status!=='mangel'&&it.status!=='repariert'&&!it.massnahmen){
+          const mBtn=document.createElement('button');mBtn.type='button';mBtn.textContent='+ Maßnahmen';
+          mBtn.style.cssText='margin-top:5px;font-size:11px;padding:3px 10px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;';
+          mBtn.onclick=()=>{massnWrap.style.display='block';mBtn.remove();massnIn.focus();};
+          row.append(txt,btnRow,mBtn,massnWrap);
+        } else {
+          row.append(txt,btnRow,massnWrap);
+        }
+        sekDiv.appendChild(row);
+      });
+      body.appendChild(sekDiv);
+    });
+
+    /* ── Mängel / Empfehlungen ── */
+    const maengelSek=document.createElement('div');
+    maengelSek.style.cssText='padding:14px;border-top:1px solid var(--border);';
+    const mHdr=document.createElement('div');mHdr.style.cssText='font-size:12px;font-weight:700;color:#1a5c3a;border-left:3px solid #1a5c3a;padding-left:8px;margin-bottom:8px;';
+    mHdr.textContent='Festgestellte Mängel / Empfehlungen';
+    const mTA=document.createElement('textarea');mTA.rows=3;
+    mTA.placeholder='Nr., Beschreibung, Empfehlungen, nächste Wartung…';mTA.value=bericht.maengelEmpfehlungen||'';
+    mTA.style.cssText='width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:13px;color:var(--text);resize:none;';
+    mTA.oninput=()=>{bericht.maengelEmpfehlungen=mTA.value;scheduleSave();};
+    maengelSek.append(mHdr,mTA);
+    body.appendChild(maengelSek);
+
+    /* ── Techniker ── */
+    const techSek=document.createElement('div');techSek.style.cssText='padding:0 14px 14px;';
+    const tl=document.createElement('div');tl.style.cssText='font-size:12px;color:var(--text2);margin-bottom:4px;';tl.textContent='Techniker';
+    const ti=document.createElement('input');ti.type='text';ti.value=bericht.techniker||'';ti.placeholder='Name Techniker';ti.autocomplete='off';
+    ti.style.cssText='width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:13px;color:var(--text);';
+    ti.oninput=()=>{bericht.techniker=ti.value;scheduleSave();};
+    techSek.append(tl,ti);
+    body.appendChild(techSek);
+
+    /* ── Fotos ── */
+    const fotoSek=document.createElement('div');
+    fotoSek.style.cssText='border-top:1px solid var(--border);';
+    const fHdr=document.createElement('div');fHdr.style.cssText='padding:10px 14px 4px;font-size:12px;font-weight:700;color:#1a5c3a;border-left:3px solid #1a5c3a;margin-left:0;padding-left:17px;';
+    fHdr.textContent='Fotos';
+    const fInfo=document.createElement('div');fInfo.style.cssText='padding:0 14px 8px;font-size:11px;color:var(--text2);';
+    fInfo.textContent='Klicken = im PDF ✓. 360°-Fotos bitte als Flat-Export aus Insta360.';
+    const fotoGrid=document.createElement('div');fotoGrid.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px 8px;';
+    _wpMobRenderFotos(bericht,fotoGrid);
+    const fotoBtnRow=document.createElement('div');fotoBtnRow.style.cssText='display:flex;gap:8px;padding:0 14px 14px;';
+    const camBtn=document.createElement('button');camBtn.type='button';camBtn.textContent='📷 Kamera';
+    camBtn.style.cssText='flex:1;padding:10px;border-radius:8px;border:1.5px dashed var(--accent);background:rgba(108,99,255,.06);color:var(--accent);font-size:13px;cursor:pointer;font-weight:600;';
+    camBtn.onclick=()=>_wpMobFotoAufnehmen(bericht,fotoGrid,true);
+    const galBtn=document.createElement('button');galBtn.type='button';galBtn.textContent='🖼 Galerie';
+    galBtn.style.cssText='flex:1;padding:10px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;';
+    galBtn.onclick=()=>_wpMobFotoAufnehmen(bericht,fotoGrid,false);
+    const drBtn=document.createElement('button');drBtn.type='button';drBtn.textContent='☁ Drive';
+    drBtn.style.cssText='flex:1;padding:10px;border-radius:8px;border:1.5px dashed #34a853;background:rgba(52,168,83,.06);color:#1a7a40;font-size:13px;cursor:pointer;';
+    drBtn.onclick=()=>_wpMobLadeDriveFotos(bericht,fotoGrid);
+    fotoBtnRow.append(camBtn,galBtn,drBtn);
+    fotoSek.append(fHdr,fInfo,fotoGrid,fotoBtnRow);
+    body.appendChild(fotoSek);
+  }
+  _wpMobRender();_wpMobStats();
+
+  /* Footer */
+  const footer=document.createElement('div');
+  footer.style.cssText='position:fixed;bottom:0;left:0;right:0;padding:12px 14px;background:var(--bg2);border-top:1px solid var(--border);display:flex;gap:10px;z-index:99999;';
+  const pdfBtn=document.createElement('button');pdfBtn.type='button';
+  pdfBtn.textContent='📄 PDF erstellen';
+  pdfBtn.style.cssText='flex:1;padding:12px;background:#1a5c3a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;';
+  pdfBtn.onclick=()=>_wpMobPdf(bericht,t);
+  const shareBtn=document.createElement('button');shareBtn.type='button';shareBtn.textContent='📤';
+  shareBtn.style.cssText='padding:12px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;font-size:18px;cursor:pointer;';
+  shareBtn.onclick=async()=>{
+    if(navigator.share&&bericht._pdfBlob){
+      const file=new File([bericht._pdfBlob],'Wartungsprotokoll_'+bericht.datum+'.pdf',{type:'application/pdf'});
+      try{await navigator.share({title:'Wartungsprotokoll Flachdach',files:[file]});}
+      catch(e){if(e.name!=='AbortError')toast('Teilen fehlgeschlagen','error');}
+    }else{toast('Bitte zuerst PDF erstellen','info');}
+  };
+  footer.append(pdfBtn,shareBtn);
+  ov.append(hdr,body,footer);
+  document.body.appendChild(ov);
+}
+
+function _wpMobRenderFotos(bericht,grid){
+  grid.innerHTML='';
+  if(!bericht.fotos||!bericht.fotos.length){
+    const h=document.createElement('div');h.style.cssText='grid-column:1/-1;font-size:12px;color:var(--text2);padding:4px 0;';
+    h.textContent='Noch keine Fotos.';grid.appendChild(h);return;
+  }
+  bericht.fotos.forEach((f)=>{
+    const cell=document.createElement('div');
+    cell.style.cssText='position:relative;border:2px solid '+(f.inReport?'#1a7a3c':'var(--border)')+';border-radius:8px;overflow:hidden;cursor:pointer;background:var(--bg3);aspect-ratio:1;';
+    cell.onclick=()=>{f.inReport=!f.inReport;cell.style.borderColor=f.inReport?'#1a7a3c':'var(--border)';const b=cell.querySelector('.wpmb');if(b)b.style.display=f.inReport?'flex':'none';scheduleSave();};
+    if(f.localUrl){const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;';cell.appendChild(img);}
+    else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
+      const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;';
+      fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}}).then(r=>r.blob()).then(blob=>{img.src=URL.createObjectURL(blob);}).catch(()=>{});
+      cell.appendChild(img);
+    }
+    const badge=document.createElement('div');badge.className='wpmb';
+    badge.style.cssText='display:'+(f.inReport?'flex':'none')+';position:absolute;top:3px;right:3px;background:#1a7a3c;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;align-items:center;justify-content:center;font-weight:700;';
+    badge.textContent='✓';
+    const nl=document.createElement('div');nl.style.cssText='position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:8px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    nl.textContent=f.name||'Foto';
+    cell.append(badge,nl);grid.appendChild(cell);
+  });
+}
+
+function _wpMobFotoAufnehmen(bericht,grid,camera){
+  const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
+  if(camera)inp.setAttribute('capture','environment');inp.style.display='none';
+  inp.onchange=async()=>{
+    const files=Array.from(inp.files||[]);if(!files.length)return;
+    for(const file of files){
+      const localUrl=URL.createObjectURL(file);
+      const fo={name:file.name,inReport:true,localUrl,driveId:null};
+      bericht.fotos.push(fo);
+      if(typeof gdriveToken!=='undefined'&&gdriveToken){
+        const ct=currentTask();
+        const fid=ct?_extractFolderIdMob(ct.gdrive||ct.gdriveOrdner||''):null;
+        if(fid){
+          try{
+            const form=new FormData();
+            form.append('metadata',new Blob([JSON.stringify({name:file.name,parents:[fid],mimeType:file.type})],{type:'application/json'}));
+            form.append('file',file);
+            const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form});
+            if(r.ok){const j=await r.json();fo.driveId=j.id;toast('✓ Foto in Drive','success',2000);}
+          }catch(ex){console.warn('Foto Upload:',ex);}
+        }
+      }
+    }
+    scheduleSave();_wpMobRenderFotos(bericht,grid);
+  };
+  document.body.appendChild(inp);inp.click();setTimeout(()=>inp.remove(),30000);
+}
+
+function _extractFolderIdMob(url){
+  if(!url)return '';const m=url.match(/[-\w]{25,}/);return m?m[0]:'';
+}
+
+async function _wpMobLadeDriveFotos(bericht,grid){
+  if(typeof gdriveToken==='undefined'||!gdriveToken){toast('Bitte zuerst mit Drive verbinden','error');return;}
+  const ct=currentTask();
+  const fid=ct?_extractFolderIdMob(ct.gdrive||ct.gdriveOrdner||''):'';
+  if(!fid){toast('Kein Foto-Ordner im Task eingetragen','error');return;}
+  toast('📂 Lade Drive-Fotos…','info',3000);
+  try{
+    const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("'"+fid+"' in parents and mimeType contains 'image/' and trashed=false")+'&fields=files(id,name,mimeType)&pageSize=100',{headers:{Authorization:'Bearer '+gdriveToken}});
+    const d=await r.json();const files=d.files||[];
+    const ex=new Set((bericht.fotos||[]).map(f=>f.driveId));
+    files.forEach(f=>{if(!ex.has(f.id))bericht.fotos.push({driveId:f.id,name:f.name,inReport:true,localUrl:null});});
+    scheduleSave();_wpMobRenderFotos(bericht,grid);
+    toast('✓ '+files.length+' Foto(s) geladen','success');
+  }catch(e){toast('Fehler: '+e.message,'error');}
+}
+
+async function _wpMobPdf(bericht,task){
+  if(!window.jspdf){toast('PDF-Bibliothek lädt noch…','error');return;}
+  try{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const W=210,M=14,farbe=[26,92,58];let y=M;
+    doc.setFillColor(...farbe);doc.rect(0,0,W,32,'F');
+    doc.setTextColor(255,255,255);doc.setFontSize(17);doc.setFont('helvetica','bold');
+    doc.text('Wartungsprotokoll Flachdach',M,12);
+    doc.setFontSize(9);doc.setFont('helvetica','normal');
+    const k=bericht.kopf||{};
+    doc.text('Auftraggeber: '+(k.auftraggeber||task.hausverwaltung||'–'),M,19);
+    doc.text('Objekt: '+(k.objektAdresse||task.adresse||'–'),M,24);
+    doc.text('Datum: '+bericht.datum+(bericht.techniker?' · Techniker: '+bericht.techniker:'')+(k.kostenstelle?' · Kostenstelle: '+k.kostenstelle:''),M,29);
+    y=38;
+    doc.setTextColor(0,0,0);doc.setFontSize(9);doc.setFont('helvetica','bold');
+    doc.text('Dachaufbau:',M,y);y+=5;
+    doc.autoTable({startY:y,
+      body:[
+        ['Abdichtung',(k.abdichtung&&k.abdichtung.length?k.abdichtung.join(', '):'–')],
+        ['Oberflächenschutz',(k.oberflaechenschutz&&k.oberflaechenschutz.length?k.oberflaechenschutz.join(', '):'–')],
+        ['Entwässerung',(k.entwaesserung&&k.entwaesserung.length?k.entwaesserung.join(', '):'–')],
+        ['Sicherheitseinrichtungen',(k.sicherheit&&k.sicherheit.length?k.sicherheit.join(', '):'–')],
+      ],
+      theme:'grid',margin:{left:M,right:M},
+      bodyStyles:{fontSize:8,minCellHeight:6},
+      columnStyles:{0:{fontStyle:'bold',cellWidth:55,fillColor:[245,245,245]},1:{cellWidth:127}},
+    });
+    y=doc.lastAutoTable.finalY+6;
+    bericht.sektionen.forEach(sek=>{
+      if(y>265){doc.addPage();y=M;}
+      doc.setFillColor(230,244,235);doc.rect(M,y,W-2*M,7,'F');
+      doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(26,92,58);
+      doc.text(sek.titel,M+2,y+5);y+=9;
+      doc.autoTable({startY:y,
+        head:[['Prüfpunkt','OK','N/V','Mängel','Rep.','Zusätzliche Maßnahmen']],
+        body:sek.items.map(it=>[it.text,it.status==='ok'?'✓':'',it.status==='nv'?'✓':'',it.status==='mangel'?'✓':'',it.status==='repariert'?'✓':'',it.massnahmen||'']),
+        theme:'grid',margin:{left:M,right:M},
+        headStyles:{fillColor:farbe,fontSize:7.5,fontStyle:'bold'},
+        bodyStyles:{fontSize:8,minCellHeight:7},
+        columnStyles:{0:{cellWidth:82},1:{cellWidth:10,halign:'center'},2:{cellWidth:10,halign:'center'},3:{cellWidth:13,halign:'center'},4:{cellWidth:10,halign:'center'},5:{cellWidth:47}},
+        didParseCell:(d)=>{
+          if(d.section==='body'){
+            if(d.column.index===1&&d.cell.raw==='✓')d.cell.styles.textColor=[26,122,60];
+            if(d.column.index===3&&d.cell.raw==='✓'){d.cell.styles.textColor=[192,57,43];d.cell.styles.fontStyle='bold';}
+            if(d.column.index===4&&d.cell.raw==='✓')d.cell.styles.textColor=[41,128,185];
+          }
+        }
+      });
+      y=doc.lastAutoTable.finalY+4;
+    });
+    if(bericht.maengelEmpfehlungen){
+      if(y>255){doc.addPage();y=M;}
+      doc.setFillColor(230,244,235);doc.rect(M,y,W-2*M,7,'F');
+      doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(26,92,58);
+      doc.text('Festgestellte Mängel / Empfehlungen',M+2,y+5);y+=10;
+      doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);doc.setFontSize(9);
+      const lines=doc.splitTextToSize(bericht.maengelEmpfehlungen,W-2*M);
+      doc.text(lines,M,y);y+=lines.length*4.5+4;
+    }
+    /* Fotos */
+    const fotoList=(bericht.fotos||[]).filter(f=>f.inReport);
+    if(fotoList.length){
+      let col=0;
+      for(let fi=0;fi<fotoList.length;fi++){
+        const f=fotoList[fi];let b64=null;
+        if(f.localUrl){try{const rr=await fetch(f.localUrl);const bl=await rr.blob();b64=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(bl);});}catch(e){}}
+        else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){try{const rr=await fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}});const bl=await rr.blob();b64=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(bl);});}catch(e){}}
+        if(!b64)continue;
+        const iW=85,iH=62;
+        if(col===0){if(y+iH+12>285){doc.addPage();y=M;}if(fi===0){doc.setFillColor(230,244,235);doc.rect(M,y,W-2*M,7,'F');doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(26,92,58);doc.text('Fotodokumentation',M+2,y+5);y+=10;}
+          doc.addImage(b64,'JPEG',M,y,iW,iH);
+        } else {
+          doc.addImage(b64,'JPEG',M+iW+6,y,iW,iH);
+          doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,100,100);
+          doc.text(doc.splitTextToSize(fotoList[fi-1].name||'',iW),M,y+iH+3);
+          doc.text(doc.splitTextToSize(f.name||'',iW),M+iW+6,y+iH+3);
+          y+=iH+10;
+        }
+        col=(col+1)%2;
+        if(fi===fotoList.length-1&&col===1){doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,100,100);doc.text(doc.splitTextToSize(f.name||'',iW),M,y+iH+3);y+=iH+10;}
+      }
+    }
+    const pages=doc.internal.getNumberOfPages();
+    for(let p=1;p<=pages;p++){doc.setPage(p);doc.setFontSize(8);doc.setTextColor(150,150,150);doc.text('Seite '+p+' von '+pages,W/2,292,{align:'center'});doc.text('sv-fb.de',W-M,292,{align:'right'});}
+    const blob=doc.output('blob');bericht._pdfBlob=blob;
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;
+    a.download='Wartungsprotokoll_'+(k.objektAdresse||task.adresse||'Flachdach').replace(/[^a-zA-Z0-9]/g,'_').replace(/_+/g,'_')+'_'+bericht.datum.replace(/\./g,'-')+'.pdf';
+    a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
+    scheduleSave();toast('✓ Wartungsprotokoll PDF erstellt','success');
+  }catch(e){console.error('WP-PDF Fehler:',e);toast('PDF-Fehler: '+e.message,'error');}
+}
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+
 function scheduleSave(){
   dirty=true;_dirtyTs=Date.now();
   setSaveInd('saving','…');
@@ -1446,17 +1889,26 @@ function renderDetail(t){
       return '<div class="sect'+oc('Pruefformulare')+'" data-sect="Pruefformulare">'
         +'<div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;">'
         +'<span>📋 Prüfformulare'+(cnt?' ('+cnt+')':'')+'</span>'
-        +'<button onclick="event.stopPropagation();_openPruefformular()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">+ Neu</button>'
+        +'<span style="display:flex;gap:5px;">'
+        +'<button onclick="event.stopPropagation();_openPruefformular()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">+ Prüfbericht</button>'
+        +'<button onclick="event.stopPropagation();_openWartungsprotokollMobil()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid #1a5c3a;background:#1a5c3a;color:#fff;cursor:pointer;font-weight:600;">🏠 WP</button>'
+        +'</span>'
         +'</div>'
         +'<div class="sect-body">'
-        +(cnt?berichte.map((b,bi)=>'<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">'
-          +'<div style="flex:1;min-width:0;">'
-          +'<div style="font-size:13px;font-weight:600;color:var(--text);">'+esc(b.titel||'Bericht')+'</div>'
-          +'<div style="font-size:11px;color:var(--text2);">'+esc(b.datum||'')+'</div>'
-          +'</div>'
-          +'<button onclick="event.stopPropagation();_openPruefformular('+bi+')" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;">Öffnen</button>'
-          +'<button onclick="event.stopPropagation();_deletePruefbericht('+bi+')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid rgba(231,76,60,.4);color:var(--red);background:transparent;cursor:pointer;">✕</button>'
-          +'</div>').join('')
+        +(cnt?berichte.map((b,bi)=>{
+          const isWP=b.vorlage==='wartungsprotokoll';
+          const displayTitle=isWP&&b.kopf&&b.kopf.adresse?b.kopf.adresse:(b.titel||'Bericht');
+          const openFn=isWP?'_openWartungsprotokollMobil('+bi+')':'_openPruefformular('+bi+')';
+          const badge=isWP?'<span style="font-size:9px;background:#1a5c3a;color:#fff;padding:1px 4px;border-radius:3px;margin-right:4px;">WP</span>':'';
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">'
+            +'<div style="flex:1;min-width:0;">'
+            +'<div style="font-size:13px;font-weight:600;color:var(--text);">'+badge+esc(displayTitle)+'</div>'
+            +'<div style="font-size:11px;color:var(--text2);">'+esc(b.datum||'')+'</div>'
+            +'</div>'
+            +'<button onclick="event.stopPropagation();'+openFn+'" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid '+(isWP?'#1a5c3a':'var(--border)')+';background:'+(isWP?'rgba(26,92,58,.1)':'var(--bg3)')+';color:'+(isWP?'#1a5c3a':'var(--text)')+';cursor:pointer;">Öffnen</button>'
+            +'<button onclick="event.stopPropagation();_deletePruefbericht('+bi+')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid rgba(231,76,60,.4);color:var(--red);background:transparent;cursor:pointer;">✕</button>'
+            +'</div>';
+        }).join('')
           :'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Prüfformulare.</div>')
         +'</div></div>';
     })():'')
@@ -2890,508 +3342,4 @@ function _lbOnTouchStart(e){
   if(e.touches.length===2){
     e.preventDefault();
     _lbPinching=true;_lbPanning=false;
-    _lbPinchDist0=_lbDist(e.touches[0],e.touches[1]);
-    _lbScale0=_lbScale;
-  } else if(e.touches.length===1){
-    const now=Date.now();
-    if(now-_lbLastTap<300){
-      // Doppeltipp → Zoom zurücksetzen
-      _lbResetZoom();
-      _lbLastTap=0;
-      e.preventDefault();
-      return;
-    }
-    _lbLastTap=now;
-    if(_lbScale>1.05){
-      e.preventDefault();
-      _lbPanning=true;_lbPinching=false;
-      _lbPan0X=e.touches[0].clientX;
-      _lbPan0Y=e.touches[0].clientY;
-      _lbPanTX0=_lbTX;_lbPanTY0=_lbTY;
-    }
-  }
-}
-function _lbOnTouchMove(e){
-  if(document.getElementById('drawCanvas').classList.contains('active'))return;
-  if(_lbPinching&&e.touches.length===2){
-    e.preventDefault();
-    const dist=_lbDist(e.touches[0],e.touches[1]);
-    _lbScale=Math.min(6,Math.max(1,_lbScale0*(dist/_lbPinchDist0)));
-    _lbApply();
-  } else if(_lbPanning&&e.touches.length===1&&_lbScale>1){
-    e.preventDefault();
-    const dx=(e.touches[0].clientX-_lbPan0X)/_lbScale;
-    const dy=(e.touches[0].clientY-_lbPan0Y)/_lbScale;
-    _lbTX=_lbPanTX0+dx;
-    _lbTY=_lbPanTY0+dy;
-    _lbApply();
-  }
-}
-function _lbOnTouchEnd(e){
-  if(e.touches.length<2)_lbPinching=false;
-  if(e.touches.length===0)_lbPanning=false;
-  if(_lbScale<1.05){_lbScale=1;_lbTX=0;_lbTY=0;_lbApply();}
-}
-// Event-Listener einmal beim Laden anhängen
-(function(){
-  const lb=document.getElementById('lightbox');
-  if(!lb)return;
-  lb.addEventListener('touchstart',_lbOnTouchStart,{passive:false});
-  lb.addEventListener('touchmove',_lbOnTouchMove,{passive:false});
-  lb.addEventListener('touchend',_lbOnTouchEnd,{passive:true});
-})();
-// ── E-MAIL PDF VORSCHAU via API (kein Browser-Google-Login nötig) ──
-// ── Vollbild-Galerie für E-Mail-PDFs (Mobil) ──────────────────────────
-function _mobOpenEmailGallery(startIdx){
-  const t=currentTask();
-  const pdfs=(t&&t.emailPdfs)||[];
-  if(!pdfs.length)return;
-  if(!gdriveToken){alert('Bitte zuerst mit Google Drive verbinden.');return;}
-  const GID='_mobEmailGallery';
-  const old=document.getElementById(GID);if(old)old.remove();
-
-  let curIdx=Math.max(0,Math.min(startIdx,pdfs.length-1));
-  let curBlobUrl=null;
-
-  // Vollbild-Overlay
-  const ov=document.createElement('div');
-  ov.id=GID;
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:99999;display:flex;flex-direction:column;touch-action:manipulation;';
-
-  // Kopfzeile
-  const head=document.createElement('div');
-  head.style.cssText='display:flex;align-items:center;gap:8px;padding:12px 14px;background:rgba(0,0,0,.5);flex-shrink:0;';
-  const titleEl=document.createElement('span');
-  titleEl.style.cssText='flex:1;color:#fff;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-  const counterEl=document.createElement('span');
-  counterEl.style.cssText='color:rgba(255,255,255,.6);font-size:11px;flex-shrink:0;';
-  const closeBtn=document.createElement('button');
-  closeBtn.textContent='✕';
-  closeBtn.style.cssText='background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
-  closeBtn.onclick=_closeGal;
-  head.append(titleEl,counterEl,closeBtn);
-
-  // Inhaltsbereich
-  const content=document.createElement('div');
-  content.style.cssText='flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;';
-
-  // Touch-Pfeile (groß für Mobile)
-  const mkNav=(lbl,dir)=>{
-    const b=document.createElement('button');
-    b.textContent=lbl;
-    b.style.cssText='position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);border:none;color:#fff;font-size:32px;cursor:pointer;z-index:2;padding:16px 20px;border-radius:50%;line-height:1;'+(dir<0?'left:10px;':'right:10px;');
-    b.addEventListener('touchstart',e=>{e.preventDefault();_nav(dir);},{passive:false});
-    b.onclick=e=>{e.stopPropagation();_nav(dir);};
-    return b;
-  };
-  const prevBtn=mkNav('\u2039',-1);
-  const nextBtn=mkNav('\u203a', 1);
-  content.append(prevBtn,nextBtn);
-
-  ov.append(head,content);
-  document.body.appendChild(ov);
-
-  // Swipe-Erkennung
-  let tx0=0;
-  content.addEventListener('touchstart',e=>{tx0=e.touches[0].clientX;},{passive:true});
-  content.addEventListener('touchend',e=>{
-    const dx=e.changedTouches[0].clientX-tx0;
-    if(Math.abs(dx)>50)_nav(dx<0?1:-1);
-  },{passive:true});
-
-  function _revoke(){if(curBlobUrl){URL.revokeObjectURL(curBlobUrl);curBlobUrl=null;}}
-  function _closeGal(){_revoke();ov.remove();}
-  function _nav(dir){const n=pdfs.length;if(n<=1)return;curIdx=(curIdx+dir+n)%n;_load();}
-
-  async function _load(){
-    _revoke();
-    const pdf=pdfs[curIdx];
-    titleEl.textContent='\u{1F4C4} '+(pdf.name||'E-Mail PDF');
-    counterEl.textContent=pdfs.length>1?`${curIdx+1} / ${pdfs.length}`:'';
-    prevBtn.style.display=pdfs.length>1?'':'none';
-    nextBtn.style.display=pdfs.length>1?'':'none';
-    content.querySelectorAll(':scope > *:not(button)').forEach(el=>el.remove());
-    const loader=document.createElement('div');
-    loader.style.cssText='color:#fff;font-size:14px;text-align:center;padding:20px;';
-    loader.textContent='\u23F3 PDF wird geladen\u2026';
-    content.appendChild(loader);
-    try{
-      const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(pdf.fileId)+'?alt=media',
-        {headers:{Authorization:'Bearer '+gdriveToken}});
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      const blob=await r.blob();curBlobUrl=URL.createObjectURL(blob);
-      const fr=document.createElement('iframe');
-      fr.src=curBlobUrl;fr.style.cssText='width:100vw;height:calc(100vh - 62px);border:none;background:#fff;display:block;';
-      loader.replaceWith(fr);
-    }catch(e){
-      loader.innerHTML='<span style="color:#f88">\u26A0 '+e.message+'</span><br>'
-        +(pdf.url?'<a href="'+pdf.url+'" target="_blank" style="color:#7af;font-size:12px;margin-top:10px;display:inline-block;">In Drive \u00F6ffnen \u{1F517}</a>':'');
-    }
-  }
-  _load();
-}
-
-// \u2500\u2500 Vollbild-Galerie f\u00FCr Anh\u00E4nge (Mobil) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-function _openAttachGalleryMob(startIdx){
-  const t=currentTask();
-  const list=(t&&t.attachments)||[];
-  if(!list.length)return;
-  const GID='_mobAttachGallery';
-  const old=document.getElementById(GID);if(old)old.remove();
-
-  let curIdx=Math.max(0,Math.min(startIdx,list.length-1));
-  let curBlobUrl=null;
-
-  const ov=document.createElement('div');
-  ov.id=GID;
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:99999;display:flex;flex-direction:column;touch-action:manipulation;';
-
-  const head=document.createElement('div');
-  head.style.cssText='display:flex;align-items:center;gap:8px;padding:12px 14px;background:rgba(0,0,0,.5);flex-shrink:0;';
-  const titleEl=document.createElement('span');
-  titleEl.style.cssText='flex:1;color:#fff;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-  const counterEl=document.createElement('span');
-  counterEl.style.cssText='color:rgba(255,255,255,.6);font-size:11px;flex-shrink:0;';
-  const dlBtn2=document.createElement('button');
-  dlBtn2.textContent='\u2B07';
-  dlBtn2.style.cssText='background:rgba(255,255,255,.15);border:none;color:#fff;font-size:16px;width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;';
-  dlBtn2.onclick=()=>downloadAttachMob(curIdx);
-  const closeBtn2=document.createElement('button');
-  closeBtn2.textContent='\u2715';
-  closeBtn2.style.cssText='background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:36px;height:36px;border-radius:50%;cursor:pointer;flex-shrink:0;';
-  closeBtn2.onclick=_closeGal2;
-  head.append(titleEl,counterEl,dlBtn2,closeBtn2);
-
-  const content=document.createElement('div');
-  content.style.cssText='flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;';
-
-  const mkNav2=(lbl,dir)=>{
-    const b=document.createElement('button');
-    b.textContent=lbl;
-    b.style.cssText='position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.18);border:none;color:#fff;font-size:32px;cursor:pointer;z-index:2;padding:16px 20px;border-radius:50%;line-height:1;'+(dir<0?'left:10px;':'right:10px;');
-    b.addEventListener('touchstart',e=>{e.preventDefault();_nav2(dir);},{passive:false});
-    b.onclick=e=>{e.stopPropagation();_nav2(dir);};
-    return b;
-  };
-  const prevBtn2=mkNav2('\u2039',-1);
-  const nextBtn2=mkNav2('\u203a', 1);
-  content.append(prevBtn2,nextBtn2);
-
-  ov.append(head,content);
-  document.body.appendChild(ov);
-
-  let tx0=0;
-  content.addEventListener('touchstart',e=>{tx0=e.touches[0].clientX;},{passive:true});
-  content.addEventListener('touchend',e=>{
-    const dx=e.changedTouches[0].clientX-tx0;
-    if(Math.abs(dx)>50)_nav2(dx<0?1:-1);
-  },{passive:true});
-
-  function _revoke2(){if(curBlobUrl){URL.revokeObjectURL(curBlobUrl);curBlobUrl=null;}}
-  function _closeGal2(){_revoke2();ov.remove();}
-  function _nav2(dir){const n=list.length;if(n<=1)return;curIdx=(curIdx+dir+n)%n;_show2();}
-
-  async function _show2(){
-    _revoke2();
-    const a=list[curIdx];
-    titleEl.textContent=(a.type&&a.type.includes('pdf')||(a.name||'').toLowerCase().endsWith('.pdf')?'\u{1F4C4} ':'\u{1F4CE} ')+(a.name||'Anhang');
-    counterEl.textContent=list.length>1?`${curIdx+1} / ${list.length}`:'';
-    prevBtn2.style.display=list.length>1?'':'none';
-    nextBtn2.style.display=list.length>1?'':'none';
-    content.querySelectorAll(':scope > *:not(button)').forEach(el=>el.remove());
-
-    const _aid=a.driveId||a.fileId||'';
-    const isPdf=a.type==='application/pdf'||(a.name||'').toLowerCase().endsWith('.pdf');
-    if(isPdf&&a.data){
-      try{
-        const b64=a.data.includes(',')?(a.data.split(',')[1]):a.data;
-        const bin=atob(b64);const bytes=new Uint8Array(bin.length);
-        for(let j=0;j<bin.length;j++)bytes[j]=bin.charCodeAt(j);
-        const blob=new Blob([bytes],{type:'application/pdf'});
-        curBlobUrl=URL.createObjectURL(blob);
-        const fr=document.createElement('iframe');
-        fr.src=curBlobUrl;fr.style.cssText='width:100vw;height:calc(100vh - 62px);border:none;background:#fff;';
-        content.appendChild(fr);
-      }catch(e){const d=document.createElement('div');d.style.cssText='color:#f88;';d.textContent='\u26A0 '+e.message;content.appendChild(d);}
-    } else if(isPdf&&_aid){
-      const fr=document.createElement('iframe');
-      fr.src='https://drive.google.com/file/d/'+_aid+'/preview';
-      fr.style.cssText='width:100vw;height:calc(100vh - 62px);border:none;background:#fff;';
-      content.appendChild(fr);
-    } else if(a.type&&a.type.startsWith('image/')){
-      const img=document.createElement('img');
-      img.src=a.data||(_aid?'https://drive.google.com/thumbnail?id='+_aid+'&sz=w1600':'');
-      img.style.cssText='max-width:100vw;max-height:calc(100vh - 62px);object-fit:contain;';
-      content.appendChild(img);
-    } else {
-      const info=document.createElement('div');
-      info.style.cssText='color:#fff;font-size:14px;text-align:center;padding:20px;';
-      info.innerHTML='<div style="font-size:40px;margin-bottom:12px;">\u{1F4CE}</div>'
-        +'<div>'+esc(a.name||'Datei')+'</div>'
-        +(a.size?'<div style="font-size:11px;opacity:.6;margin-top:4px;">'+formatBytesMob(a.size)+'</div>':'')
-        +'<button onclick="downloadAttachMob('+curIdx+')" style="margin-top:18px;padding:10px 24px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;cursor:pointer;font-size:14px;">\u2B07 Herunterladen</button>';
-      content.appendChild(info);
-    }
-  }
-  _show2();
-}
-
-// R\u00FCckw\u00E4rtskompatibilit\u00E4t
-async function _mobOpenEmailPdf(fileId,name){
-  const t=currentTask();
-  const pdfs=(t&&t.emailPdfs)||[];
-  const idx=pdfs.findIndex(p=>p.fileId===fileId);
-  _mobOpenEmailGallery(idx>=0?idx:0);
-}
-
-// ── Thumbnail-Kachel-Galerie E-Mail PDFs (Mobil) ─────────────────────────────
-function _openEmailThumbnailGridMob(){
-  // Umleitung – Kompatibilität
-  const t=currentTask();const origs=(t&&t.emailOriginals)||[];
-  if(!origs.length){toast('Keine E-Mails vorhanden','info');return;}
-  _mobOpenEmailPreview(0);
-}
-async function _mobOpenEmailPreview(idx){
-  const t=currentTask();
-  const origs=(t&&t.emailOriginals)||[];
-  if(!origs||!origs.length)return;
-  const item=origs[idx];
-  if(!item)return;
-  const GID='_mobEmailPreviewOv';
-  const old=document.getElementById(GID);if(old)old.remove();
-  const ov=document.createElement('div');
-  ov.id=GID;
-  ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:9600;display:flex;flex-direction:column;overflow:hidden;';
-  // Header
-  const hdr=document.createElement('div');
-  hdr.style.cssText='display:flex;align-items:center;gap:10px;padding:14px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;';
-  const titleEl=document.createElement('span');
-  titleEl.style.cssText='flex:1;font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-  titleEl.textContent='📨 '+( item.name||'E-Mail');
-  const closeBtn=document.createElement('button');
-  closeBtn.textContent='✕';
-  closeBtn.style.cssText='background:rgba(128,128,128,.2);border:none;color:var(--text);width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
-  closeBtn.onclick=()=>ov.remove();
-  hdr.append(titleEl,closeBtn);
-  // Content
-  const content=document.createElement('div');
-  content.style.cssText='flex:1;overflow-y:auto;';
-  content.innerHTML='<div style="padding:20px;color:var(--text2);font-size:13px;text-align:center;">⏳ Lädt…</div>';
-  // Footer Buttons
-  const footer=document.createElement('div');
-  footer.style.cssText='display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0;';
-  const dlBtn=document.createElement('button');
-  dlBtn.textContent='⬇ Herunterladen';
-  dlBtn.style.cssText='flex:1;padding:9px 0;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;';
-  dlBtn.onclick=()=>_mobDownloadEml(idx);
-  const folderBtn=document.createElement('button');
-  folderBtn.textContent='📂 Ordner öffnen';
-  folderBtn.style.cssText='flex:1;padding:9px 0;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;';
-  folderBtn.onclick=()=>_mobOpenEmailFolder(idx);
-  footer.append(dlBtn,folderBtn);
-  ov.append(hdr,content,footer);
-  document.body.appendChild(ov);
-  // Inhalt laden
-  const ext=(item.name||'').split('.').pop().toLowerCase();
-  if(ext==='eml'&&item.fileId&&gdriveToken){
-    try{
-      const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(item.fileId)+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}});
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      const txt=await r.text();
-      // _parseEmlText ist ggf. nicht auf Mobile – einfacher Parser
-      const lines=txt.split('\n');
-      let subject='',sender='',date='',bodyStart=false,bodyLines=[];
-      for(const line of lines){
-        if(!bodyStart){
-          if(/^(Subject|Betreff):/i.test(line))subject=line.replace(/^[^:]+:\s*/,'').trim();
-          else if(/^From:/i.test(line))sender=line.replace(/^[^:]+:\s*/,'').trim();
-          else if(/^Date:/i.test(line))date=line.replace(/^[^:]+:\s*/,'').trim();
-          else if(line.trim()==='')bodyStart=true;
-        } else {
-          bodyLines.push(line);
-          if(bodyLines.length>300)break;
-        }
-      }
-      const e2=s=>s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
-      titleEl.textContent='📨 '+(subject||item.name||'E-Mail');
-      content.innerHTML=
-        '<div style="padding:12px 14px 8px;background:var(--bg2);border-bottom:1px solid var(--border);">'
-        +'<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;">'+e2(subject||'(kein Betreff)')+'</div>'
-        +'<div style="font-size:11px;color:var(--text2);display:grid;grid-template-columns:45px 1fr;gap:2px 8px;">'
-        +'<span style="font-weight:600;">Von:</span><span>'+e2(sender)+'</span>'
-        +'<span style="font-weight:600;">Datum:</span><span>'+e2(date)+'</span>'
-        +'</div></div>'
-        +'<pre style="padding:14px;font-size:13px;color:var(--text);white-space:pre-wrap;word-break:break-word;font-family:inherit;line-height:1.55;margin:0;">'+e2(bodyLines.join('\n'))+'</pre>';
-    }catch(ex){
-      content.innerHTML='<div style="padding:20px;color:var(--red);font-size:13px;">⚠ '+esc(ex.message)+'</div>';
-    }
-  } else if(item.fileId&&gdriveToken){
-    // .msg → Drive preview iframe
-    content.style.cssText='flex:1;overflow:hidden;';
-    const fr=document.createElement('iframe');
-    fr.src='https://drive.google.com/file/d/'+item.fileId+'/preview';
-    fr.style.cssText='width:100%;height:100%;border:none;';
-    content.innerHTML='';content.appendChild(fr);
-  } else {
-    content.innerHTML='<div style="padding:20px;color:var(--text2);font-size:13px;">📨 '+esc(item.name||'E-Mail')+'<br><small>Drive nicht verbunden oder keine Datei-ID.</small></div>';
-  }
-}
-function _mobDownloadEml(idx){
-  const t=currentTask();const origs=(t&&t.emailOriginals)||[];const item=origs[idx];
-  if(!item)return;
-  if(item.url){window.open(item.url,'_blank');}
-  else if(item.fileId){window.open('https://drive.google.com/file/d/'+item.fileId+'/view','_blank');}
-  else{toast('Keine Download-URL verfügbar','error');}
-}
-function _mobOpenEmailFolder(idx){
-  const t=currentTask();
-  // Ordner-URL aus Verknüpfungen lesen
-  const folderUrl=(t&&(t.emailOrdner||t.gdriveOrdner))||'';
-  if(folderUrl){window.open(folderUrl,'_blank');}
-  else{
-    const origs=(t&&t.emailOriginals)||[];const item=origs[idx];
-    if(item&&item.url){window.open(item.url,'_blank');}
-    else{toast('Kein Ordner verknüpft','error');}
-  }
-}
-
-// ── Dateianhänge – Alle ansehen (Mobil, vertikale Karten) ──────────────────
-function _openAttachThumbnailGridMob(){
-  const t=currentTask();
-  const list=(t&&t.attachments)||[];
-  if(!list.length){toast('Keine Anhänge vorhanden','info');return;}
-  const GID='_mobAttachThumbGrid';
-  const old=document.getElementById(GID);if(old)old.remove();
-  const blobUrls=[];
-  const ov=document.createElement('div');
-  ov.id=GID;
-  ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:9500;display:flex;flex-direction:column;overflow:hidden;';
-  function _closeGrid(){blobUrls.forEach(u=>URL.revokeObjectURL(u));ov.remove();}
-  // Header
-  const hdr=document.createElement('div');
-  hdr.style.cssText='display:flex;align-items:center;gap:10px;padding:14px 14px calc(env(safe-area-inset-top,0px) + 14px);background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;';
-  hdr.innerHTML='<span style="flex:1;font-size:15px;font-weight:700;color:var(--text);">📧 E-Mail PDFs ('+pdfs.length+')</span>';
-  const closeBtn=document.createElement('button');
-  closeBtn.innerHTML='✕';
-  closeBtn.style.cssText='background:rgba(255,255,255,.12);border:none;color:var(--text);width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0;';
-  closeBtn.onclick=_closeGrid;
-  hdr.appendChild(closeBtn);
-  // Scrollbarer Grid
-  const body=document.createElement('div');
-  body.style.cssText='flex:1;overflow-y:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;align-content:start;';
-  pdfs.forEach((p,pi)=>{
-    const tile=document.createElement('div');
-    tile.style.cssText='background:var(--bg3);border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid var(--border);active:border-color:var(--accent);';
-    const previewArea=document.createElement('div');
-    previewArea.style.cssText='width:100%;height:180px;overflow:hidden;background:#e8e8e8;position:relative;display:flex;align-items:center;justify-content:center;';
-    if(p.fileId&&gdriveToken){
-      const loader=document.createElement('div');
-      loader.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#666;font-size:11px;width:100%;height:100%;';
-      loader.innerHTML='<span style="font-size:32px">📄</span><span>Lädt…</span>';
-      previewArea.appendChild(loader);
-      (async()=>{
-        try{
-          const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(p.fileId)+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}});
-          if(!r.ok)throw new Error('HTTP '+r.status);
-          const blob=await r.blob();
-          const blobUrl=URL.createObjectURL(blob);
-          blobUrls.push(blobUrl);
-          if(!document.getElementById(GID)){URL.revokeObjectURL(blobUrl);return;}
-          const fr=document.createElement('iframe');
-          fr.src=blobUrl+'#toolbar=0&navpanes=0&view=FitH&zoom=50';
-          fr.style.cssText='width:100%;height:100%;border:none;pointer-events:none;';
-          fr.scrolling='no';
-          if(loader.parentNode)loader.replaceWith(fr);
-        }catch(ex){loader.innerHTML='<span style="font-size:32px">📄</span><span style="color:#c00">⚠</span>';}
-      })();
-    } else {
-      previewArea.innerHTML='<span style="font-size:52px">📄</span>';
-    }
-    tile.onclick=()=>{_closeGrid();_mobOpenEmailGallery(pi);};
-    const label=document.createElement('div');
-    label.style.cssText='padding:7px 9px;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-top:1px solid var(--border);';
-    label.textContent='📄 '+(p.name||'E-Mail PDF');
-    label.title=p.name||'';
-    tile.append(previewArea,label);
-    body.appendChild(tile);
-  });
-  ov.append(hdr,body);
-  document.body.appendChild(ov);
-}
-
-// ── Thumbnail-Kachel-Galerie Dateianhänge (Mobil) ────────────────────────────
-function _openAttachThumbnailGridMob(){
-  const t=currentTask();
-  const list=(t&&t.attachments)||[];
-  if(!list.length){toast('Keine Anhänge vorhanden','info');return;}
-  const GID='_mobAttachThumbGrid';
-  const old=document.getElementById(GID);if(old)old.remove();
-  const blobUrls=[];
-  const nonImgItems=list.map((a,i)=>({a,i})).filter(({a})=>!a.type||!a.type.startsWith('image/'));
-  const ov=document.createElement('div');
-  ov.id=GID;
-  ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:9500;display:flex;flex-direction:column;overflow:hidden;';
-  function _closeGrid(){blobUrls.forEach(u=>URL.revokeObjectURL(u));ov.remove();}
-  const hdr=document.createElement('div');
-  hdr.style.cssText='display:flex;align-items:center;gap:10px;padding:14px 14px calc(env(safe-area-inset-top,0px) + 14px);background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;';
-  hdr.innerHTML='<span style="flex:1;font-size:15px;font-weight:700;color:var(--text);">📎 Anhänge ('+list.length+')</span>';
-  const closeBtn=document.createElement('button');
-  closeBtn.innerHTML='✕';
-  closeBtn.style.cssText='background:rgba(255,255,255,.12);border:none;color:var(--text);width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0;';
-  closeBtn.onclick=_closeGrid;
-  hdr.appendChild(closeBtn);
-  const body=document.createElement('div');
-  body.style.cssText='flex:1;overflow-y:auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;align-content:start;';
-  list.forEach((a,i)=>{
-    const tile=document.createElement('div');
-    tile.style.cssText='background:var(--bg3);border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid var(--border);';
-    const previewArea=document.createElement('div');
-    previewArea.style.cssText='width:100%;height:160px;overflow:hidden;background:#e8e8e8;position:relative;display:flex;align-items:center;justify-content:center;';
-    const isImg=a.type&&a.type.startsWith('image/');
-    const isPdf=a.type==='application/pdf'||(a.name||'').toLowerCase().endsWith('.pdf');
-    const isTxt=a.type==='text/plain'||(a.name||'').toLowerCase().endsWith('.txt');
-    if(isImg&&a.data){
-      const img=document.createElement('img');
-      img.src=a.data;img.style.cssText='width:100%;height:100%;object-fit:cover;';
-      previewArea.appendChild(img);
-    } else if(isPdf&&a.data){
-      const fr=document.createElement('iframe');
-      fr.src=a.data+'#toolbar=0&navpanes=0&view=FitH';
-      fr.style.cssText='width:100%;height:100%;border:none;pointer-events:none;';
-      fr.scrolling='no';
-      previewArea.appendChild(fr);
-    } else if(isTxt&&a.data){
-      try{
-        const b64=a.data.split(',')[1]||'';
-        const text=b64?decodeURIComponent(escape(atob(b64))).slice(0,400):'(leer)';
-        const pre=document.createElement('pre');
-        pre.style.cssText='font-size:8px;padding:6px;color:#333;white-space:pre-wrap;word-break:break-word;overflow:hidden;margin:0;line-height:1.3;width:100%;box-sizing:border-box;';
-        pre.textContent=text;
-        previewArea.style.background='#fff';previewArea.style.alignItems='flex-start';
-        previewArea.appendChild(pre);
-      }catch(ex){previewArea.innerHTML='<span style="font-size:42px">📝</span>';}
-    } else {
-      previewArea.innerHTML='<span style="font-size:42px">'+attachIconMob(a.type)+'</span>';
-    }
-    tile.onclick=()=>{
-      _closeGrid();
-      if(isImg) openAttachMob(i);
-      else{const ni=nonImgItems.findIndex(x=>x.i===i);_openAttachGalleryMob(ni>=0?ni:i);}
-    };
-    const label=document.createElement('div');
-    label.style.cssText='padding:6px 9px;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-top:1px solid var(--border);';
-    label.textContent=a.name||'Anhang';
-    label.title=a.name||'';
-    const typeBadge=document.createElement('div');
-    typeBadge.style.cssText='padding:1px 9px 6px;font-size:10px;color:var(--text2);';
-    typeBadge.textContent=isImg?'🖼️ Bild':isPdf?'📄 PDF':isTxt?'📝 Text':'📎 Datei';
-    tile.append(previewArea,label,typeBadge);
-    body.appendChild(tile);
-  });
-  ov.append(hdr,body);
-  document.body.appendChild(ov);
-}
-
-</script>
-</body>
-</html>
+    
