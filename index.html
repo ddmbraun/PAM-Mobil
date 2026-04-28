@@ -557,105 +557,92 @@ function renderHeuteMobil(){
   });
   ueberfaellig.sort(function(a,b){return a.t.due<b.t.due?-1:1;});
   bald.sort(function(a,b){return a.t.due<b.t.due?-1:1;});
-  function fmtDue(due){var p=due.split('-');return p[2]+'.'+p[1]+'.'+p[0].substr(2);}
+  function fmtDue(due){var p=due.split('-');return p[2]+'.'+p[1]+'.';}
   function diffDays(due){return Math.round((new Date(today)-new Date(due))/(864e5));}
 
-  // Rechte Aktionsspalte: Telefon ODER Karte ODER leer
-  function actionBlock(t){
-    // Anruf: nur wenn aktivitaet=anruf UND Kontakt mit anrufKontakt=true UND tel
-    if(t.aktivitaet==='anruf'){
-      var k=(t.kontakte||[]).find(function(c){return c.anrufKontakt&&c.tel;});
-      if(k){
-        var telHref='tel:'+encodeURIComponent(k.tel);
-        var kName=k.name?esc(k.name):'';
-        return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;flex-shrink:0;">'
-          +'<a href="'+telHref+'" onclick="event.stopPropagation()" title="'+kName+'" '
-          +'style="width:40px;height:40px;border-radius:50%;background:#1a6fc4;display:flex;align-items:center;'
-          +'justify-content:center;flex-shrink:0;text-decoration:none;">'
-          +'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
-          +'<path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.61 19a19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-2.89-8.18A2 2 0 0 1 4.72 2.72h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.91 10.09a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>'
-          +'</svg></a>'
-          +(kName?'<span style="font-size:9px;color:var(--text2);text-align:center;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+kName+'</span>':'')
-          +'</div>';
-      }
-    }
-    // Besichtigung: nur wenn aktivitaet=besichtigung UND adresse vorhanden
-    if(t.aktivitaet==='besichtigung'&&t.adresse){
-      var adr=t.adresse;
-      var mapsUrl='https://maps.google.com/?q='+encodeURIComponent(adr);
-      return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;flex-shrink:0;">'
-        +'<a href="'+mapsUrl+'" target="_blank" onclick="event.stopPropagation()" title="'+esc(adr)+'" '
-        +'style="width:40px;height:40px;border-radius:50%;background:#2e7d32;display:flex;align-items:center;'
-        +'justify-content:center;flex-shrink:0;text-decoration:none;">'
-        +'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
-        +'<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/>'
-        +'<circle cx="12" cy="10" r="3"/>'
-        +'</svg></a>'
-        +'<span style="font-size:9px;color:var(--text2);text-align:center;">Maps</span>'
+  var HZKEY='ptp_heute_mob_zoom';
+  var zoom=115;
+  try{var z=parseInt(localStorage.getItem(HZKEY)||'115',10);if(z>=80&&z<=160)zoom=z;}catch(e){}
+
+  var phoneIcon='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.61 19a19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-2.89-8.18A2 2 0 0 1 4.72 2.72h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.91 10.09a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+  var pinIcon='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+
+  function actionLine(t){
+    var isAnruf=t.aktivitaet==='anruf';
+    var isBesicht=t.aktivitaet==='besichtigung';
+    var k=(t.kontakte||[]).find(function(c){return c.anrufKontakt&&c.tel;});
+    var adr=(t.adresse||'').trim();
+    var showTel=k&&k.tel&&(isAnruf||(isBesicht&&k));
+    var showMaps=adr&&isBesicht;
+    if(!showTel&&!showMaps)return'';
+    var telBtn=showTel
+      ?'<a href="tel:'+encodeURIComponent(k.tel)+'" onclick="event.stopPropagation()" '
+        +'style="width:40px;height:40px;border-radius:50%;background:#1a6fc4;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+phoneIcon+'</a>'
+      :'';
+    var mapsBtn=showMaps
+      ?'<a href="https://maps.google.com/?q='+encodeURIComponent(adr)+'" target="_blank" onclick="event.stopPropagation()" '
+        +'style="width:40px;height:40px;border-radius:50%;background:#2e7d32;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+pinIcon+'</a>'
+      :'';
+    var mainText='';
+    if(showTel&&k.name)mainText='<span style="font-size:13px;color:var(--text);flex:1;min-width:0;">'+esc(k.name)+'</span>';
+    else if(showMaps&&!showTel)mainText='<span style="font-size:11px;color:var(--text2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(adr)+'</span>';
+    else if(showTel&&showMaps)
+      mainText='<div style="flex:1;min-width:0;">'
+        +'<div style="font-size:13px;color:var(--text);">'+(k.name?esc(k.name):'')+'</div>'
+        +'<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(adr)+'</div>'
         +'</div>';
-    }
-    // Keine Aktion → Platzhalter damit Layout stabil bleibt
-    return '<div style="width:64px;flex-shrink:0;"></div>';
+    return'<div style="display:flex;align-items:center;gap:8px;padding:5px 10px 8px;border-top:0.5px solid var(--border);">'
+      +mainText+telBtn+mapsBtn+'</div>';
   }
 
   function taskRow(item,borderColor){
     var t=item.t;
-    var chips='';
-    // Projekt-Chip
-    if(item.board)chips+='<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--bg4);color:var(--text2);white-space:nowrap;">'+esc(item.board)+'</span>';
-    // Datum-Chip
-    if(t.due){
-      var isOverdue=t.due<today;
-      var isToday=t.due===today;
-      var dcol=isOverdue?'#E24B4A':isToday?'#EF9F27':'#639922';
-      var dlabel=fmtDue(t.due);
-      if(isOverdue){var d=diffDays(t.due);dlabel+=' ('+d+'d)';}
-      chips+='<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:'+dcol+'22;color:'+dcol+';font-weight:600;white-space:nowrap;">'+dlabel+'</span>';
-    }
-    // Zoom-Button (openDetail)
-    var zoomBtn='<button onclick="event.stopPropagation();openDetail(\''+escAttr(t.id)+'\')" '
-      +'style="width:32px;height:32px;border-radius:50%;background:var(--bg4);border:1px solid var(--border);'
-      +'display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;padding:0;" title="Detail öffnen">'
-      +'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
-      +'<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'
-      +'<line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>'
-      +'</svg></button>';
-    return '<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
-      +'style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:7px;'
-      +'display:flex;align-items:stretch;overflow:hidden;cursor:pointer;">'
-      // Farbiger linker Streifen
-      +'<div style="width:4px;background:'+borderColor+';flex-shrink:0;"></div>'
-      // Hauptinhalt
-      +'<div style="flex:1;padding:9px 8px;min-width:0;">'
-      // Zeile 1: Titel
-      +'<div style="font-size:13px;font-weight:600;color:var(--text);line-height:1.3;word-break:break-word;">'+esc(t.title)+'</div>'
-      // Zeile 2: Chips + Zoom
-      +'<div style="display:flex;align-items:center;gap:4px;margin-top:5px;flex-wrap:nowrap;">'
-      +chips
-      +'<div style="flex:1;"></div>'
-      +zoomBtn
-      +'</div>'
-      +'</div>'
-      // Rechte Aktionsspalte
-      +'<div style="display:flex;align-items:center;justify-content:center;padding:6px 6px;">'
-      +actionBlock(t)
-      +'</div>'
+    var isOverdue=t.due<today;
+    var isToday=t.due===today;
+    var isBesicht=t.aktivitaet==='besichtigung';
+    var isAnruf=t.aktivitaet==='anruf';
+    var k=(t.kontakte||[]).find(function(c){return c.anrufKontakt&&c.tel;});
+    var badges='';
+    if(isBesicht)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#2e7d3222;color:#2e7d32;font-weight:600;white-space:nowrap;">Besichtigung</span>';
+    if(isAnruf)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a6fc422;color:#1a6fc4;font-weight:600;white-space:nowrap;">Anruf</span>';
+    if(isBesicht&&k)badges+=' <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a6fc422;color:#1a6fc4;font-weight:600;white-space:nowrap;">+ Anruf</span>';
+    var dcol=isOverdue?'#E24B4A':isToday?'#EF9F27':'#639922';
+    var dlabel=fmtDue(t.due);
+    if(isOverdue){var d=diffDays(t.due);dlabel+=' · '+d+'d';}
+    badges+=(badges?' ':'')+' <span style="font-size:11px;color:'+dcol+';font-weight:600;white-space:nowrap;">'+dlabel+'</span>';
+    var al=actionLine(t);
+    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
+      +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:3px solid '+borderColor
+      +';border-radius:0 8px 8px 0;margin-bottom:7px;overflow:hidden;cursor:pointer;">'
+      +'<div style="padding:9px 10px 3px;font-size:14px;font-weight:600;color:var(--text);line-height:1.3;word-break:break-word;">'+esc(t.title)+'</div>'
+      +'<div style="padding:3px 10px 6px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;">'+badges+'</div>'
+      +al
       +'</div>';
   }
 
   function section(label,color,items,borderColor){
     if(!items.length)return'';
     return'<div style="margin-bottom:12px;">'
-      +'<div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;'
-      +'color:'+color+';margin-bottom:6px;display:flex;align-items:center;gap:6px;">'
-      +label+' <span style="font-size:11px;padding:1px 7px;border-radius:10px;background:'+color+'22;color:'+color+';font-weight:700;">'+items.length+'</span></div>'
+      +'<div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:'+color
+      +';margin-bottom:6px;display:flex;align-items:center;gap:6px;">'
+      +'<span style="width:6px;height:6px;border-radius:50%;background:'+color+';display:inline-block;"></span>'
+      +label+' <span style="padding:1px 7px;border-radius:10px;background:'+color+'22;color:'+color+';font-weight:700;">'+items.length+'</span></div>'
       +items.map(function(i){return taskRow(i,borderColor);}).join('')
       +'</div>';
   }
 
   var d=new Date();
   var ds=d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
-  var html='<div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:12px;">📅 '+ds+'</div>';
+  var zoomBar='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg3);border-radius:8px;margin-bottom:10px;">'
+    +'<span style="font-size:11px;color:var(--text2);flex-shrink:0;">A</span>'
+    +'<input type="range" min="80" max="160" step="5" value="'+zoom+'" style="flex:1;accent-color:var(--accent);" '
+    +'oninput="(function(v){var c=document.getElementById(\'heuteZoomContent\');if(c)c.style.zoom=v+\'%\';'
+    +'var lbl=document.getElementById(\'heuteZoomVal\');if(lbl)lbl.textContent=v+\'%\';'
+    +'try{localStorage.setItem(\'ptp_heute_mob_zoom\',v);}catch(e){}}).call(null,this.value)">'
+    +'<span id="heuteZoomVal" style="font-size:11px;color:var(--text);min-width:32px;text-align:right;flex-shrink:0;">'+zoom+'%</span>'
+    +'</div>';
+  var html=zoomBar+'<div id="heuteZoomContent" style="zoom:'+zoom+'%;">'
+    +'<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;">📅 '+ds+'</div>';
   if(!ueberfaellig.length&&!heuteFaellig.length&&!bald.length){
     html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Keine fälligen Aufgaben 🎉</div>';
   }else{
@@ -663,6 +650,7 @@ function renderHeuteMobil(){
     html+=section('Heute','#EF9F27',heuteFaellig,'#EF9F27');
     html+=section('Nächste 3 Tage','#639922',bald,'#639922');
   }
+  html+='</div>';
   el.innerHTML=html;
 }
 // ── TOKEN-KEY MIGRATION (von altem ptpm_token auf ptp_gdrive_token_v1) ──
