@@ -210,7 +210,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .hide{display:none!important}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.7/dist/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -493,6 +493,8 @@ async function afterLogin(){
   }catch(e){console.warn('[PTP-Mobile]',e);}
   // Workspace-Ordner-ID aus localStorage laden (gleicher Key wie PC-Version)
   try{workspaceFolderId=localStorage.getItem(WORKSPACE_FOLDER_KEY)||null;}catch(e){console.warn('[PTP-Mobile]',e);}
+  // HV-Bild-Cache vorladen (schnellere Thumbnails)
+  try{ _preloadHvBildCacheMob(); }catch(e){}
   await findOrPickFile();
 }
 function tokenValid(){return gdriveToken&&Date.now()<gdriveTokenExpires;}
@@ -2493,7 +2495,7 @@ function _openSbPdfOrdner(){
 }
 function _openStammblattMob(){
   var isGithub=window.location.hostname.includes('github.io');
-  var url=isGithub?'https://ddmbraun.github.io/bau-doku/stammblatt.html':'../stammblatt.html';
+  var url=isGithub?'https://ddmbraun.github.io/PAM-Desktop/stammblatt.html':'../stammblatt.html';
   window.open(url,'_blank');
 }
 // ──────────────────────────────────────────────────────────────────────────
@@ -2865,6 +2867,63 @@ function removeMCkItem(i){
 // Cache für Blob-URLs (driveId -> ObjectURL). Einträge werden beim Verlassen des Detail-Screens NICHT freigegeben,
 // damit bei Re-Renders nicht jedes Mal neu geladen wird. Bei Logout/Reload gibt der Browser sie automatisch frei.
 const _fotoBlobCache=new Map();
+
+// ── HV-Bild Cache (geteilt mit Desktop über localStorage) ────────────
+const _HV_CACHE_MAX_AGE_MOB = 24 * 60 * 60 * 1000; // 24 Stunden
+let _hvBildCacheMapMob = null;
+
+function _hvBildCacheLoadMob(){
+  try{
+    const raw = localStorage.getItem('hv_bild_cache_v1');
+    if(!raw){ _hvBildCacheMapMob = new Map(); return; }
+    const parsed = JSON.parse(raw);
+    if(parsed.ts && (Date.now() - parsed.ts) > _HV_CACHE_MAX_AGE_MOB){
+      console.info('[PAM-Mobil] HV-Bild-Cache älter als 24h – bitte HV-Bildersuche neu laden.');
+    }
+    _hvBildCacheMapMob = new Map();
+    (parsed.zeilen||[]).forEach(function(row){
+      const fid = row[0]; const vorschau = row[7]||'';
+      if(fid && vorschau) _hvBildCacheMapMob.set(fid, vorschau);
+    });
+  }catch(e){ _hvBildCacheMapMob = new Map(); }
+}
+
+function _hvBildCacheLookupMob(driveId){
+  if(!driveId) return '';
+  if(_hvBildCacheMapMob === null) _hvBildCacheLoadMob();
+  return _hvBildCacheMapMob.get(driveId) || '';
+}
+
+// Wenn HV-Bildersuche (anderer Tab) den Cache aktualisiert → sofort übernehmen
+window.addEventListener('storage', function(e){
+  if(e.key !== 'hv_bild_cache_v1') return;
+  _hvBildCacheMapMob = null; // In-Memory-Map zurücksetzen
+  console.info('[PAM-Mobil] HV-Bild-Cache aktualisiert – neu eingelesen.');
+  // Sichtbare Thumbnails neu laden
+  try{
+    document.querySelectorAll('img[data-foto-id]').forEach(function(img){
+      delete img.dataset.hydrated;
+    });
+    hydrateFotoThumbs();
+  }catch(e2){}
+});
+
+// Alle Thumbnails im Hintergrund vorladen (Browser-Cache wärmen)
+function _preloadHvBildCacheMob(){
+  try{
+    const raw = localStorage.getItem('hv_bild_cache_v1');
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    const urls = (parsed.zeilen||[]).map(function(r){ return r[7]||''; }).filter(function(u){ return u.startsWith('http'); });
+    if(!urls.length) return;
+    const fn = function(){ urls.forEach(function(url){ const img=new Image(); img.src=url; }); };
+    if(typeof requestIdleCallback === 'function'){
+      requestIdleCallback(fn, {timeout:10000});
+    } else {
+      setTimeout(fn, 1500);
+    }
+  }catch(e){}
+}
 const _fotoBlobInflight=new Map();
 async function _fetchFotoBlob(driveId){
   if(!driveId)return null;
@@ -2906,7 +2965,7 @@ function renderFotos(list){
     const id=(f.editedDriveId||f.driveId)||'';
     const caption=f.caption||'';
     const cached=id?_fotoBlobCache.get(id):null;
-    const thumbSrc=f.thumbnail||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
+    const thumbSrc=f.thumbnail||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
     const srcAttr=cached?('src="'+escAttr(cached)+'" ')
                  :(id?'data-foto-id="'+escAttr(id)+'" src="'+escAttr(thumbSrc)+'" '
                      :(thumbSrc?'src="'+escAttr(thumbSrc)+'" ':''));
