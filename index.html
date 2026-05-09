@@ -2881,10 +2881,14 @@ function _hvBildCacheLoadMob(){
       console.info('[PAM-Mobil] HV-Bild-Cache älter als 24h – bitte HV-Bildersuche neu laden.');
     }
     _hvBildCacheMapMob = new Map();
-    (parsed.zeilen||[]).forEach(function(row){
-      const fid = row[0]; const vorschau = row[7]||'';
-      if(fid && vorschau) _hvBildCacheMapMob.set(fid, vorschau);
-    });
+    if(parsed.map){
+      Object.entries(parsed.map).forEach(function(e){ if(e[0]&&e[1]) _hvBildCacheMapMob.set(e[0],e[1]); });
+    } else {
+      (parsed.zeilen||[]).forEach(function(row){
+        const fid = row[0]; const vorschau = row[7]||'';
+        if(fid && vorschau) _hvBildCacheMapMob.set(fid, vorschau);
+      });
+    }
   }catch(e){ _hvBildCacheMapMob = new Map(); }
 }
 
@@ -2914,7 +2918,8 @@ function _preloadHvBildCacheMob(){
     const raw = localStorage.getItem('hv_bild_cache_v1');
     if(!raw) return;
     const parsed = JSON.parse(raw);
-    const urls = (parsed.zeilen||[]).map(function(r){ return r[7]||''; }).filter(function(u){ return u.startsWith('http'); });
+    const urls = parsed.map ? Object.values(parsed.map).filter(function(u){ return u&&u.startsWith('http'); })
+                            : (parsed.zeilen||[]).map(function(r){ return r[7]||''; }).filter(function(u){ return u.startsWith('http'); });
     if(!urls.length) return;
     const fn = function(){ urls.forEach(function(url){ const img=new Image(); img.src=url; }); };
     if(typeof requestIdleCallback === 'function'){
@@ -4504,15 +4509,4 @@ function _openAttachThumbnailGridMob(){
     label.textContent=a.name||'Anhang';
     label.title=a.name||'';
     const typeBadge=document.createElement('div');
-    typeBadge.style.cssText='padding:1px 9px 6px;font-size:10px;color:var(--text2);';
-    typeBadge.textContent=isImg?'🖼️ Bild':isPdf?'📄 PDF':isTxt?'📝 Text':'📎 Datei';
-    tile.append(previewArea,label,typeBadge);
-    body.appendChild(tile);
-  });
-  ov.append(hdr,body);
-  document.body.appendChild(ov);
-}
-
-</script>
-</body>
-</html>
+    typeBadge.style.cssText='padding:1px 9px 6px;font-size:10px;colo
