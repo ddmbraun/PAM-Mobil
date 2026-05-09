@@ -4509,4 +4509,15 @@ function _openAttachThumbnailGridMob(){
     label.textContent=a.name||'Anhang';
     label.title=a.name||'';
     const typeBadge=document.createElement('div');
-    typeBadge.style.cssText='padding:1px 9px 6px;font-size:10px;colo
+    typeBadge.style.cssText='padding:1px 9px 6px;font-size:10px;color:var(--text2);';
+    typeBadge.textContent=isImg?'🖼️ Bild':isPdf?'📄 PDF':isTxt?'📝 Text':'📎 Datei';
+    tile.append(previewArea,label,typeBadge);
+    body.appendChild(tile);
+  });
+  ov.append(hdr,body);
+  document.body.appendChild(ov);
+}
+
+</script>
+</body>
+</html>
