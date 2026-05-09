@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#1a1a2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -321,6 +322,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 const GDRIVE_CLIENT_ID='56419258975-2ri3eujer9p6saph1mesa5hihlcae1pl.apps.googleusercontent.com';
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly'; // Sync mit Desktop
 const TOKEN_KEY='ptp_gdrive_token_v1';  // Synchronisiert mit PC-Version
+let mobETag = null;  // ETag für Optimistic Locking
 const FILE_KEY='ptpm_file';
 const WORKSPACE_FOLDER_KEY='workspace_folder_id';  // Gleicher Key wie PC-Version
 const LEGACY_TOKEN_KEY='ptpm_token';  // Alter Mobile-Token-Key (für Migration)
@@ -457,7 +459,7 @@ function initTokenClient(){
     callback:onTokenResponse,
     error_callback:(err)=>{
       console.warn('[PTP-Mobile] GIS error_callback:',JSON.stringify(err));
-      if(err&&(err.type==='popup_failed_to_open'||err.type==='popup_closed')){
+      if(err&&(err.type==='popup_failed_to_open'||err.type==='popup_closed'||err.type==='immediate_failed')){
         document.getElementById('loginStatus').textContent='⚠ Popup blockiert – bitte Popup im Browser erlauben und erneut versuchen.';
       } else if(err&&err.type){
         document.getElementById('loginStatus').textContent='⚠ Google-Fehler: '+err.type;
@@ -478,7 +480,21 @@ function onGsiLoaded(){
 }
 let _pendingAutoConnect=null;
 function onTokenResponse(resp){
-  if(resp.error){document.getElementById('loginStatus').textContent='Fehler: '+resp.error;return;}
+  if(resp.error){
+    const _mobErrEl=document.getElementById('loginStatus');
+    if(['immediate_failed','interaction_required'].includes(resp.error)){
+      // Silent-Refresh fehlgeschlagen (Third-Party-Cookie-Blocking)
+      // → Banner zeigen, User muss explizit klicken
+      if(_mobErrEl)_mobErrEl.textContent='⚠ Automatische Anmeldung nicht möglich – bitte "Anmelden" tippen.';
+      _showMobDriveWarnBanner();
+      console.warn('[PTP-Mobile] immediate_failed / interaction_required – Nutzer-Interaktion nötig');
+    } else if(resp.error==='access_denied'){
+      if(_mobErrEl)_mobErrEl.textContent='⚠ Zugriff verweigert – bitte erneut anmelden.';
+    } else {
+      if(_mobErrEl)_mobErrEl.textContent='⚠ Anmeldefehler: '+resp.error;
+    }
+    return;
+  }
   gdriveToken=resp.access_token;
   gdriveTokenExpires=Date.now()+(Number(resp.expires_in||3600)-60)*1000;
   try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern:',e);}
@@ -497,6 +513,84 @@ async function afterLogin(){
   try{ _preloadHvBildCacheMob(); }catch(e){}
   await findOrPickFile();
 }
+
+// ── ETag-Konflikt-Dialog ──────────────────────────────────────────────────
+function _showETagConflictDialog(onOverwrite, onDiscard) {
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  const dlg = document.createElement('div');
+  dlg.style.cssText = 'background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.4);font-family:Arial,sans-serif;';
+  dlg.innerHTML = `
+    <div style="font-size:20px;font-weight:700;margin-bottom:10px;">⚠ Schreib-Konflikt</div>
+    <div style="font-size:14px;margin-bottom:20px;line-height:1.5;color:#444;">
+      Die Datei wurde zwischenzeitlich von einem anderen Gerät geändert.<br>
+      Was soll mit deinen lokalen Änderungen passieren?
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <button id="_etagOverwrite" style="flex:1;padding:10px;border-radius:8px;background:#c0392b;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">
+        💾 Meine Version speichern
+      </button>
+      <button id="_etagDiscard" style="flex:1;padding:10px;border-radius:8px;background:#27ae60;color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;">
+        🔄 Neueste Version laden
+      </button>
+    </div>`;
+  ov.appendChild(dlg);
+  document.body.appendChild(ov);
+  document.getElementById('_etagOverwrite').onclick = () => { ov.remove(); if(onOverwrite) onOverwrite(); };
+  document.getElementById('_etagDiscard').onclick  = () => { ov.remove(); if(onDiscard)  onDiscard(); };
+}
+
+
+// ── Resumable Upload: Two-Step-Verfahren (Session-Init + Byte-Transfer) ──
+// Robuster bei instabilen Netzwerkverbindungen. Geeignet für alle Dateigrössen.
+// token       – gültiger Access-Token
+// fileId      – Drive-Datei-ID für Update (PATCH); null für neue Datei (POST)
+// content     – String oder Uint8Array / ArrayBuffer
+// mimeType    – MIME-Typ der Datei
+// etag        – optionaler ETag für Optimistic Locking (If-Match)
+// Rückgabe: Response-Objekt des Upload-Requests
+async function _driveResumableUpdate(token, fileId, content, mimeType, etag) {
+  mimeType = mimeType || 'application/json';
+  const encoded = (typeof content === 'string')
+    ? new TextEncoder().encode(content)
+    : (content instanceof ArrayBuffer ? new Uint8Array(content) : content);
+  const size = encoded.byteLength !== undefined ? encoded.byteLength : encoded.length;
+
+  // Step 1: Upload-Session initialisieren
+  const initUrl = fileId
+    ? 'https://www.googleapis.com/upload/drive/v3/files/' + fileId + '?uploadType=resumable&fields=modifiedTime'
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,modifiedTime';
+  const initHeaders = {
+    Authorization: 'Bearer ' + token,
+    'Content-Type': 'application/json',
+    'X-Upload-Content-Type': mimeType,
+    'X-Upload-Content-Length': String(size)
+  };
+  if (etag) initHeaders['If-Match'] = etag;
+
+  const initR = await fetch(initUrl, {
+    method: fileId ? 'PATCH' : 'POST',
+    headers: initHeaders,
+    body: JSON.stringify({ mimeType })
+  });
+  if (initR.status === 412) return initR; // 412 direkt zurückgeben → ETag-Konflikt-Dialog
+  if (!initR.ok) throw new Error('Resumable-Init fehlgeschlagen: HTTP ' + initR.status);
+
+  const sessionUrl = initR.headers.get('Location');
+  if (!sessionUrl) throw new Error('Keine Resumable-Session-URL erhalten');
+
+  // Step 2: Daten übertragen
+  const uploadR = await fetch(sessionUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Length': String(size)
+    },
+    body: encoded
+  });
+  return uploadR;
+}
+
 function tokenValid(){return gdriveToken&&Date.now()<gdriveTokenExpires;}
 function _showMobDriveWarnBanner(){
   if(document.getElementById('_mobDriveWarnBanner'))return;
@@ -850,6 +944,9 @@ async function loadFile(){
     const r=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&_='+Date.now(),
       {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
     if(!r.ok)throw new Error('HTTP '+r.status);
+    // ETag für Optimistic Locking speichern
+    const _mLoadETag=r.headers.get('ETag')||r.headers.get('etag');
+    if(_mLoadETag)mobETag=_mLoadETag;
     const data=await r.json();
     _applyMobileFilter(data);
     const bk=Object.keys(boards);
@@ -1014,8 +1111,17 @@ async function saveFile(){
     for(const[k,v]of Object.entries(hiddenBoards||{}))obj[k]=v;
     for(const[k,v]of Object.entries(boards||{}))obj[k]=v;
     const content=JSON.stringify(obj,null,2);
-    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media&fields=modifiedTime',
-      {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:content});
+    // Resumable Upload (Two-Step: Session-Init + Byte-Transfer)
+    const r=await _driveResumableUpdate(gdriveToken, fileId, content, 'application/json', mobETag);
+    if(r.status===412){
+      _showETagConflictDialog(
+        async()=>{mobETag=null;await saveWorkboard(fileId,content);},
+        async()=>{await loadWorkboard(fileId);}
+      );
+      return {ok:false,status:412};
+    }
+    const _mobSaveETag=r.headers.get('ETag')||r.headers.get('etag');
+    if(_mobSaveETag)mobETag=_mobSaveETag;
     // 401 → Token still erneuern und einmal sofort Retry
     if(r.status===401){
       setSaveInd('saving','Token erneuern…');
@@ -1657,9 +1763,10 @@ function _openWartungsprotokollMobil(existingIdx){
               const img=document.createElement('img');
               img.style.cssText='width:100%;height:100%;object-fit:cover;';
               if(f.localUrl)img.src=f.localUrl;
-              else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
-                fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
-                  .then(r=>r.blob()).then(b=>{img.src=URL.createObjectURL(b);}).catch(()=>{});
+              else if(f.driveId){
+                // Thumbnail-First für Galerie
+                img.src='https://drive.google.com/thumbnail?id='+encodeURIComponent(f.driveId)+'&sz=w160';
+                img.onerror=()=>{if(gdriveToken)_fetchFotoBlob(f.driveId).then(u=>{if(u)img.src=u;});};
               }
               th.appendChild(img);
             }
@@ -1776,10 +1883,11 @@ function _wpMobRenderFotos(bericht,grid){
       },280);
     };
     if(f.localUrl){const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';cell.appendChild(img);}
-    else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
+    else if(f.driveId){
       const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
-      fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
-        .then(r=>r.blob()).then(b=>{img.src=URL.createObjectURL(b);}).catch(()=>{});
+      // Thumbnail-First für Galerie
+      img.src='https://drive.google.com/thumbnail?id='+encodeURIComponent(f.driveId)+'&sz=w160';
+      img.onerror=()=>{if(gdriveToken)_fetchFotoBlob(f.driveId).then(u=>{if(u)img.src=u;});};
       cell.appendChild(img);
     }
     const badge=document.createElement('div');badge.className='wpmb';
@@ -2930,18 +3038,105 @@ function _preloadHvBildCacheMob(){
   }catch(e){}
 }
 const _fotoBlobInflight=new Map();
+
+// ── DrivePhotoCache: IndexedDB-Caching für Drive-Fotos ───────────────────
+// Speichert heruntergeladene Blobs lokal. Vor erneutem Download wird
+// das modifiedTime aus Drive-Metadaten geprüft – nur bei Änderung neu laden.
+const DrivePhotoCache = {
+  _db: null,
+  _DB_NAME: 'drive-photo-cache-v1',
+  _STORE: 'blobs',
+  async _open() {
+    if (this._db) return this._db;
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(this._DB_NAME, 1);
+      req.onupgradeneeded = e => {
+        e.target.result.createObjectStore(this._STORE, { keyPath: 'id' });
+      };
+      req.onsuccess = e => { this._db = e.target.result; resolve(this._db); };
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async get(driveId) {
+    try {
+      const db = await this._open();
+      return new Promise(resolve => {
+        const req = db.transaction(this._STORE,'readonly').objectStore(this._STORE).get(driveId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    } catch(e) { return null; }
+  },
+  async put(driveId, arrayBuffer, mimeType, modifiedTime) {
+    try {
+      const db = await this._open();
+      return new Promise(resolve => {
+        const tx = db.transaction(this._STORE,'readwrite');
+        tx.objectStore(this._STORE).put({
+          id: driveId,
+          buf: arrayBuffer,
+          mime: mimeType || 'image/jpeg',
+          modifiedTime: modifiedTime || ''
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch(e) {}
+  },
+  createBlobUrl(entry) {
+    if (!entry || !entry.buf) return null;
+    return URL.createObjectURL(new Blob([entry.buf], { type: entry.mime || 'image/jpeg' }));
+  }
+};
+// ── Hole Foto-Blob mit IndexedDB-Cache + modifiedTime-Vergleich ───────────
+async function _fetchFotoBlobCached(driveId, token) {
+  if (!driveId || !token) return null;
+  try {
+    // 1) Cache-Eintrag prüfen
+    const cached = await DrivePhotoCache.get(driveId);
+    // 2) Metadaten holen (modifiedTime) – günstiger als Blob
+    let remoteModTime = '';
+    try {
+      const mr = await fetch(
+        'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=modifiedTime',
+        { headers: { Authorization: 'Bearer ' + token } }
+      );
+      if (mr.ok) {
+        const meta = await mr.json();
+        remoteModTime = meta.modifiedTime || '';
+      }
+    } catch(e) { /* best-effort */ }
+    // 3) Cache treffer?
+    if (cached && remoteModTime && cached.modifiedTime === remoteModTime) {
+      const url = DrivePhotoCache.createBlobUrl(cached);
+      if (url) return url;
+    }
+    // 4) Neu von Drive laden
+    const r = await fetch(
+      'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?alt=media',
+      { headers: { Authorization: 'Bearer ' + token } }
+    );
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const buf = await r.arrayBuffer();
+    const ct = r.headers.get('content-type') || 'image/jpeg';
+    await DrivePhotoCache.put(driveId, buf, ct, remoteModTime);
+    return URL.createObjectURL(new Blob([buf], { type: ct }));
+  } catch(e) {
+    console.warn('[DrivePhotoCache] Fehler für', driveId, e);
+    return null;
+  }
+}
+
 async function _fetchFotoBlob(driveId){
   if(!driveId)return null;
+  // In-Memory-Cache zuerst
   if(_fotoBlobCache.has(driveId))return _fotoBlobCache.get(driveId);
   if(_fotoBlobInflight.has(driveId))return _fotoBlobInflight.get(driveId);
   const p=(async()=>{
     if(!(await ensureToken()))throw new Error('Kein Token');
-    const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(driveId)+'?alt=media',
-      {headers:{Authorization:'Bearer '+gdriveToken}});
-    if(!r.ok){throw new Error('HTTP '+r.status);}
-    const blob=await r.blob();
-    const url=URL.createObjectURL(blob);
-    _fotoBlobCache.set(driveId,url);
+    // IndexedDB-Cache mit modifiedTime-Vergleich
+    const url=await _fetchFotoBlobCached(driveId, gdriveToken);
+    if(url)_fotoBlobCache.set(driveId,url);
     return url;
   })();
   _fotoBlobInflight.set(driveId,p);
