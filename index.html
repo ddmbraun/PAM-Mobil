@@ -69,7 +69,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .fab:active{transform:scale(.95)}
 .empty{text-align:center;color:var(--text2);padding:40px 20px;font-size:14px}
 /* ── DETAIL ── */
-.detail-body{flex:1;overflow-y:auto;padding:14px 16px 100px;-webkit-overflow-scrolling:touch;--m-scale:1}
+.detail-body{flex:1;overflow-y:auto;padding:0 16px 100px;-webkit-overflow-scrolling:touch;--m-scale:1}
 .sect{background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
 .sect-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer;user-select:none;font-weight:600;font-size:calc(15px * var(--m-scale));text-transform:uppercase;letter-spacing:.5px;color:var(--text2)}
 .sect-head::after{content:'▸';transition:transform .15s;font-size:12px}
@@ -115,7 +115,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 /* ── TIMER ── */
 .timer-bar{display:flex;flex-direction:column;gap:7px;padding:10px 12px;background:#E8ECFF;border:1.5px solid var(--accent);border-radius:12px;margin-bottom:10px;width:100%;box-sizing:border-box}
 .timer-bar.running{background:#FFF0DC;border-color:var(--orange)}
-.timer-bar.top{position:sticky;top:0;z-index:5;margin:0 0 12px;border-width:2px;box-shadow:0 2px 10px rgba(0,0,0,.14)}
+.timer-bar.top{position:sticky;top:0;z-index:5;margin:0 0 12px;border-width:2px;box-shadow:0 2px 10px rgba(0,0,0,.14);border-radius:0 0 12px 12px;border-top:none;}
 .timer-top-row{display:flex;align-items:center;gap:8px;width:100%}
 .timer-display{flex:0 0 65%;font-family:'SF Mono',Consolas,monospace;font-size:26px;font-weight:700;letter-spacing:2px;color:#1a1a2e;line-height:1.1;min-width:0;overflow:hidden}
 .timer-bar.running .timer-display{color:#b45309}
@@ -2296,12 +2296,32 @@ function renderList(){
       +(()=>{
         const _df=iso=>{if(!iso)return'';try{const d=new Date(iso);return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(_){return iso;}};
         const ov=t.due&&isOverdue(t.due);
-        const boxes=[
-          t.ausführungsdatum?'<div class="m-dbox"><div class="m-dbox-dot" style="background:#FAEEDA;border-color:#854F0B;"></div><div class="m-dbox-lbl">Erteilt</div><div class="m-dbox-val">'+_df(t.ausführungsdatum)+'</div></div>':'',
-          t.ausfuehrungstermin?'<div class="m-dbox"><div class="m-dbox-dot" style="background:#C0DD97;border-color:#3B6D11;"></div><div class="m-dbox-lbl">Ausführung</div><div class="m-dbox-val">'+_df(t.ausfuehrungstermin)+'</div></div>':'',
-          t.due?'<div class="m-dbox'+(ov?' miss':'')+'"><div class="m-dbox-dot" style="background:'+(ov?'#F7C1C1':'#FAEEDA')+';border-color:'+(ov?'#A32D2D':'#854F0B')+';"></div><div class="m-dbox-lbl">Erledigen bis</div><div class="m-dbox-val'+(ov?' miss':'')+'">'+_df(t.due)+'</div></div>':'',
-        ].filter(Boolean).join('');
-        return boxes?'<div class="m-dbox-row">'+boxes+'</div>':'';
+        // Neue aufgaben (Desktop-System) als Datebox anzeigen
+        const _aufgIcons={'Ortstermin':'📍','Anruf':'📞','Ausführungstermin':'🔨','Besichtigung':'👁','Auftrag erteilt':'📋','Angebot':'📝','E-Mail':'📧','Rückfragen':'❓','Abgeschlossen':'✅','Aufgabe':'✅','Meeting':'🗓','Recherche':'🔍'};
+        const _aufgColors=[
+          {dot:'#B5D4F4',border:'#185FA5'},
+          {dot:'#C0DD97',border:'#3B6D11'},
+          {dot:'#FAC775',border:'#854F0B'},
+          {dot:'#C4C2F7',border:'#534AB7'},
+          {dot:'#F5C5B8',border:'#993C1D'},
+        ];
+        const aufgBoxes=((t.aufgaben||[]).filter(a=>a.datum)).map((a,i)=>{
+          const c=_aufgColors[i%_aufgColors.length];
+          const ico=_aufgIcons[a.typ]||'🗓';
+          return'<div class="m-dbox"><div class="m-dbox-dot" style="background:'+c.dot+';border-color:'+c.border+';"></div>'
+            +'<div class="m-dbox-lbl">'+ico+' '+esc(a.typ)+'</div>'
+            +'<div class="m-dbox-val">'+_df(a.datum)+'</div></div>';
+        });
+        // Legacy-Felder (Rückwärtskompatibilität) – nur anzeigen wenn kein aufgaben-Eintrag mit gleichem Typ
+        const hasAusfuehrung=(t.aufgaben||[]).some(a=>a.typ==='Ausführungstermin'&&a.datum);
+        const hasErteilt=(t.aufgaben||[]).some(a=>a.typ==='Auftrag erteilt'&&a.datum);
+        const legacyBoxes=[
+          (!hasErteilt&&t.ausführungsdatum)?'<div class="m-dbox"><div class="m-dbox-dot" style="background:#FAEEDA;border-color:#854F0B;"></div><div class="m-dbox-lbl">Erteilt</div><div class="m-dbox-val">'+_df(t.ausführungsdatum)+'</div></div>':'',
+          (!hasAusfuehrung&&t.ausfuehrungstermin)?'<div class="m-dbox"><div class="m-dbox-dot" style="background:#C0DD97;border-color:#3B6D11;"></div><div class="m-dbox-lbl">Ausführung</div><div class="m-dbox-val">'+_df(t.ausfuehrungstermin)+'</div></div>':'',
+          t.due?'<div class="m-dbox'+(ov?' miss':'')+'"><div class="m-dbox-dot" style="background:'+(ov?'#F7C1C1':'#FAEEDA')+';border-color:'+(ov?'#A32D2D':'#854F0B')+';"></div><div class="m-dbox-lbl">'+(isNotizBoard?'Fällig':'Erledigen bis')+'</div><div class="m-dbox-val'+(ov?' miss':'')+'">'+_df(t.due)+'</div></div>':'',
+        ].filter(Boolean);
+        const allBoxes=[...aufgBoxes,...legacyBoxes].join('');
+        return allBoxes?'<div class="m-dbox-row">'+allBoxes+'</div>':'';
       })()
       +(showCardActions
         ?'<div style="display:flex;align-items:center;gap:8px;padding:6px 0 2px;border-top:0.5px solid var(--border);margin-top:6px;">'
@@ -2430,17 +2450,40 @@ function renderDetail(t){
           +'<div class="field" style="flex:0 0 100px"><label>Ampel</label><select onchange="updateField(\'ampel\',this.value)">'
             +['grün','orange','rot'].map(a=>'<option value="'+a+'"'+(a===(t.ampel||'grün')?' selected':'')+'>'+({'grün':'🟢','orange':'🟠','rot':'🔴'}[a])+'</option>').join('')
           +'</select></div></div>')
-      +'<div class="field"><label>Ausführungsdatum</label><input type="date" value="'+escAttr(t.ausführungsdatum||'')+'" onchange="updateField(\'ausführungsdatum\',this.value)" autocomplete="off"></div>'
-      +'<div class="field"><label>Ausführungstermin (Ausführung geplant)</label><input type="date" value="'+escAttr(t.ausfuehrungstermin||'')+' onchange="updateField(\'ausfuehrungstermin\',this.value)" autocomplete="off"></div>'
-      +'<div class="field"><label>Aktivität</label><select onchange="updateField(\'aktivitaet\',this.value)">'
+      // Baustelle-spezifische Felder: Ausführungsdaten + Aktivität
+      +(!isNotiz?'<div class="field"><label>Ausführungsdatum</label><input type="date" value="'+escAttr(t.ausführungsdatum||'')+'" onchange="updateField(\'ausführungsdatum\',this.value)" autocomplete="off"></div>':'')
+      +(!isNotiz?'<div class="field"><label>Ausführungstermin (Ausführung geplant)</label><input type="date" value="'+escAttr(t.ausfuehrungstermin||'')+'" onchange="updateField(\'ausfuehrungstermin\',this.value)" autocomplete="off"></div>':'')
+      +(!isNotiz?'<div class="field"><label>Aktivität</label><select onchange="updateField(\'aktivitaet\',this.value)">'
         +'<option value=""'+(!(t.aktivitaet)?' selected':'')+'>— keine —</option>'
         +'<option value="anruf"'+(t.aktivitaet==='anruf'?' selected':'')+'>📞 Telefonanruf</option>'
         +'<option value="besichtigung"'+(t.aktivitaet==='besichtigung'?' selected':'')+'>📍 Besichtigungstermin</option>'
-      +'</select></div>'
+      +'</select></div>':'')
+      // Notiz-Board: Fälligkeitsdatum
+      +(isNotiz?'<div class="field"><label>📅 Fälligkeitsdatum</label><input type="date" value="'+escAttr(t.due||'')+'" onchange="updateField(\'due\',this.value)" autocomplete="off"></div>':'')
       +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="updateField(\'adresse\',this.value);updateNavBtn()" onblur="_autoFillSbOrdner()" autocomplete="off"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
       +(!isNotiz?'<div class="field"><label>Hausverwaltung</label><input type="text" value="'+escAttr(t.hausverwaltung||'')+'" oninput="updateField(\'hausverwaltung\',this.value)" autocomplete="off"></div>':'')
       +'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">'+(isNotiz?'Beschreibung':'Schaden / Beschreibung')+'</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>'
     +'</div></div>'
+    // ── AUFGABEN MIT TERMIN (beide Board-Typen, read-only auf Mobile) ──
+    +((t.aufgaben&&t.aufgaben.length)?(()=>{
+      const _aufgIcons2={'Ortstermin':'📍','Anruf':'📞','Ausführungstermin':'🔨','Besichtigung':'👁','Auftrag erteilt':'📋','Angebot':'📝','E-Mail':'📧','Rückfragen':'❓','Abgeschlossen':'✅','Aufgabe':'✅','Meeting':'🗓','Recherche':'🔍'};
+      const _fmtDate=iso=>{if(!iso)return'–';try{const d=new Date(iso);return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});}catch(_){return iso;}};
+      const rows=t.aufgaben.map(a=>{
+        const ico=_aufgIcons2[a.typ]||'🗓';
+        const isOver=a.datum&&new Date(a.datum)<new Date();
+        return'<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border);">'
+          +'<span style="font-size:18px;flex-shrink:0;">'+ico+'</span>'
+          +'<div style="flex:1;min-width:0;">'
+            +'<div style="font-size:14px;font-weight:600;color:var(--text);">'+esc(a.typ)+'</div>'
+            +(a.datum?'<div style="font-size:12px;color:'+(isOver?'#c0392b':'var(--text2)')+';">'+_fmtDate(a.datum)+(isOver?' ⚠':'')+'</div>':'')
+          +'</div>'
+          +'</div>';
+      }).join('');
+      return'<div class="sect'+oc('Aufgaben')+'" data-sect="Aufgaben"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Aufgaben & Termine ('+t.aufgaben.length+')</div><div class="sect-body">'
+        +rows
+        +'<div style="font-size:12px;color:var(--text2);margin-top:8px;padding:6px;background:var(--bg3);border-radius:6px;">ℹ️ Aufgaben am Desktop bearbeiten</div>'
+        +'</div></div>';
+    })():'')
     // ── KONTAKTE (nur Baustelle) ──
     +(!isNotiz?'<div class="sect'+oc('Kontakte')+'" data-sect="Kontakte"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Kontakte ('+kontakte.length+')</div><div class="sect-body">'
       +'<div id="kontakteList">'+kontakteHtml+'</div>'
@@ -2534,7 +2577,7 @@ function renderDetail(t){
       const cnt=berichte.length;
       return '<div class="sect'+oc('Pruefformulare')+'" data-sect="Pruefformulare">'
         +'<div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;">'
-        +'<span>📋 Prüfformulare'+(cnt?' ('+cnt+')':'')+'</span>'
+        +'<span>📋 Formulare'+(cnt?' ('+cnt+')':'')+'</span>'
         +'<button onclick="event.stopPropagation();_pruefMenuShow(event)" style="font-size:20px;line-height:1;padding:2px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:400;margin-right:22px;" title="Neues Protokoll anlegen">+</button>'
         +'</div>'
         +'<div class="sect-body">'
@@ -2552,7 +2595,7 @@ function renderDetail(t){
             +'<button onclick="event.stopPropagation();_deletePruefbericht('+bi+')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid rgba(231,76,60,.4);color:var(--red);background:transparent;cursor:pointer;">✕</button>'
             +'</div>';
         }).join('')
-          :'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Prüfformulare.</div>')
+          :'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Formulare.</div>')
         +'</div></div>';
     })():'')
 ;
