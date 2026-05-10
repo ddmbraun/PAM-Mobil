@@ -446,9 +446,13 @@ function applyStoredSizeBarVisibility(){
 
 // ══ AUTH ══
 function gdriveLogin(){
+  _mobSilentGaveUp=false; // Nutzer klickt → wieder erlaubt
   initTokenClient();
   if(!gdriveTokenClient){document.getElementById('loginStatus').textContent='Google-Dienst noch nicht geladen, bitte kurz warten…';return;}
-  gdriveTokenClient.requestAccessToken({prompt:''});
+  const opts={};
+  const hint=localStorage.getItem('mob_user_email_v1')||'';
+  if(hint) opts.login_hint=hint;
+  gdriveTokenClient.requestAccessToken(opts);
 }
 function initTokenClient(){
   if(gdriveTokenClient)return;
@@ -460,6 +464,7 @@ function initTokenClient(){
     error_callback:(err)=>{
       console.warn('[PTP-Mobile] GIS error_callback:',JSON.stringify(err));
       if(err&&(err.type==='popup_failed_to_open'||err.type==='popup_closed'||err.type==='immediate_failed')){
+        if(err.type==='immediate_failed') _mobSilentGaveUp=true;
         document.getElementById('loginStatus').textContent='⚠ Popup blockiert – bitte Popup im Browser erlauben und erneut versuchen.';
       } else if(err&&err.type){
         document.getElementById('loginStatus').textContent='⚠ Google-Fehler: '+err.type;
@@ -479,6 +484,7 @@ function onGsiLoaded(){
   }
 }
 let _pendingAutoConnect=null;
+let _mobSilentGaveUp=false; // Nach immediate_failed: kein weiterer Auto-Versuch
 function onTokenResponse(resp){
   if(resp.error){
     const _mobErrEl=document.getElementById('loginStatus');
@@ -502,10 +508,18 @@ function onTokenResponse(resp){
   afterLogin();
 }
 async function afterLogin(){
+  _mobSilentGaveUp=false; // Erfolgreicher Login
   // Versuche User-Info zu holen
   try{
     const r=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+gdriveToken}});
-    if(r.ok){const j=await r.json();userEmail=j.email||'';}
+    if(r.ok){
+      const j=await r.json();
+      userEmail=j.email||'';
+      // E-Mail für login_hint speichern (kein Konto-Dialog beim nächsten Besuch)
+      if(userEmail&&!localStorage.getItem('mob_user_email_v1')){
+        try{localStorage.setItem('mob_user_email_v1',userEmail);}catch(e){}
+      }
+    }
   }catch(e){console.warn('[PTP-Mobile]',e);}
   // Workspace-Ordner-ID aus localStorage laden (gleicher Key wie PC-Version)
   try{workspaceFolderId=localStorage.getItem(WORKSPACE_FOLDER_KEY)||null;}catch(e){console.warn('[PTP-Mobile]',e);}
@@ -1447,7 +1461,7 @@ function _deletePruefbericht(idx){
   const t=currentTask();if(!t||!t.pruefberichte)return;
   if(!confirm('Prüfbericht löschen?'))return;
   t.pruefberichte.splice(idx,1);
-  scheduleSave();
+  forceSave();
   const ct=currentTask();if(ct)renderDetail(ct);
 }
 
@@ -3695,7 +3709,7 @@ window.addEventListener('load',async()=>{
   const tryAutoConnect = async () => {
     initTokenClient();
     const stored=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
-    if(stored&&stored.token){
+    if(stored&&stored.token&&!_mobSilentGaveUp){
       document.getElementById('loginStatus').textContent='Verbinde automatisch…';
       const ok=await silentRefresh();
       if(ok){afterLogin();return;}
