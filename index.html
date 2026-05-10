@@ -1092,8 +1092,34 @@ async function saveFile(){
             }
             statuses=remoteStatuses;
             mobileWhitelist=rWhite;
-            boards=remoteVisible;
             hiddenBoards=remoteHidden;
+            // Kein Task offen (_savingTaskId null) → lokale Boards behalten,
+            // aber Desktop-Neuzugänge übernehmen (ohne gelöschte Tasks zurückzubringen)
+            if(!_savingTaskId){
+              const merged={};
+              // Alle Remote-Boards als Basis
+              for(const bn of Object.keys(remoteVisible)){
+                const localArr=boards[bn]||[];
+                const remoteArr=remoteVisible[bn]||[];
+                // Lokale IDs: was lokal noch vorhanden ist (Löschungen sind weg)
+                const localIds=new Set(localArr.map(t=>t&&t.id).filter(Boolean));
+                // Remote-IDs: was der Desktop hat
+                const mergedArr=[...localArr];
+                for(const rt of remoteArr){
+                  if(!rt||!rt.id)continue;
+                  // Nur hinzufügen wenn lokal nicht vorhanden UND nicht lokal gelöscht
+                  if(!localIds.has(rt.id))mergedArr.push(rt);
+                }
+                merged[bn]=mergedArr;
+              }
+              // Boards die nur remote existieren (neue Desktop-Boards) übernehmen
+              for(const bn of Object.keys(remoteVisible)){
+                if(!merged[bn])merged[bn]=remoteVisible[bn];
+              }
+              boards=merged;
+            } else {
+              boards=remoteVisible;
+            }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
             // Board-Typen (Baustelle/Aufgaben) aus Remote übernehmen, damit nach PC-Konflikt-Merge korrekt
@@ -3567,7 +3593,10 @@ function deleteTask(){
   if(!confirm('Task „'+(t.title||'')+'" wirklich löschen?'))return;
   const bn=findBoardByTaskId(t.id);
   if(bn){boards[bn]=boards[bn].filter(x=>x.id!==t.id);}
-  currentTaskId=null;scheduleSave();closeDetail();
+  currentTaskId=null;
+  // Sofort speichern (kein Debounce) – verhindert dass Poll die Löschung überschreibt
+  forceSave();
+  closeDetail();
   toast('Task gelöscht','success');
 }
 
