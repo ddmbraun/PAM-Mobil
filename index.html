@@ -1101,8 +1101,11 @@ async function saveFile(){
                       if((lv===''||lv===null||lv===undefined)&&rv){mergedTask[f]=rv;}
                     }
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','bauOrdner','pruefberichte','ortstermin']; // checkliste/kontakte/tags/adressen werden in Mobile bearbeitet
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','bauOrdner','ortstermin']; // checkliste/kontakte/tags/adressen/pruefberichte werden in Mobile bearbeitet
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
+                    // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
+                    // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
+                    mergedTask.pruefberichte=_mergeListByKey(rt.pruefberichte,localTask.pruefberichte,b=>(b.id||((b.titel||'')+'|'+(b.datum||''))));
                     mergedTask.notizVerlauf=_mergeListByKey(rt.notizVerlauf,localTask.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
                     mergedTask.zeitEntries=_mergeListByKey(rt.zeitEntries,localTask.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
                     mergedTask.ausserhausTermine=_mergeListByKey(rt.ausserhausTermine,localTask.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
@@ -2348,7 +2351,7 @@ function renderList(){
       +(ausf?'<span style="color:var(--text2)">📅 '+esc(ausf)+'</span>':'')
       +(isRunning?'<span style="color:var(--text);font-size:12px;font-weight:600;margin-left:auto">⏱ '+formatTimerFor(t.id)+'</span>':'')
       +'</div>'
-      +(()=>{
+      +(()=>{ try {
         const _df=iso=>{if(!iso)return'';try{const d=new Date(iso);return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(_){return iso;}};
         const ov=t.due&&isOverdue(t.due);
         // Neue aufgaben (Desktop-System) als Datebox anzeigen
@@ -2377,7 +2380,7 @@ function renderList(){
         ].filter(Boolean);
         const allBoxes=[...aufgBoxes,...legacyBoxes].join('');
         return allBoxes?'<div class="m-dbox-row">'+allBoxes+'</div>':'';
-      })()
+      } catch(_de){ console.warn('[renderList aufgaben]',t&&t.id,_de); return ''; } })()
       +(showCardActions
         ?'<div style="display:flex;align-items:center;gap:8px;padding:6px 0 2px;border-top:0.5px solid var(--border);margin-top:6px;">'
           +(cardTelK&&cardTelK.name
@@ -2387,7 +2390,7 @@ function renderList(){
           +'</div>'
         :'')
       +'</div>';
-  } catch(_e){ console.error('[renderList]',t&&t.id,_e); return '<div class="task-card" style="color:var(--red)">⚠ '+esc((t&&t.title)||'?')+'</div>'; }
+  } catch(_e){ console.error('[renderList]',t&&t.id,_e); return '<div class="task-card" onclick="openDetail(\''+escAttr((t&&t.id)||'')+'\')">⚠ <span style="color:var(--red)">'+esc((t&&t.title)||'(Fehler)')+'</span></div>'; }
   }).join('');
   if(runningTaskId)_startListTickLoop();else _stopListTickLoop();
 }
