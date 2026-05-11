@@ -240,7 +240,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <div class="board-bar" id="statusBar"></div>
   </div>
   <div class="search-bar">
-    <input type="text" id="searchInput" placeholder="🔍 Suche Titel, Kostenstelle, Adresse…" oninput="renderList();document.getElementById('searchClear').style.display=this.value?'block':'none'" autocomplete="off" autocorrect="off" spellcheck="false">
+    <input type="text" id="searchInput" placeholder="🔍 Suche Titel, Kostenstelle, Adresse…" oninput="renderList();document.getElementById('searchClear').style.display=this.value?'block':'none'" autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="search">
     <button class="search-clear" id="searchClear" onclick="document.getElementById('searchInput').value='';this.style.display='none';renderList()">✕</button>
   </div>
   <div style="display:flex;gap:6px;padding:6px 12px 0;flex-shrink:0;">
@@ -1023,7 +1023,22 @@ function startPolling(){
   if(pollTimer)clearInterval(pollTimer);
   pollTimer=setInterval(pollForChanges,30000); // Synchron mit Desktop (war 20000)
   if(!window._ptpmVisHooked){
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollForChanges();});
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState!=='visible')return;
+      // Token-Check: wenn er in <10 Min abläuft, stille Erneuerung versuchen
+      // Wichtig auf Mobile: setTimeout schläft im Hintergrund-Tab ein – dieser
+      // Handler ist das Sicherheitsnetz wenn der Timer nicht feuern konnte.
+      if(gdriveToken&&gdriveTokenExpires){
+        const msLeft=gdriveTokenExpires-Date.now();
+        if(msLeft>0&&msLeft<600000){
+          silentRefresh().then(ok=>{
+            if(ok)_hideMobDriveWarnBanner();
+            else _showMobDriveWarnBanner();
+          });
+        }
+      }
+      pollForChanges();
+    });
     window._ptpmVisHooked=true;
   }
 }
@@ -2433,7 +2448,14 @@ function renderDetail(t){
       const ts=_loadTimerState();
       const savedDesc=(ts&&ts.taskId===t.id?ts.beschreibung:'')||'';
       const thumbsHtml=(t.fotos&&t.fotos.length
-        ?t.fotos.slice(-4).map(f=>'<div class="qa-thumb"><img src="'+escAttr(f.thumbnail||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':''))+'"></div>').join('')
+        ?t.fotos.slice(-4).map(f=>{
+            const id=(f.editedDriveId||f.driveId)||'';
+            const cached=id?_fotoBlobCache.get(id):null;
+            const srcAttr=cached?('src="'+escAttr(cached)+'" ')
+                         :(id?'data-foto-id="'+escAttr(id)+'" '
+                             :(f.thumbnail?'src="'+escAttr(f.thumbnail)+'" ':''));
+            return '<div class="qa-thumb"><img '+srcAttr+'alt=""></div>';
+          }).join('')
         :'')+'<div class="qa-thumb" style="background:#e8ecff;border:1.5px dashed var(--accent);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);">+</div>';
       return '<div id="timerBar" class="timer-bar top'+(running?' running':'')+'">'
         +'<div class="timer-top-row">'
@@ -3089,6 +3111,28 @@ function _hvBildCacheLookupMob(driveId){
   return _hvBildCacheMapMob.get(driveId) || '';
 }
 
+// HV-Bild IndexedDB lesen (gleiche Origin -> gleiche IDB-Instanz).
+// Gibt data:URL zurueck wenn HV-Bild das Bild bereits gecacht hat.
+async function _hvBildIdbLookup(driveId) {
+  if (!driveId) return null;
+  try {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('hv-thumb-cache-v1', 1);
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error('blocked'));
+    });
+    if (!db.objectStoreNames.contains('thumbs')) { db.close(); return null; }
+    const entry = await new Promise(resolve => {
+      const req2 = db.transaction('thumbs','readonly').objectStore('thumbs').get(driveId);
+      req2.onsuccess = () => resolve(req2.result || null);
+      req2.onerror = () => resolve(null);
+    });
+    db.close();
+    return (entry && entry.dataUrl) ? entry.dataUrl : null;
+  } catch(e) { return null; }
+}
+
 // Wenn HV-Bildersuche (anderer Tab) den Cache aktualisiert → sofort übernehmen
 window.addEventListener('storage', function(e){
   if(e.key !== 'hv_bild_cache_v1') return;
@@ -3159,7 +3203,8 @@ const DrivePhotoCache = {
           id: driveId,
           buf: arrayBuffer,
           mime: mimeType || 'image/jpeg',
-          modifiedTime: modifiedTime || ''
+          modifiedTime: modifiedTime || '',
+          cachedAt: Date.now()
         });
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
@@ -3177,6 +3222,11 @@ async function _fetchFotoBlobCached(driveId, token) {
   try {
     // 1) Cache-Eintrag prüfen
     const cached = await DrivePhotoCache.get(driveId);
+    // Schnellpfad: Cache-Eintrag juenger als 30 Min -> kein API-Call
+    if (cached && cached.cachedAt && (Date.now() - cached.cachedAt) < 30 * 60 * 1000) {
+      const url = DrivePhotoCache.createBlobUrl(cached);
+      if (url) return url;
+    }
     // 2) Metadaten holen (modifiedTime) – günstiger als Blob
     let remoteModTime = '';
     try {
@@ -3215,6 +3265,10 @@ async function _fetchFotoBlob(driveId){
   // In-Memory-Cache zuerst
   if(_fotoBlobCache.has(driveId))return _fotoBlobCache.get(driveId);
   if(_fotoBlobInflight.has(driveId))return _fotoBlobInflight.get(driveId);
+  // HV-Bild IndexedDB pruefen: wenn HV-Bild das Vorschaubild bereits gecacht hat
+  // (gleiche Origin -> gleiche IndexedDB), sofort zurueckgeben ohne API-Call.
+  const hvCached = await _hvBildIdbLookup(driveId);
+  if (hvCached) { _fotoBlobCache.set(driveId, hvCached); return hvCached; }
   const p=(async()=>{
     if(!(await ensureToken()))throw new Error('Kein Token');
     // IndexedDB-Cache mit modifiedTime-Vergleich
@@ -3230,7 +3284,11 @@ async function _fetchFotoBlob(driveId){
 async function loadFotoThumb(imgEl,driveId){
   if(!imgEl||!driveId)return;
   const url=await _fetchFotoBlob(driveId);
-  if(url){imgEl.src=url;}
+  if(url){
+    imgEl.style.display='';
+    if(imgEl.parentElement)imgEl.parentElement.classList.remove('fallback');
+    imgEl.src=url;
+  }
   else{imgEl.style.display='none';const p=imgEl.parentElement;if(p)p.classList.add('fallback');}
 }
 function hydrateFotoThumbs(){
@@ -3786,6 +3844,17 @@ async function _embedExifInDrive(driveId,caption){
 }
 </script>
 
+<script>
+// Service Worker registrieren (schnelleres Laden bei GitHub Pages)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('[SW] registriert:', reg.scope))
+      .catch(e  => console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message));
+  });
+}
+</script>
+
 <!-- ══ LIGHTBOX (Vollbild-Vorschau) ══ -->
 <div class="lightbox" id="lightbox" onclick="_lbHandleTap(event)">
   <div class="lb-caption" id="lbCaption"></div>
@@ -4000,7 +4069,9 @@ function _lbDrawArrow(ctx,x0,y0,x1,y1,size,color){
   ctx.lineTo(x1-headLen*Math.cos(angle+Math.PI/6),y1-headLen*Math.sin(angle+Math.PI/6));
   ctx.stroke();
 }
+let _lbDrawSaving=false;
 function lbDiscardDraw(){
+  _lbDrawSaving=false;
   _drawPointer=null;_drawErasing=false;
   const c=document.getElementById('drawCanvas');
   if(c){
@@ -4015,9 +4086,14 @@ function lbDiscardDraw(){
   if(bar)bar.classList.remove('visible');
 }
 async function lbSaveDraw(){
+  // Guard: verhindert Doppelaufruf wenn Lightbox waehrend des async Uploads geschlossen wird
+  if(_lbDrawSaving)return;
+  _lbDrawSaving=true;
   const img=document.getElementById('lbImg');
   const drawCanvas=document.getElementById('drawCanvas');
-  if(!img||!drawCanvas)return;
+  if(!img||!drawCanvas){_lbDrawSaving=false;return;}
+  // Canvas sofort deaktivieren, damit closeLightbox() nicht nochmals lbSaveDraw() aufruft
+  drawCanvas.classList.remove('active');
   const t=currentTask();
   if(!t||_lbFotoIdx<0||!t.fotos||!t.fotos[_lbFotoIdx]){toast('Kein Foto gewählt','error');lbDiscardDraw();return;}
   // Index VOR dem ersten await sichern – _lbFotoIdx kann sich während des
@@ -4801,4 +4877,4 @@ function _openAttachThumbnailGridMob(){
 
 </script>
 </body>
-</html>
+</html>   
