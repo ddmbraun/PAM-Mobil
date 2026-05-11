@@ -3322,46 +3322,54 @@ async function _fetchFotoBlob(driveId){
 const _mobThumbCache = new Map(); // driveId -> blobUrl (nur aktuelle Sitzung)
 const _thumbnailLinkPreload = new Map(); // driveId -> thumbnailLink (aus JSON, spart API-Call)
 
+// Hilfsfunktion: Thumbnail-URL laden (erst ohne Auth, dann mit Bearer-Token)
+async function _tryFetchThumbUrl(url) {
+  if (!url) return null;
+  try {
+    let r = null;
+    try { r = await fetch(url); } catch(_) {}
+    if (!r || !r.ok) {
+      try { r = await fetch(url, { headers: { Authorization: 'Bearer ' + gdriveToken } }); } catch(_) {}
+    }
+    if (r && r.ok) {
+      const blob = await r.blob();
+      if (blob.size > 1000) return URL.createObjectURL(blob);
+    }
+  } catch(e) { /* ignorieren */ }
+  return null;
+}
+
 async function _mobFetchThumb(driveId) {
   if (!driveId) return null;
-  // 1. In-Memory-Cache (Sitzung)
+  // 1. In-Memory-Cache (Sitzung) – schnellster Pfad
   if (_mobThumbCache.has(driveId)) return _mobThumbCache.get(driveId);
-  // 2. Vollbild bereits geladen? → direkt weiternutzen
+  // 2. Vollbild bereits geladen? Direkt weiternutzen
   if (_fotoBlobCache.has(driveId)) return _fotoBlobCache.get(driveId);
   if (!gdriveToken) return null;
   try {
-    // 3. Gespeicherten thumbnailLink aus JSON nutzen (kein API-Call noetig wenn vorhanden)
-    let thumbnailLink = _thumbnailLinkPreload.get(driveId) || null;
-    if (!thumbnailLink) {
-      // API-Call nur wenn nicht vorab befuellt
-      const metaR = await fetch(
-        'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=thumbnailLink',
-        { headers: { Authorization: 'Bearer ' + gdriveToken } }
-      );
-      if (metaR.ok) { const m = await metaR.json(); thumbnailLink = m.thumbnailLink || null; }
+    let blobUrl = null;
+    // 3. Gespeicherten thumbnailLink aus JSON zuerst probieren (schnell, kein API-Call)
+    //    Achtung: Google-URLs laufen ab – daher nur als erster Versuch, nicht als einziger.
+    const storedLink = _thumbnailLinkPreload.get(driveId) || null;
+    if (storedLink) {
+      blobUrl = await _tryFetchThumbUrl(storedLink);
     }
-    if (thumbnailLink) {
-      // Dummy-Block damit der nachfolgende Code unveraendert bleibt
-      if (true) {
-        // 4. Thumbnail laden – zuerst direkt (Google-CDN-URL, oft ohne Auth nutzbar),
-        //    dann mit Bearer-Token als Fallback.
-        let thumbR = null;
-        try { thumbR = await fetch(thumbnailLink); } catch(_) {}
-        if (!thumbR || !thumbR.ok) {
-          try { thumbR = await fetch(thumbnailLink, { headers: { Authorization: 'Bearer ' + gdriveToken } }); } catch(_) {}
+    // 4. Falls gespeicherter Link abgelaufen/ungueltig: frischen thumbnailLink von Drive-API holen
+    if (!blobUrl) {
+      try {
+        const metaR = await fetch(
+          'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=thumbnailLink',
+          { headers: { Authorization: 'Bearer ' + gdriveToken } }
+        );
+        if (metaR.ok) {
+          const m = await metaR.json();
+          if (m.thumbnailLink) blobUrl = await _tryFetchThumbUrl(m.thumbnailLink);
         }
-        if (thumbR && thumbR.ok) {
-          const blob = await thumbR.blob();
-          if (blob.size > 1000) { // Winzige Platzhalter-Bilder überspringen
-            const url = URL.createObjectURL(blob);
-            _mobThumbCache.set(driveId, url);
-            return url;
-          }
-        }
-      }
+      } catch(e) { /* best-effort */ }
     }
-  } catch(e) { console.warn('[PAM] _mobFetchThumb Fehler:', driveId, e.message); }
-  // 5. Fallback: Vollbild (zuverlässig aber langsam)
+    if (blobUrl) { _mobThumbCache.set(driveId, blobUrl); return blobUrl; }
+  } catch(e) { console.warn('[PAM-Mobil] _mobFetchThumb Fehler:', driveId, e.message); }
+  // 5. Fallback: Vollbild (immer zuverlaessig, aber groesser)
   return _fetchFotoBlob(driveId);
 }
 
