@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#1a1a2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1822,9 +1822,7 @@ function _openWartungsprotokollMobil(existingIdx){
               img.style.cssText='width:100%;height:100%;object-fit:cover;';
               if(f.localUrl)img.src=f.localUrl;
               else if(f.driveId){
-                // Thumbnail-First für Galerie
-                img.src='https://drive.google.com/thumbnail?id='+encodeURIComponent(f.driveId)+'&sz=w160';
-                img.onerror=()=>{if(gdriveToken)_fetchFotoBlob(f.driveId).then(u=>{if(u)img.src=u;});};
+                _mobFetchThumb(f.driveId).then(u=>{if(u)img.src=u;});
               }
               th.appendChild(img);
             }
@@ -1943,9 +1941,9 @@ function _wpMobRenderFotos(bericht,grid){
     if(f.localUrl){const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';cell.appendChild(img);}
     else if(f.driveId){
       const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
-      // Thumbnail-First für Galerie
-      img.src='https://drive.google.com/thumbnail?id='+encodeURIComponent(f.driveId)+'&sz=w160';
-      img.onerror=()=>{if(gdriveToken)_fetchFotoBlob(f.driveId).then(u=>{if(u)img.src=u;});};
+      // Thumbnail zuerst: thumbnailLink (~20-50 KB) statt Vollbild (~5-10 MB).
+      // Lightbox öffnet später das Vollbild via _fetchFotoBlob.
+      _mobFetchThumb(f.driveId).then(u=>{if(u)img.src=u;});
       cell.appendChild(img);
     }
     const badge=document.createElement('div');badge.className='wpmb';
@@ -3284,6 +3282,50 @@ async function _fetchFotoBlob(driveId){
   catch(e){console.warn('Thumb-Fetch fehlgeschlagen für',driveId,e);return null;}
   finally{_fotoBlobInflight.delete(driveId);}
 }
+// ── Schnelles Thumbnail via Drive thumbnailLink (~20-50 KB statt 5-10 MB) ──────
+// Beim ersten Aufruf: 1 kleiner Metadaten-Request → thumbnailLink → Thumbnail laden.
+// Fallback: _fetchFotoBlob (Vollbild), wenn kein thumbnailLink vorhanden.
+// Lightbox nutzt weiterhin _fetchFotoBlob für volle Auflösung.
+const _mobThumbCache = new Map(); // driveId → blobUrl (nur aktuelle Sitzung)
+
+async function _mobFetchThumb(driveId) {
+  if (!driveId) return null;
+  // 1. In-Memory-Cache (Sitzung)
+  if (_mobThumbCache.has(driveId)) return _mobThumbCache.get(driveId);
+  // 2. Vollbild bereits geladen? → direkt weiternutzen
+  if (_fotoBlobCache.has(driveId)) return _fotoBlobCache.get(driveId);
+  if (!gdriveToken) return null;
+  try {
+    // 3. thumbnailLink aus Drive-Metadaten (nur ~2 KB)
+    const metaR = await fetch(
+      'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=thumbnailLink',
+      { headers: { Authorization: 'Bearer ' + gdriveToken } }
+    );
+    if (metaR.ok) {
+      const { thumbnailLink } = await metaR.json();
+      if (thumbnailLink) {
+        // 4. Thumbnail laden – zuerst direkt (Google-CDN-URL, oft ohne Auth nutzbar),
+        //    dann mit Bearer-Token als Fallback.
+        let thumbR = null;
+        try { thumbR = await fetch(thumbnailLink); } catch(_) {}
+        if (!thumbR || !thumbR.ok) {
+          try { thumbR = await fetch(thumbnailLink, { headers: { Authorization: 'Bearer ' + gdriveToken } }); } catch(_) {}
+        }
+        if (thumbR && thumbR.ok) {
+          const blob = await thumbR.blob();
+          if (blob.size > 1000) { // Winzige Platzhalter-Bilder überspringen
+            const url = URL.createObjectURL(blob);
+            _mobThumbCache.set(driveId, url);
+            return url;
+          }
+        }
+      }
+    }
+  } catch(e) { console.warn('[PAM] _mobFetchThumb Fehler:', driveId, e.message); }
+  // 5. Fallback: Vollbild (zuverlässig aber langsam)
+  return _fetchFotoBlob(driveId);
+}
+
 async function loadFotoThumb(imgEl,driveId){
   if(!imgEl||!driveId)return;
   const url=await _fetchFotoBlob(driveId);
