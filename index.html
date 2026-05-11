@@ -3319,7 +3319,8 @@ async function _fetchFotoBlob(driveId){
 // Beim ersten Aufruf: 1 kleiner Metadaten-Request → thumbnailLink → Thumbnail laden.
 // Fallback: _fetchFotoBlob (Vollbild), wenn kein thumbnailLink vorhanden.
 // Lightbox nutzt weiterhin _fetchFotoBlob für volle Auflösung.
-const _mobThumbCache = new Map(); // driveId → blobUrl (nur aktuelle Sitzung)
+const _mobThumbCache = new Map(); // driveId -> blobUrl (nur aktuelle Sitzung)
+const _thumbnailLinkPreload = new Map(); // driveId -> thumbnailLink (aus JSON, spart API-Call)
 
 async function _mobFetchThumb(driveId) {
   if (!driveId) return null;
@@ -3329,14 +3330,19 @@ async function _mobFetchThumb(driveId) {
   if (_fotoBlobCache.has(driveId)) return _fotoBlobCache.get(driveId);
   if (!gdriveToken) return null;
   try {
-    // 3. thumbnailLink aus Drive-Metadaten (nur ~2 KB)
-    const metaR = await fetch(
-      'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=thumbnailLink',
-      { headers: { Authorization: 'Bearer ' + gdriveToken } }
-    );
-    if (metaR.ok) {
-      const { thumbnailLink } = await metaR.json();
-      if (thumbnailLink) {
+    // 3. Gespeicherten thumbnailLink aus JSON nutzen (kein API-Call noetig wenn vorhanden)
+    let thumbnailLink = _thumbnailLinkPreload.get(driveId) || null;
+    if (!thumbnailLink) {
+      // API-Call nur wenn nicht vorab befuellt
+      const metaR = await fetch(
+        'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=thumbnailLink',
+        { headers: { Authorization: 'Bearer ' + gdriveToken } }
+      );
+      if (metaR.ok) { const m = await metaR.json(); thumbnailLink = m.thumbnailLink || null; }
+    }
+    if (thumbnailLink) {
+      // Dummy-Block damit der nachfolgende Code unveraendert bleibt
+      if (true) {
         // 4. Thumbnail laden – zuerst direkt (Google-CDN-URL, oft ohne Auth nutzbar),
         //    dann mit Bearer-Token als Fallback.
         let thumbR = null;
@@ -3361,7 +3367,8 @@ async function _mobFetchThumb(driveId) {
 
 async function loadFotoThumb(imgEl,driveId){
   if(!imgEl||!driveId)return;
-  const url=await _fetchFotoBlob(driveId);
+  // FIX: _mobFetchThumb statt _fetchFotoBlob → laedt nur ~50 KB statt 5-10 MB fuer Grid-Vorschau
+  const url=await _mobFetchThumb(driveId);
   if(url){
     imgEl.style.display='';
     if(imgEl.parentElement)imgEl.parentElement.classList.remove('fallback');
@@ -3372,12 +3379,21 @@ async function loadFotoThumb(imgEl,driveId){
 function hydrateFotoThumbs(){
   document.querySelectorAll('img[data-foto-id]').forEach(img=>{
     if(img.dataset.hydrated==='1')return;
+    // FIX: Bild ueberspringen das bereits erfolgreich geladen wurde (aus src-Attribut)
+    if(img.complete&&img.naturalWidth>0){img.dataset.hydrated='1';return;}
     const id=img.getAttribute('data-foto-id');
     if(id){img.dataset.hydrated='1';loadFotoThumb(img,id);}
   });
 }
 function renderFotos(list){
   if(!list||!list.length)return '';
+  // Vorab thumbnailLinks aus JSON-Daten befuellen – spart API-Calls in _mobFetchThumb
+  list.forEach(function(f){
+    const id=(f.editedDriveId||f.driveId)||'';
+    if(id&&f.thumbnail&&f.thumbnail.startsWith('http')&&!_thumbnailLinkPreload.has(id)){
+      _thumbnailLinkPreload.set(id,f.thumbnail);
+    }
+  });
   return list.map((f,i)=>{
     const name=f.name||'';
     // Bearbeitete Version bevorzugen (editedDriveId)
