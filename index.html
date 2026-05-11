@@ -7,8 +7,8 @@
 <meta name="theme-color" content="#1a1a2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="PAM-Mobil">
-<title>PAM-Mobil</title>
+<meta name="apple-mobile-web-app-title" content="PTP Mobile">
+<title>PTP Mobile</title>
 <style>
 :root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#242438;--text:#e8e8f0;--text2:#9090a8;--accent:#6a8aff;--accent2:#8aa0ff;--green:#4ade80;--orange:#fb923c;--red:#f87171;--border:#333350;}
 /* ── HELL-MODUS (Sonnenlicht) ── */
@@ -221,7 +221,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 
 <!-- ══ LOGIN-SCREEN ══ -->
 <div id="loginScreen" class="screen">
-  <h1>PAM-Mobil</h1>
+  <h1>PTP Mobile</h1>
   <p>Verbindung zu Google Drive einrichten. Die App nutzt dieselbe <code>workboard.json</code> wie PTP am Desktop.</p>
   <button id="loginBtn" onclick="gdriveLogin()">🔐 Mit Google anmelden</button>
   <div class="login-status" id="loginStatus"></div>
@@ -230,7 +230,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 <!-- ══ LISTE-SCREEN ══ -->
 <div id="listScreen" class="screen hidden">
   <div class="hdr">
-    <div class="hdr-title">PAM-Mobil</div>
+    <div class="hdr-title">PTP Mobile</div>
     <button class="hdr-btn icon theme-toggle-btn" onclick="toggleTheme()" title="Hell/Dunkel wechseln">☀️</button>
     <button class="hdr-btn icon" id="refreshBtn" onclick="refreshData()" title="Neu laden – lange drücken = PC-Stand erzwingen">🔄</button>
     <button class="hdr-btn" onclick="_openStammblattMob()" title="Stammblatt öffnen" style="font-size:12px;font-weight:700">📋</button>
@@ -321,7 +321,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
 <script>
 /* ═══════════════════════════════════════════════
-   PAM-Mobil – nutzt dieselbe workboard.json wie PTP
+   PTP Mobile – nutzt dieselbe workboard.json wie PTP
    ═══════════════════════════════════════════════ */
 const GDRIVE_CLIENT_ID='56419258975-2ri3eujer9p6saph1mesa5hihlcae1pl.apps.googleusercontent.com';
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly'; // Sync mit Desktop
@@ -407,7 +407,7 @@ function toggleMSect(el){
   if(key){_mOpenSections[key]=el.classList.contains('open');}
 }
 function generateId(){return 't_'+Date.now()+'_'+Math.random().toString(36).substr(2,6);}
-function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{try{t.remove();}catch(e){console.warn('[PAM-Mobil]',e);}},2500);}
+function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{try{t.remove();}catch(e){console.warn('[PTP-Mobile]',e);}},2500);}
 function parseMinutes(von,bis){try{if(!von||!bis)return 0;const[vh,vm]=von.split(':').map(Number);const[bh,bm]=bis.split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(e){return 0;}}
 
 // ── GLOBALE ICON-SVGs (für Karten-Vorschau und Heute-View) ──
@@ -425,11 +425,11 @@ function setMobileScale(pct){
   if(body)body.style.setProperty('--m-scale',(v/100).toFixed(2));
   const lbl=document.getElementById('mSizeVal');if(lbl)lbl.textContent=v+'%';
   const sl=document.getElementById('mSizeSlider');if(sl&&String(sl.value)!==String(v))sl.value=String(v);
-  try{localStorage.setItem(MSCALE_KEY,String(v));}catch(e){console.warn('[PAM-Mobil]',e);}
+  try{localStorage.setItem(MSCALE_KEY,String(v));}catch(e){console.warn('[PTP-Mobile]',e);}
 }
 function applyStoredMobileScale(){
   let v=100;
-  try{const s=localStorage.getItem(MSCALE_KEY);if(s)v=parseInt(s,10)||100;}catch(e){console.warn('[PAM-Mobil]',e);}
+  try{const s=localStorage.getItem(MSCALE_KEY);if(s)v=parseInt(s,10)||100;}catch(e){console.warn('[PTP-Mobile]',e);}
   setMobileScale(v);
 }
 function toggleMSizeBar(){
@@ -437,7 +437,7 @@ function toggleMSizeBar(){
   if(!bar)return;
   const open=!bar.classList.contains('open');
   bar.classList.toggle('open',open);
-  try{localStorage.setItem(MSIZEBAR_KEY,open?'1':'0');}catch(e){console.warn('[PAM-Mobil]',e);}
+  try{localStorage.setItem(MSIZEBAR_KEY,open?'1':'0');}catch(e){console.warn('[PTP-Mobile]',e);}
   if(open)applyStoredMobileScale();
 }
 function applyStoredSizeBarVisibility(){
@@ -445,7 +445,7 @@ function applyStoredSizeBarVisibility(){
     const open=localStorage.getItem(MSIZEBAR_KEY)==='1';
     const bar=document.getElementById('mSizeBar');
     if(bar)bar.classList.toggle('open',open);
-  }catch(e){console.warn('[PAM-Mobil]',e);}
+  }catch(e){console.warn('[PTP-Mobile]',e);}
 }
 
 // ══ AUTH ══
@@ -466,7 +466,7 @@ function initTokenClient(){
     scope:GDRIVE_SCOPE,
     callback:onTokenResponse,
     error_callback:(err)=>{
-      console.warn('[PAM-Mobil] GIS error_callback:',JSON.stringify(err));
+      console.warn('[PTP-Mobile] GIS error_callback:',JSON.stringify(err));
       if(err&&(err.type==='popup_failed_to_open'||err.type==='popup_closed'||err.type==='immediate_failed')){
         if(err.type==='immediate_failed') _mobSilentGaveUp=true;
         document.getElementById('loginStatus').textContent='⚠ Popup blockiert – bitte Popup im Browser erlauben und erneut versuchen.';
@@ -479,7 +479,7 @@ function initTokenClient(){
 
 /* Wird aufgerufen sobald das GSI-Script fertig geladen ist */
 function onGsiLoaded(){
-  console.log('[PAM-Mobil] GSI geladen – initialisiere Token-Client');
+  console.log('[PTP-Mobile] GSI geladen – initialisiere Token-Client');
   initTokenClient();
   // Falls Auto-Connect bereits auf Token wartet, jetzt fortfahren
   if(typeof _pendingAutoConnect==='function'){
@@ -497,7 +497,7 @@ function onTokenResponse(resp){
       // → Banner zeigen, User muss explizit klicken
       if(_mobErrEl)_mobErrEl.textContent='⚠ Automatische Anmeldung nicht möglich – bitte "Anmelden" tippen.';
       _showMobDriveWarnBanner();
-      console.warn('[PAM-Mobil] immediate_failed / interaction_required – Nutzer-Interaktion nötig');
+      console.warn('[PTP-Mobile] immediate_failed / interaction_required – Nutzer-Interaktion nötig');
     } else if(resp.error==='access_denied'){
       if(_mobErrEl)_mobErrEl.textContent='⚠ Zugriff verweigert – bitte erneut anmelden.';
     } else {
@@ -507,7 +507,7 @@ function onTokenResponse(resp){
   }
   gdriveToken=resp.access_token;
   gdriveTokenExpires=Date.now()+(Number(resp.expires_in||3600)-60)*1000;
-  try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PAM-Mobil] Token speichern:',e);}
+  try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern:',e);}
   _scheduleGdriveRefresh(Number(resp.expires_in||3600));
   afterLogin();
 }
@@ -524,9 +524,9 @@ async function afterLogin(){
         try{localStorage.setItem('mob_user_email_v1',userEmail);}catch(e){}
       }
     }
-  }catch(e){console.warn('[PAM-Mobil]',e);}
+  }catch(e){console.warn('[PTP-Mobile]',e);}
   // Workspace-Ordner-ID aus localStorage laden (gleicher Key wie PC-Version)
-  try{workspaceFolderId=localStorage.getItem(WORKSPACE_FOLDER_KEY)||null;}catch(e){console.warn('[PAM-Mobil]',e);}
+  try{workspaceFolderId=localStorage.getItem(WORKSPACE_FOLDER_KEY)||null;}catch(e){console.warn('[PTP-Mobile]',e);}
   // HV-Bild-Cache vorladen (schnellere Thumbnails)
   try{ _preloadHvBildCacheMob(); }catch(e){}
   await findOrPickFile();
@@ -660,14 +660,14 @@ function _scheduleGdriveRefresh(expiresIn){
         if(r&&r.access_token){
           gdriveToken=r.access_token;
           gdriveTokenExpires=Date.now()+(Number(r.expires_in||3600)-60)*1000;
-          try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PAM-Mobil] Token speichern in Refresh:',e);}
+          try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern in Refresh:',e);}
           _scheduleGdriveRefresh(Number(r.expires_in||3600));
           _hideMobDriveWarnBanner(); // Stiller Refresh hat geklappt → Banner weg
         }
         // Falls stiller Refresh fehlschlägt: Banner bleibt, Nutzer muss klicken
       };
       gdriveTokenClient.requestAccessToken({prompt:'none'});
-    }catch(e){console.warn('[PAM-Mobil] Token-Refresh:',e);}
+    }catch(e){console.warn('[PTP-Mobile] Token-Refresh:',e);}
   },delay);
 }
 function silentRefresh(){
@@ -680,12 +680,12 @@ function silentRefresh(){
       if(resp&&resp.access_token){
         gdriveToken=resp.access_token;
         gdriveTokenExpires=Date.now()+(Number(resp.expires_in||3600)-60)*1000;
-        try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PAM-Mobil] Token speichern in silentRefresh:',e);}
+        try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern in silentRefresh:',e);}
         _scheduleGdriveRefresh(Number(resp.expires_in||3600));
         resolve(true);
       }else resolve(false);
     };
-    try{gdriveTokenClient.requestAccessToken({prompt:'none'});}catch(e){console.warn('[PAM-Mobil]',e);resolve(false);}
+    try{gdriveTokenClient.requestAccessToken({prompt:'none'});}catch(e){console.warn('[PTP-Mobile]',e);resolve(false);}
   });
 }
 async function ensureToken(){
@@ -695,7 +695,7 @@ async function ensureToken(){
   return true;
 }
 function logout(){
-  try{localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(FILE_KEY);}catch(e){console.warn('[PAM-Mobil] localStorage löschen:',e);}
+  try{localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(FILE_KEY);}catch(e){console.warn('[PTP-Mobile] localStorage löschen:',e);}
   const tokenToRevoke=gdriveToken;
   gdriveToken=null;gdriveTokenExpires=0;fileId=null;boards={};statuses=[];
   try{if(window.google&&google.accounts&&google.accounts.oauth2&&tokenToRevoke)google.accounts.oauth2.revoke(tokenToRevoke,()=>{});}catch(e){}
@@ -872,10 +872,10 @@ function migrateTokenKey(){
         localStorage.setItem(TOKEN_KEY,legacyToken);
         // Alten Key löschen
         localStorage.removeItem(LEGACY_TOKEN_KEY);
-        console.log('[PAM-Mobil] Token-Key migriert von '+LEGACY_TOKEN_KEY+' zu '+TOKEN_KEY);
+        console.log('[PTP-Mobile] Token-Key migriert von '+LEGACY_TOKEN_KEY+' zu '+TOKEN_KEY);
       }
     }
-  }catch(e){console.warn('[PAM-Mobil] Token-Migration:',e);}
+  }catch(e){console.warn('[PTP-Mobile] Token-Migration:',e);}
 }
 
 // ══ DRIVE: Datei finden / laden / speichern ══
@@ -904,22 +904,22 @@ async function _reconnectToNewFile(){
     const found=await _searchWorkboardInDrive();
     if(found&&found.id&&found.id!==fileId){
       fileId=found.id;fileName=found.name||'workboard.json';
-      try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){console.warn('[PAM-Mobil]',e);}
+      try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){console.warn('[PTP-Mobile]',e);}
       const ok=await loadFile();
       if(ok){renderList();toast('↻ Neue workboard.json verbunden','success');}
     }
-  }catch(e){console.warn('[PAM-Mobil]',e);}
+  }catch(e){console.warn('[PTP-Mobile]',e);}
 }
 async function findOrPickFile(){
   document.getElementById('loginStatus').textContent='Suche workboard.json in Drive…';
   // Aus localStorage
-  try{const c=JSON.parse(localStorage.getItem(FILE_KEY)||'null');if(c&&c.id){fileId=c.id;fileName=c.name||'workboard.json';const ok=await loadFile();if(ok){showList();renderList();return;}}}catch(e){console.warn('[PAM-Mobil] localStorage lesen FILE_KEY:',e);}
+  try{const c=JSON.parse(localStorage.getItem(FILE_KEY)||'null');if(c&&c.id){fileId=c.id;fileName=c.name||'workboard.json';const ok=await loadFile();if(ok){showList();renderList();return;}}}catch(e){console.warn('[PTP-Mobile] localStorage lesen FILE_KEY:',e);}
   // Auf Drive suchen
   try{
     const found=await _searchWorkboardInDrive();
     if(!found){document.getElementById('loginStatus').textContent='Keine workboard.json gefunden — erst in PTP am Desktop anlegen.';return;}
     fileId=found.id;fileName=found.name||'workboard.json';
-    try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){console.warn('[PAM-Mobil]',e);}
+    try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){console.warn('[PTP-Mobile]',e);}
     const ok=await loadFile();
     if(ok){showList();renderList();}
   }catch(e){document.getElementById('loginStatus').textContent='Drive-Fehler: '+e.message;}
@@ -979,10 +979,10 @@ async function loadFile(){
         // Workspace-Ordner-ID aus parent extrahieren (falls vorhanden) und speichern
         if(meta.parents&&meta.parents.length>0&&!meta.parents.includes('root')){
           workspaceFolderId=meta.parents[0];
-          try{localStorage.setItem(WORKSPACE_FOLDER_KEY,workspaceFolderId);}catch(e){console.warn('[PAM-Mobil]',e);}
+          try{localStorage.setItem(WORKSPACE_FOLDER_KEY,workspaceFolderId);}catch(e){console.warn('[PTP-Mobile]',e);}
         }
       }
-    }catch(e){console.warn('[PAM-Mobil]',e);}
+    }catch(e){console.warn('[PTP-Mobile]',e);}
     startPolling();
     return true;
   }catch(e){toast('Laden fehlgeschlagen: '+e.message,'error');return false;}
@@ -1021,7 +1021,7 @@ async function pollForChanges(){
     if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
     else{renderList();if(_mobView==='heute')renderHeuteMobil();}
     toast('↻ Vom Desktop aktualisiert','success');
-  }catch(e){console.warn('[PAM-Mobil]',e);}
+  }catch(e){console.warn('[PTP-Mobile]',e);}
 }
 function startPolling(){
   if(pollTimer)clearInterval(pollTimer);
@@ -1099,13 +1099,13 @@ async function saveFile(){
                     const rt=remoteVisible[bn][idx];
                     // Scalars: localTask gewinnt – ABER nicht wenn localTask leer ist und Remote etwas hat
                     const mergedTask={...rt,...localTask};
-                    const scalarFields=['ausführungsdatum','due','title','desc','adresse','hausverwaltung','schadensbild','owner','status','ampel','source','gdrive','nas'];
+                    const scalarFields=['ausführungsdatum','due','title','desc','adresse','hausverwaltung','schadensbild','owner','status','ampel','source','gdrive','nas','tags','aktivitaet','ausfuehrungstermin']; // Fix: tags, aktivitaet, ausfuehrungstermin ergänzt
                     for(const f of scalarFields){
                       const lv=localTask[f];const rv=rt[f];
                       if((lv===''||lv===null||lv===undefined)&&rv){mergedTask[f]=rv;}
                     }
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','bauOrdner','ortstermin']; // checkliste/kontakte/tags/adressen/pruefberichte werden in Mobile bearbeitet
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben']; // Fix: bauOrdner→sbPdfOrdner; aufgaben hinzugefügt (PC-only)
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
@@ -1116,6 +1116,9 @@ async function saveFile(){
                     mergedTask.fotos=_mergeListByKey(rt.fotos,localTask.fotos,f=>(f.id||f.driveId||f.path||f.name||''));
                     mergedTask.attachments=_mergeListByKey(rt.attachments,localTask.attachments,f=>((f.name||'')+'|'+(f.size||0)));
                     mergedTask.timeEntries=_mergeListByKey(rt.timeEntries,localTask.timeEntries,e=>String(e.start||''));
+                    // Fix: checkliste und kontakte mergen statt überschreiben
+                    mergedTask.checkliste=_mergeListByKey(rt.checkliste,localTask.checkliste,c=>((c.text||'')+'|'+(c.done?'1':'0')));
+                    mergedTask.kontakte=_mergeListByKey(rt.kontakte,localTask.kontakte,k=>((k.rolle||'')+'|'+(k.name||'')+'|'+(k.tel||'')));
                     remoteVisible[bn][idx]=mergedTask;
                     placed=true;break;
                   }
@@ -1164,7 +1167,7 @@ async function saveFile(){
           }
         }
       }
-    }catch(e){console.warn('[PAM-Mobil] Konflikt-Check:',e);}
+    }catch(e){console.warn('[PTP-Mobile] Konflikt-Check:',e);}
     // Save-Objekt: Whitelist + Desktop-Spalten (_boardStatuses) + _boardTypes erhalten, versteckte Boards durchreichen
     const obj={_statuses:statuses};
     if(Object.keys(_remoteBoardStatuses||{}).length)obj._boardStatuses={..._remoteBoardStatuses};
@@ -1202,7 +1205,7 @@ async function saveFile(){
     } else if(!r.ok){
       throw new Error('HTTP '+r.status);
     } else {
-      try{const rm=await r.json();if(rm&&rm.modifiedTime)fileLastModified=rm.modifiedTime;}catch(e){console.warn('[PAM-Mobil]',e);}
+      try{const rm=await r.json();if(rm&&rm.modifiedTime)fileLastModified=rm.modifiedTime;}catch(e){console.warn('[PTP-Mobile]',e);}
     }
     _saveMobileBackup(); // Lokales Backup nach erfolgreichem Speichern
     setSaveInd('saved','✓ Gespeichert');
@@ -1228,7 +1231,7 @@ async function saveFile(){
       _saveRetryCount=0;
       setTimeout(async()=>{
         try{await loadFile();renderList();toast('⚠ Offline-Backup gesichert. Remote-Stand geladen.','error',5000);}
-        catch(ex){console.warn('[PAM-Mobil] Fallback-Load:',ex);}
+        catch(ex){console.warn('[PTP-Mobile] Fallback-Load:',ex);}
       },1000);
     }
   }
@@ -3319,64 +3322,49 @@ async function _fetchFotoBlob(driveId){
 // Beim ersten Aufruf: 1 kleiner Metadaten-Request → thumbnailLink → Thumbnail laden.
 // Fallback: _fetchFotoBlob (Vollbild), wenn kein thumbnailLink vorhanden.
 // Lightbox nutzt weiterhin _fetchFotoBlob für volle Auflösung.
-const _mobThumbCache = new Map(); // driveId -> blobUrl (nur aktuelle Sitzung)
-const _thumbnailLinkPreload = new Map(); // driveId -> thumbnailLink (aus JSON, spart API-Call)
-
-// Hilfsfunktion: Thumbnail-URL laden (erst ohne Auth, dann mit Bearer-Token)
-async function _tryFetchThumbUrl(url) {
-  if (!url) return null;
-  try {
-    let r = null;
-    try { r = await fetch(url); } catch(_) {}
-    if (!r || !r.ok) {
-      try { r = await fetch(url, { headers: { Authorization: 'Bearer ' + gdriveToken } }); } catch(_) {}
-    }
-    if (r && r.ok) {
-      const blob = await r.blob();
-      if (blob.size > 1000) return URL.createObjectURL(blob);
-    }
-  } catch(e) { /* ignorieren */ }
-  return null;
-}
+const _mobThumbCache = new Map(); // driveId → blobUrl (nur aktuelle Sitzung)
 
 async function _mobFetchThumb(driveId) {
   if (!driveId) return null;
-  // 1. In-Memory-Cache (Sitzung) – schnellster Pfad
+  // 1. In-Memory-Cache (Sitzung)
   if (_mobThumbCache.has(driveId)) return _mobThumbCache.get(driveId);
-  // 2. Vollbild bereits geladen? Direkt weiternutzen
+  // 2. Vollbild bereits geladen? → direkt weiternutzen
   if (_fotoBlobCache.has(driveId)) return _fotoBlobCache.get(driveId);
   if (!gdriveToken) return null;
   try {
-    let blobUrl = null;
-    // 3. Gespeicherten thumbnailLink aus JSON zuerst probieren (schnell, kein API-Call)
-    //    Achtung: Google-URLs laufen ab – daher nur als erster Versuch, nicht als einziger.
-    const storedLink = _thumbnailLinkPreload.get(driveId) || null;
-    if (storedLink) {
-      blobUrl = await _tryFetchThumbUrl(storedLink);
-    }
-    // 4. Falls gespeicherter Link abgelaufen/ungueltig: frischen thumbnailLink von Drive-API holen
-    if (!blobUrl) {
-      try {
-        const metaR = await fetch(
-          'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=thumbnailLink',
-          { headers: { Authorization: 'Bearer ' + gdriveToken } }
-        );
-        if (metaR.ok) {
-          const m = await metaR.json();
-          if (m.thumbnailLink) blobUrl = await _tryFetchThumbUrl(m.thumbnailLink);
+    // 3. thumbnailLink aus Drive-Metadaten (nur ~2 KB)
+    const metaR = await fetch(
+      'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveId) + '?fields=thumbnailLink',
+      { headers: { Authorization: 'Bearer ' + gdriveToken } }
+    );
+    if (metaR.ok) {
+      const { thumbnailLink } = await metaR.json();
+      if (thumbnailLink) {
+        // 4. Thumbnail laden – zuerst direkt (Google-CDN-URL, oft ohne Auth nutzbar),
+        //    dann mit Bearer-Token als Fallback.
+        let thumbR = null;
+        try { thumbR = await fetch(thumbnailLink); } catch(_) {}
+        if (!thumbR || !thumbR.ok) {
+          try { thumbR = await fetch(thumbnailLink, { headers: { Authorization: 'Bearer ' + gdriveToken } }); } catch(_) {}
         }
-      } catch(e) { /* best-effort */ }
+        if (thumbR && thumbR.ok) {
+          const blob = await thumbR.blob();
+          if (blob.size > 1000) { // Winzige Platzhalter-Bilder überspringen
+            const url = URL.createObjectURL(blob);
+            _mobThumbCache.set(driveId, url);
+            return url;
+          }
+        }
+      }
     }
-    if (blobUrl) { _mobThumbCache.set(driveId, blobUrl); return blobUrl; }
-  } catch(e) { console.warn('[PAM-Mobil] _mobFetchThumb Fehler:', driveId, e.message); }
-  // 5. Fallback: Vollbild (immer zuverlaessig, aber groesser)
+  } catch(e) { console.warn('[PAM] _mobFetchThumb Fehler:', driveId, e.message); }
+  // 5. Fallback: Vollbild (zuverlässig aber langsam)
   return _fetchFotoBlob(driveId);
 }
 
 async function loadFotoThumb(imgEl,driveId){
   if(!imgEl||!driveId)return;
-  // FIX: _mobFetchThumb statt _fetchFotoBlob → laedt nur ~50 KB statt 5-10 MB fuer Grid-Vorschau
-  const url=await _mobFetchThumb(driveId);
+  const url=await _fetchFotoBlob(driveId);
   if(url){
     imgEl.style.display='';
     if(imgEl.parentElement)imgEl.parentElement.classList.remove('fallback');
@@ -3387,21 +3375,12 @@ async function loadFotoThumb(imgEl,driveId){
 function hydrateFotoThumbs(){
   document.querySelectorAll('img[data-foto-id]').forEach(img=>{
     if(img.dataset.hydrated==='1')return;
-    // FIX: Bild ueberspringen das bereits erfolgreich geladen wurde (aus src-Attribut)
-    if(img.complete&&img.naturalWidth>0){img.dataset.hydrated='1';return;}
     const id=img.getAttribute('data-foto-id');
     if(id){img.dataset.hydrated='1';loadFotoThumb(img,id);}
   });
 }
 function renderFotos(list){
   if(!list||!list.length)return '';
-  // Vorab thumbnailLinks aus JSON-Daten befuellen – spart API-Calls in _mobFetchThumb
-  list.forEach(function(f){
-    const id=(f.editedDriveId||f.driveId)||'';
-    if(id&&f.thumbnail&&f.thumbnail.startsWith('http')&&!_thumbnailLinkPreload.has(id)){
-      _thumbnailLinkPreload.set(id,f.thumbnail);
-    }
-  });
   return list.map((f,i)=>{
     const name=f.name||'';
     // Bearbeitete Version bevorzugen (editedDriveId)
@@ -3502,7 +3481,7 @@ async function loadFotosFromDriveFolder(){
     const files=data.files||[];
     if(!files.length){toast('Keine Fotos im Ordner gefunden','info');return;}
     _showMobileFolderPicker(files,task);
-  }catch(e){console.warn('[PAM-Mobil]',e);toast('Fehler: '+e.message,'error');}
+  }catch(e){console.warn('[PTP-Mobile]',e);toast('Fehler: '+e.message,'error');}
 }
 function _showMobileFolderPicker(files,task){
   let overlay=document.getElementById('mobileFolderPickerOverlay');
@@ -3584,7 +3563,7 @@ async function _uploadOneFotoToDrive(file,folderId){
   // Sinnvoller Dateiname: Zeitstempel_Originalname
   const origName=file.name||'foto.jpg';
   const safeName=stamp+'_'+origName.replace(/[^\w.\-]+/g,'_');
-  const metadata={name:safeName,parents:[folderId],description:'PAM-Mobil Upload'};
+  const metadata={name:safeName,parents:[folderId],description:'PTP Mobile Upload'};
   const body=new FormData();
   body.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}));
   body.append('file',file);
@@ -3792,13 +3771,13 @@ function setTheme(mode){
   const bd=document.getElementById('themeBtnDark');
   if(bl)bl.style.fontWeight=isLight?'700':'400';
   if(bd)bd.style.fontWeight=isLight?'400':'700';
-  try{localStorage.setItem(THEME_KEY,mode);}catch(e){console.warn('[PAM-Mobil]',e);}
+  try{localStorage.setItem(THEME_KEY,mode);}catch(e){console.warn('[PTP-Mobile]',e);}
 }
 function toggleTheme(){
   setTheme(document.body.classList.contains('light')?'dark':'light');
 }
 function applyStoredTheme(){
-  try{const t=localStorage.getItem(THEME_KEY);setTheme(t||'dark');}catch(e){console.warn('[PAM-Mobil]',e);setTheme('dark');}
+  try{const t=localStorage.getItem(THEME_KEY);setTheme(t||'dark');}catch(e){console.warn('[PTP-Mobile]',e);setTheme('dark');}
 }
 
 // ══ SETTINGS ══
@@ -3864,7 +3843,7 @@ window.addEventListener('load',async()=>{
       document.getElementById('loginStatus').textContent='Token wiederhergestellt, lade Datei…';
       afterLogin();return;
     }
-  }catch(e){console.warn('[PAM-Mobil]',e);}
+  }catch(e){console.warn('[PTP-Mobile]',e);}
   // GIS initialisieren, dann silent refresh versuchen
   const tryAutoConnect = async () => {
     initTokenClient();
@@ -3878,16 +3857,16 @@ window.addEventListener('load',async()=>{
   };
   // Wenn Google bereits geladen → sofort versuchen, sonst auf onGsiLoaded warten
   if(window.google&&window.google.accounts){
-    setTimeout(async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PAM-Mobil]',e);}},300);
+    setTimeout(async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PTP-Mobile]',e);}},300);
   } else {
     // onGsiLoaded() wird aufgerufen wenn der GSI-Script fertig ist
-    _pendingAutoConnect=async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PAM-Mobil]',e);}};
+    _pendingAutoConnect=async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PTP-Mobile]',e);}};
     // Sicherheits-Fallback: falls onload nicht feuert (z.B. cached Script)
     setTimeout(async()=>{
       if(_pendingAutoConnect){
         const fn=_pendingAutoConnect;_pendingAutoConnect=null;
         initTokenClient();
-        try{await fn();}catch(e){console.warn('[PAM-Mobil]',e);}
+        try{await fn();}catch(e){console.warn('[PTP-Mobile]',e);}
       }
     },3000);
   }
@@ -3904,7 +3883,7 @@ function _loadPiexif(cb){
   if(window.piexif){cb();return;}
   const s=document.createElement('script');
   s.src='https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js';
-  s.onload=cb;s.onerror=()=>{console.warn('[PAM-Mobil] piexif load error');};
+  s.onload=cb;s.onerror=()=>{console.warn('[PTP-Mobile] piexif load error');};
   document.head.appendChild(s);
 }
 function embedExifCaption(dataUrl,caption){
@@ -3917,7 +3896,7 @@ function embedExifCaption(dataUrl,caption){
     exifObj['0th'][piexif.ImageIFD.ImageDescription]=caption;
     const exifBytes=piexif.dump(exifObj);
     return piexif.insert(exifBytes,dataUrl);
-  }catch(e){console.warn('[PAM-Mobil] EXIF:',e);return dataUrl;}
+  }catch(e){console.warn('[PTP-Mobile] EXIF:',e);return dataUrl;}
 }
 async function _embedExifInDrive(driveId,caption){
   if(!driveId||!caption)return;
@@ -4067,11 +4046,11 @@ function _lbInitPannellum(blobUrl){
   const s=document.createElement('script');
   s.src='https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js';
   s.onload=()=>_startViewer();
-  s.onerror=()=>{console.warn('[PAM-Mobil] pannellum load error');img.style.display='';container.classList.remove('active');};
+  s.onerror=()=>{console.warn('[PTP-Mobile] pannellum load error');img.style.display='';container.classList.remove('active');};
   document.head.appendChild(s);
 }
 function _lbClosePannellum(){
-  if(_pannellumViewer){try{_pannellumViewer.destroy();}catch(e){console.warn('[PAM-Mobil]',e);}_pannellumViewer=null;}
+  if(_pannellumViewer){try{_pannellumViewer.destroy();}catch(e){console.warn('[PTP-Mobile]',e);}_pannellumViewer=null;}
   const c=document.getElementById('pannellumContainer');
   if(c){c.classList.remove('active');c.innerHTML='';}
   const img=document.getElementById('lbImg');
@@ -4246,7 +4225,7 @@ async function lbSaveDraw(){
       origFoto.editedName=meta.name||copyName;
     } else {
       // Fallback: Foto existiert nicht mehr (z.B. zwischenzeitlich gelöscht)
-      console.warn('[PAM-Mobil] lbSaveDraw: origFoto nicht mehr gefunden bei Index',savedIdx);
+      console.warn('[PTP-Mobile] lbSaveDraw: origFoto nicht mehr gefunden bei Index',savedIdx);
     }
     forceSave();
     _mOpenSections['Fotos']=true;
@@ -4310,7 +4289,7 @@ async function lbSaveCaption(){
         await _uploadTextCopyToDrive(f,val,folderId);
         toast('✓ Textkopie in Drive erstellt','success');
       }
-    }catch(e){console.warn('[PAM-Mobil] EXIF/Textkopie-Upload:',e);}
+    }catch(e){console.warn('[PTP-Mobile] EXIF/Textkopie-Upload:',e);}
   }
 }
 // ── Text visuell ins Bild einbrennen und als Kopie hochladen ──
@@ -4338,7 +4317,7 @@ async function _uploadTextCopyToDrive(foto,text,folderId){
 // ── Canvas: Text als Balken unten ins Bild einbrennen ──
 function _burnTextOntoBlob(srcBlob,text){
   return new Promise(resolve=>{
-    if(!srcBlob){console.warn('[PAM-Mobil] _burnTextOntoBlob: srcBlob ist null/undefined');resolve(null);return;}
+    if(!srcBlob){console.warn('[PTP-Mobile] _burnTextOntoBlob: srcBlob ist null/undefined');resolve(null);return;}
     const img=new Image();
     const url=URL.createObjectURL(srcBlob);
     img.onload=()=>{
