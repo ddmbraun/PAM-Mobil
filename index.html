@@ -343,10 +343,69 @@ function _buildMobileSaveObj(){
   return obj;
 }
 function _saveMobileBackup(){
-  try{localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify({ts:new Date().toISOString(),data:_buildMobileSaveObj()}));}catch(e){}
+  try{localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify({ts:new Date().toISOString(),data:_buildMobileSaveObj()},_mobSaveReplacer));}catch(e){}
 }
 function _getMobileBackup(){
   try{const s=localStorage.getItem(MOBILE_BACKUP_KEY);return s?JSON.parse(s):null;}catch(e){return null;}
+}
+
+// ── JSON-Replacer: localUrl (data:/blob:) und _uploading aus Fotos heraushalten ──
+// Hält die Drive-JSON klein; Fotos werden über IndexedDB (localKey) wiederhergestellt.
+const _mobSaveReplacer=(k,v)=>{if(k==='localUrl'||k==='_uploading')return undefined;return v;};
+
+// ── Mob Photo Cache – IndexedDB (mob-photo-cache-v1) ─────────────────────────
+// Fotos werden als base64 data-URL gespeichert und überleben Seiten-Neuladen.
+const _MOB_PHOTO_DB='mob-photo-cache-v1';
+const _MOB_PHOTO_STORE='photos';
+function _mobPhotoDbOpen(){
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open(_MOB_PHOTO_DB,1);
+    req.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(_MOB_PHOTO_STORE))db.createObjectStore(_MOB_PHOTO_STORE,{keyPath:'key'});};
+    req.onsuccess=e=>res(e.target.result);
+    req.onerror=e=>rej(e.target.error);
+  });
+}
+async function _mobPhotoSave(key,dataUrl){
+  try{
+    const db=await _mobPhotoDbOpen();
+    await new Promise((res,rej)=>{
+      const tx=db.transaction(_MOB_PHOTO_STORE,'readwrite');
+      tx.objectStore(_MOB_PHOTO_STORE).put({key,dataUrl,ts:Date.now()});
+      tx.oncomplete=()=>{db.close();res();};
+      tx.onerror=e=>{db.close();rej(e.target.error);};
+    });
+  }catch(e){console.warn('[MobPhoto] Speichern:',e);}
+}
+async function _mobPhotoGet(key){
+  try{
+    const db=await _mobPhotoDbOpen();
+    return await new Promise(res=>{
+      const tx=db.transaction(_MOB_PHOTO_STORE,'readonly');
+      const req=tx.objectStore(_MOB_PHOTO_STORE).get(key);
+      req.onsuccess=e=>{db.close();res(e.target.result?e.target.result.dataUrl:null);};
+      req.onerror=()=>{db.close();res(null);};
+    });
+  }catch(e){return null;}
+}
+async function _mobPhotoDelete(key){
+  try{
+    const db=await _mobPhotoDbOpen();
+    await new Promise(res=>{
+      const tx=db.transaction(_MOB_PHOTO_STORE,'readwrite');
+      tx.objectStore(_MOB_PHOTO_STORE).delete(key);
+      tx.oncomplete=()=>{db.close();res();};
+      tx.onerror=()=>{db.close();res();};
+    });
+  }catch(e){}
+}
+function _fileToDataUrl(file){
+  return new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(file);});
+}
+function _dataUrlToBlob(dataUrl){
+  const arr=dataUrl.split(',');const mime=(arr[0].match(/:(.*?);/)||['','image/jpeg'])[1];
+  const bstr=atob(arr[1]);let n=bstr.length;const u8=new Uint8Array(n);
+  while(n--)u8[n]=bstr.charCodeAt(n);
+  return new Blob([u8],{type:mime});
 }
 
 // ── STATE ──
@@ -373,6 +432,9 @@ let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
 // ── UTILS ──
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
 function escAttr(s){return String(s==null?'':s).replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+// Globale Helper – werden in renderList, renderHeuteMobil etc. verwendet
+function isOverdue(dateStr){if(!dateStr)return false;return dateStr<new Date().toISOString().slice(0,10);}
+function isToday(dateStr){if(!dateStr)return false;return dateStr===new Date().toISOString().slice(0,10);}
 // Offen-Zustand der Detail-Sektionen über Re-Renders hinweg merken.
 // Per-Task, damit beim Wechsel zwischen Tasks der Zustand sauber zurückgesetzt wird.
 let _mOpenSections={};
@@ -449,9 +511,8 @@ function applyStoredSizeBarVisibility(){
 }
 
 // ══ AUTH ══
-function gdriveLogin(){
-  _mobSilentGaveUp=false;
-  // Redirect-Flow: kein Popup – funktioniert zuverlässig auf iPhone und allen Browsern
+function _gdriveFullLogin(){
+  // Normaler Login-Dialog (Konto-Auswahl erscheint nur wenn nötig)
   const hint=localStorage.getItem('mob_user_email_v1')||'';
   const params=new URLSearchParams({
     client_id:GDRIVE_CLIENT_ID,
@@ -462,6 +523,26 @@ function gdriveLogin(){
   });
   if(hint)params.set('login_hint',hint);
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
+}
+function gdriveLogin(){
+  _mobSilentGaveUp=false;
+  const hint=localStorage.getItem('mob_user_email_v1')||'';
+  if(hint){
+    // Stiller Versuch: prompt=none + login_hint – überspringt Konto-Auswahl komplett
+    // Falls kein aktiver Google-Session → #error=access_denied → _gdriveFullLogin() springt an
+    const params=new URLSearchParams({
+      client_id:GDRIVE_CLIENT_ID,
+      redirect_uri:window.location.origin+window.location.pathname,
+      response_type:'token',
+      scope:GDRIVE_SCOPE,
+      include_granted_scopes:'true',
+      prompt:'none',
+      login_hint:hint,
+    });
+    window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
+  } else {
+    _gdriveFullLogin();
+  }
 }
 function initTokenClient(){
   if(gdriveTokenClient)return;
@@ -535,6 +616,8 @@ async function afterLogin(){
   // HV-Bild-Cache vorladen (schnellere Thumbnails)
   try{ _preloadHvBildCacheMob(); }catch(e){}
   await findOrPickFile();
+  // Ausstehende Foto-Uploads aus vorherigen Sessions nachholen
+  setTimeout(()=>{_mobRetryPendingUploads().catch(()=>{});},4000);
 }
 
 // ── ETag-Konflikt-Dialog ──────────────────────────────────────────────────
@@ -1180,7 +1263,9 @@ async function saveFile(){
     if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
     for(const[k,v]of Object.entries(hiddenBoards||{}))obj[k]=v;
     for(const[k,v]of Object.entries(boards||{}))obj[k]=v;
-    const content=JSON.stringify(obj,null,2);
+    // _mobSaveReplacer: entfernt localUrl (data:/blob:) und _uploading aus Foto-Objekten
+    // → hält die Drive-JSON klein; Fotos bleiben über IndexedDB (localKey) erhalten
+    const content=JSON.stringify(obj,_mobSaveReplacer,2);
     // Resumable Upload (Two-Step: Session-Init + Byte-Transfer)
     const r=await _driveResumableUpdate(gdriveToken, fileId, content, 'application/json', mobETag);
     if(r.status===412){
@@ -1950,8 +2035,15 @@ function _wpMobRenderFotos(bericht,grid){
         scheduleSave();
       },280);
     };
-    if(f.localUrl){const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';cell.appendChild(img);}
-    else if(f.driveId){
+    if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){
+      // Bereits im Speicher (data-URL = persistent, blob-URL = aktuelle Session)
+      const img=document.createElement('img');img.src=f.localUrl;img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';cell.appendChild(img);
+    }else if(f.localKey&&!f.driveId){
+      // Aus IndexedDB laden (überlebt Seiten-Neuladen)
+      const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
+      _mobPhotoGet(f.localKey).then(dataUrl=>{if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}});
+      cell.appendChild(img);
+    }else if(f.driveId){
       const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
       // Thumbnail zuerst: thumbnailLink (~20-50 KB) statt Vollbild (~5-10 MB).
       // Lightbox öffnet später das Vollbild via _fetchFotoBlob.
@@ -2008,8 +2100,15 @@ function _wpMobOpenFoto(bericht,startIdx){
     const f=fotos[cur];
     lbl.textContent=(f.name||'Foto '+(cur+1))+' ('+(cur+1)+'/'+fotos.length+')';
     imgEl.src='';imgEl.alt='Lade…';
-    if(f.localUrl){imgEl.src=f.localUrl;}
-    else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
+    if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){
+      imgEl.src=f.localUrl;
+    }else if(f.localKey&&!f.driveId){
+      // Aus IndexedDB laden (lokal gespeichertes Foto noch nicht in Drive)
+      _mobPhotoGet(f.localKey).then(dataUrl=>{
+        if(dataUrl){f.localUrl=dataUrl;imgEl.src=dataUrl;}
+        else imgEl.alt='Kein Vorschaubild';
+      });
+    }else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
       fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
         .then(r=>r.blob()).then(b=>{imgEl.src=URL.createObjectURL(b);}).catch(()=>{imgEl.alt='Fehler';});
     }
@@ -2084,15 +2183,25 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
   inp.onchange=async()=>{
     const files=Array.from(inp.files||[]);if(!files.length)return;
 
-    // ── 1. Alle Vorschaubilder SOFORT anzeigen ──────────────────────────────
+    // ── 1. Alle Vorschaubilder SOFORT anzeigen + IndexedDB sichern ───────────
+    // Schritt A: blob-URL für sofortige Vorschau, localKey als dauerhafter Schlüssel
     const fotoObjs=files.map(file=>{
-      const localUrl=URL.createObjectURL(file);
-      const fo={name:file.name,inReport:true,localUrl,driveId:null,_uploading:false};
+      const blobUrl=URL.createObjectURL(file);
+      const localKey='photo_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+      const fo={name:file.name,inReport:true,localUrl:blobUrl,localKey,driveId:null,_uploading:false};
       bericht.fotos.push(fo);
       return{file,fo};
     });
     scheduleSave();
-    _wpMobRenderFotos(bericht,grid); // Vorschau sofort sichtbar
+    _wpMobRenderFotos(bericht,grid); // Vorschau sofort sichtbar (blob-URL)
+
+    // Schritt B: Parallel in IndexedDB sichern (persistent über Neuladen hinaus)
+    fotoObjs.forEach(({file,fo})=>{
+      _fileToDataUrl(file).then(dataUrl=>{
+        fo.localUrl=dataUrl; // blob-URL durch persistente data-URL ersetzen
+        return _mobPhotoSave(fo.localKey,dataUrl);
+      }).then(()=>{scheduleSave();}).catch(e=>console.warn('[MobPhoto]',e));
+    });
 
     // ── 2. Uploads parallel im Hintergrund ─────────────────────────────────
     if(typeof gdriveToken!=='undefined'&&gdriveToken){
@@ -2111,9 +2220,13 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
             form.append('file',file);
             const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
               {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form});
-            if(r.ok){const j=await r.json();fo.driveId=j.id;ok++;}
+            if(r.ok){
+              const j=await r.json();fo.driveId=j.id;ok++;
+              // Drive-Upload erfolgreich → lokale IndexedDB-Kopie kann bereinigt werden
+              if(fo.localKey)_mobPhotoDelete(fo.localKey).catch(()=>{});
+            }
             else fail++;
-          }catch(ex){fail++;console.warn('Foto Upload:',ex);}
+          }catch(ex){fail++;console.warn('[MobPhoto] Upload:',ex);}
           finally{
             fo._uploading=false;
             scheduleSave();
@@ -2121,7 +2234,7 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
           }
         }));
         if(fail===0)toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' in Drive gespeichert','success',2500);
-        else toast((fail>0?fail+' Fehler, ':'')+ok+' gespeichert','error',4000);
+        else toast((fail>0?fail+' Fehler – wird beim nächsten Start wiederholt, ':'')+ok+' gespeichert','error',4000);
       }
     }
   };
@@ -2130,6 +2243,51 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
 
 function _extractFolderIdMob(url){
   if(!url)return '';const m=url.match(/[-\w]{25,}/);return m?m[0]:'';
+}
+
+// ── Ausstehende Foto-Uploads wiederholen ─────────────────────────────────────
+// Beim App-Start / nach Login aufrufen: alle Fotos mit localKey aber ohne driveId
+// werden aus IndexedDB geladen und erneut zu Google Drive hochgeladen.
+async function _mobRetryPendingUploads(){
+  if(!gdriveToken||!tokenValid())return;
+  let pending=[];
+  for(const[,tasks] of Object.entries(boards||{})){
+    if(!Array.isArray(tasks))continue;
+    for(const task of tasks){
+      if(!task)continue;
+      const fid=_extractFolderIdMob(task.gdrive||task.gdriveOrdner||'');
+      if(!fid)continue;
+      for(const pb of task.pruefberichte||[]){
+        for(const foto of pb.fotos||[]){
+          if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:fid});
+        }
+      }
+    }
+  }
+  if(!pending.length)return;
+  toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
+  let ok=0;
+  for(const {fo,folderId} of pending){
+    try{await _mobUploadFromKey(fo,folderId);ok++;}catch(e){console.warn('[MobPhoto] Retry:',e);}
+  }
+  if(ok>0){scheduleSave();toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' nachträglich hochgeladen','success',3000);}
+}
+
+async function _mobUploadFromKey(fo,folderId){
+  const dataUrl=await _mobPhotoGet(fo.localKey);
+  if(!dataUrl)return;
+  const blob=_dataUrlToBlob(dataUrl);
+  const mime=blob.type||'image/jpeg';
+  const form=new FormData();
+  form.append('metadata',new Blob([JSON.stringify({name:fo.name||'foto.jpg',parents:[folderId],mimeType:mime})],{type:'application/json'}));
+  form.append('file',blob);
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+    {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();
+  fo.driveId=j.id;
+  fo.localUrl=dataUrl; // im Speicher behalten für schnelle Anzeige
+  await _mobPhotoDelete(fo.localKey); // IndexedDB bereinigen
 }
 
 async function _wpMobLadeDriveFotos(bericht,grid){
@@ -2282,14 +2440,22 @@ async function forceReloadFromDrive(){
 // ── Redirect-Rückkehr: Token aus URL-Hash nach Google-Login lesen ──
 document.addEventListener('DOMContentLoaded',function(){
   const hash=window.location.hash;
-  if(hash&&hash.includes('access_token')){
-    const p=new URLSearchParams(hash.substring(1));
-    const token=p.get('access_token');
-    const exp=p.get('expires_in');
-    if(token){
-      window.history.replaceState({},'',window.location.pathname);
-      onTokenResponse({access_token:token,expires_in:exp||3600});
-    }
+  if(!hash)return;
+  const p=new URLSearchParams(hash.substring(1));
+  const token=p.get('access_token');
+  const exp=p.get('expires_in');
+  if(token){
+    // Erfolgreicher Login (auch nach prompt=none)
+    window.history.replaceState({},'',window.location.pathname);
+    onTokenResponse({access_token:token,expires_in:exp||3600});
+    return;
+  }
+  // Fehler von prompt=none: stiller Login nicht möglich → normalen Login starten
+  const err=p.get('error');
+  if(err&&(err==='access_denied'||err==='interaction_required'||err==='login_required')){
+    window.history.replaceState({},'',window.location.pathname);
+    // Zweiter Versuch: ohne prompt-Einschränkung, Nutzer wählt Konto
+    _gdriveFullLogin();
   }
 });
 document.addEventListener('DOMContentLoaded',function(){
