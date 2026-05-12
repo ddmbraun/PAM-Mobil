@@ -3651,16 +3651,57 @@ function renderAttachmentsMob(list){
   if(!list||!list.length)return '';
   return list.map((a,i)=>{
     const isImg=a.type&&a.type.startsWith('image/');
-    return '<div class="attach-row-mob">'
-      +(isImg?'<img class="attach-thumb-mob" src="'+escAttr(a.data||'')+'" onclick="openAttachMob('+i+')">':'<div class="attach-icon-mob" onclick="openAttachMob('+i+')" style="cursor:pointer">'+attachIconMob(a.type)+'</div>')
+    const fid=a.driveId||a.fileId||'';
+    // Thumbnail: data-URL (desktop-Uploads) ODER Drive-Thumbnail-URL über fileId
+    const thumbSrc=a.data||(fid?'https://drive.google.com/thumbnail?id='+fid+'&sz=w120':'');
+    return '<div class="attach-row-mob" onclick="openAttachMob('+i+')" style="cursor:pointer">'
+      +(isImg&&thumbSrc
+        ?'<img class="attach-thumb-mob" src="'+escAttr(thumbSrc)+'" onerror="this.outerHTML=\'<div class=\\\'attach-icon-mob\\\'>'+attachIconMob(a.type)+'</div>\'">'
+        :'<div class="attach-icon-mob">'+attachIconMob(a.type)+'</div>')
       +'<div class="attach-meta-mob"><div class="attach-name-mob">'+esc(a.name||'Datei')+'</div><div class="attach-size-mob">'+formatBytesMob(a.size)+'</div></div>'
-      +'<button class="inline-btn" style="padding:6px 10px;font-size:12px" onclick="downloadAttachMob('+i+')">↓</button>'
+      +'<button class="inline-btn" style="padding:6px 10px;font-size:12px" onclick="event.stopPropagation();downloadAttachMob('+i+')">↓</button>'
       +'</div>';
   }).join('');
 }
 function openAttachMob(i){
-  // Galerie öffnen – startet bei Index i, ermöglicht Navigation durch alle Anhänge
   _openAttachGalleryMob(i);
+}
+// ── Anhang öffnen/anzeigen ────────────────────────────────────────────────────
+async function _openAttachGalleryMob(i){
+  const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
+  const a=t.attachments[i];
+  const fid=a.driveId||a.fileId||'';
+  const name=a.name||'Datei';
+  const isImg=a.type&&a.type.startsWith('image/');
+  const isPdf=(a.type==='application/pdf')||(name.toLowerCase().endsWith('.pdf'));
+
+  // Bild: Lightbox mit Drive-Fetch
+  if(isImg&&fid){
+    if(!(await ensureToken()))return;
+    const viewUrl='https://drive.google.com/file/d/'+fid+'/view';
+    const thumbSrc=a.data||('https://drive.google.com/thumbnail?id='+fid+'&sz=w400');
+    openLightbox(thumbSrc,name,viewUrl,{});
+    const blob=await _fetchFotoBlob(fid);
+    const lb=document.getElementById('lightbox');
+    const img=document.getElementById('lbImg');
+    if(blob&&img&&lb&&lb.classList.contains('open')){
+      img.src=blob;if(img.style.display==='none')img.style.display='';
+    }
+    return;
+  }
+  // PDF oder Drive-Datei → in neuem Tab öffnen (sicherster Weg auf iOS)
+  const driveUrl=a.url||(fid?'https://drive.google.com/file/d/'+fid+'/view':'');
+  if(driveUrl){
+    window.open(driveUrl,'_blank');
+    return;
+  }
+  // Nur data-URL (kein Drive-Link)
+  if(a.data){
+    const w=window.open('','_blank');
+    if(w){w.document.write('<html><body style="margin:0"><iframe src="'+a.data+'" style="width:100%;height:100vh;border:none"></iframe></body></html>');w.document.close();}
+    return;
+  }
+  toast('Datei nicht verfügbar','error');
 }
 function _showTextViewer(name,text){
   let ov=document.getElementById('mobTextViewerOverlay');
@@ -3692,6 +3733,51 @@ function downloadAttachMob(i){
   } else {
     toast('Keine Datei verfügbar','error');
   }
+}
+// ── E-Mail Originale: Vorschau / Download / Ordner ───────────────────────────
+function _mobOpenEmailPreview(ei){
+  const t=currentTask();if(!t||!t.emailOriginals||!t.emailOriginals[ei])return;
+  const e=t.emailOriginals[ei];
+  // Felder je nach Speicherformat (alt: subject/sender/date/body, neu: name/fileId/url)
+  const subj=e.subject||e.name||'(kein Betreff)';
+  const sender=e.sender||'';
+  const date=e.date?(new Date(e.date).toLocaleString('de-DE')):(e.uploadedAt||'');
+  const body=e.body||'';
+  const driveUrl=e.url||(e.fileId?'https://drive.google.com/file/d/'+e.fileId+'/view':'');
+
+  let ov=document.getElementById('mobEmailViewerOverlay');
+  if(ov)ov.remove();
+  ov=document.createElement('div');
+  ov.id='mobEmailViewerOverlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9900;display:flex;flex-direction:column;';
+  ov.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;">
+      <button onclick="document.getElementById('mobEmailViewerOverlay').remove()" style="background:rgba(255,255,255,.12);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer;flex-shrink:0;">✕</button>
+      <span style="flex:1;font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📧 ${esc(subj)}</span>
+      ${driveUrl?`<button onclick="window.open('${escAttr(driveUrl)}','_blank')" style="background:var(--accent);color:#fff;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">📂 Drive</button>`:''}
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:14px;">
+      ${sender?`<div style="font-size:12px;color:var(--text2);margin-bottom:4px;"><b>Von:</b> ${esc(sender)}</div>`:''}
+      ${date?`<div style="font-size:12px;color:var(--text2);margin-bottom:12px;"><b>Datum:</b> ${esc(date)}</div>`:''}
+      ${body
+        ?`<pre style="white-space:pre-wrap;word-break:break-word;font-size:13px;color:var(--text);font-family:inherit;margin:0;line-height:1.6;">${esc(body)}</pre>`
+        :`<div style="color:var(--text2);font-size:13px;font-style:italic;">Kein Textinhalt – Datei in Drive öffnen.</div>`}
+    </div>`;
+  document.body.appendChild(ov);
+}
+function _mobDownloadEml(ei){
+  const t=currentTask();if(!t||!t.emailOriginals||!t.emailOriginals[ei])return;
+  const e=t.emailOriginals[ei];
+  const url=e.url||(e.fileId?'https://drive.google.com/uc?export=download&id='+e.fileId:'');
+  if(url)window.open(url,'_blank');
+  else toast('Keine Datei verfügbar','error');
+}
+function _mobOpenEmailFolder(ei){
+  const t=currentTask();if(!t||!t.emailOriginals||!t.emailOriginals[ei])return;
+  const e=t.emailOriginals[ei];
+  const url=e.url||(e.fileId?'https://drive.google.com/file/d/'+e.fileId+'/view':'');
+  if(url)window.open(url,'_blank');
+  else toast('Keine Datei verfügbar','error');
 }
 // ── DRIVE-ORDNER-LADER ──
 async function loadFotosFromDriveFolder(){
