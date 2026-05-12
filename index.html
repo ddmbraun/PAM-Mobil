@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#1a1a2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -518,7 +518,9 @@ function _getRedirectUri(){
 }
 function gdriveLogin(){
   _mobSilentGaveUp=false;
-  const hint=localStorage.getItem('mob_user_email_v1')||'';
+  // COMPAT-FIX: Auch Desktop-Key 'ptp_user_email_v1' als Fallback lesen –
+  // so entfällt der Konto-Auswahl-Dialog wenn Desktop und Mobile im selben Browser laufen.
+  const hint=localStorage.getItem('mob_user_email_v1')||localStorage.getItem('ptp_user_email_v1')||'';
   const params=new URLSearchParams({
     client_id:GDRIVE_CLIENT_ID,
     redirect_uri:_getRedirectUri(),
@@ -702,7 +704,7 @@ function _hideMobDriveWarnBanner(){
 // Öffnet Google-OAuth in neuem Tab (Safari-kompatibler Redirect-Flow)
 // Da durch User-Geste ausgelöst, ist window.open in Safari erlaubt.
 function _openOAuthNewTab(){
-  const hint=localStorage.getItem('mob_user_email_v1')||'';
+  const hint=localStorage.getItem('mob_user_email_v1')||localStorage.getItem('ptp_user_email_v1')||'';
   const params=new URLSearchParams({
     client_id:GDRIVE_CLIENT_ID,
     redirect_uri:_getRedirectUri(),
@@ -1214,7 +1216,9 @@ async function saveFile(){
                       if((lv===''||lv===null||lv===undefined)&&rv){mergedTask[f]=rv;}
                     }
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben']; // Fix: bauOrdner→sbPdfOrdner; aufgaben hinzugefügt (PC-only)
+                    // COMPAT-FIX: 'anfrageEingangDatum' ergänzt – Desktop-Only-Feld, das Mobile
+                    // nie bearbeitet und das bei einem Konflikt-Merge sonst überschrieben würde.
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum']; // Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
@@ -3617,7 +3621,9 @@ function renderFotos(list){
     const id=(f.editedDriveId||f.driveId)||'';
     const caption=f.caption||'';
     const cached=id?_fotoBlobCache.get(id):null;
-    const thumbSrc=f.thumbnail||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
+    // COMPAT-FIX: Desktop speichert 'thumbnailLink', Mobile speichert 'thumbnail' –
+    // beide Feldnamen prüfen, damit Fotos aus beiden Apps korrekt angezeigt werden.
+    const thumbSrc=f.thumbnail||f.thumbnailLink||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
     // localUrl als Sofort-Vorschau wenn kein Cache und keine Drive-ID (Upload läuft noch)
     const localFallback=(!cached&&!id&&f.localUrl)?f.localUrl:'';
     const srcAttr=cached?('src="'+escAttr(cached)+'" ')
@@ -3964,8 +3970,14 @@ async function openFotoFullscreen(i){
   const _vid=f.editedDriveId||f.driveId||'';
   const viewUrl=_vid?'https://drive.google.com/file/d/'+_vid+'/view':(f.url||'');
   const cached=_vid?_fotoBlobCache.get(_vid):null;
-  const _thumbFb=f.thumbnail||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
-  openLightbox(cached||_thumbFb,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
+  // COMPAT-FIX: Desktop speichert 'thumbnailLink', Mobile speichert 'thumbnail' – beide lesen.
+  // Ohne thumbnailLink-Fallback ist _thumbFb leer für Desktop-Fotos → openLightbox gibt sofort zurück.
+  const _thumbFb=f.thumbnail||f.thumbnailLink||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
+  // BUG-FIX: Lokale Fotos ohne driveId haben weder cached noch _thumbFb.
+  // openLightbox gibt bei leerem src sofort zurück → f.localUrl als Fallback nutzen.
+  const _localFallback=f.localUrl||'';
+  if(!cached&&!_thumbFb&&!_localFallback&&!viewUrl){toast('Foto noch nicht verfügbar','info');return;}
+  openLightbox(cached||_thumbFb||_localFallback,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
   if(!cached&&_vid){
     const url=await _fetchFotoBlob(_vid);
     if(url){
@@ -4178,6 +4190,9 @@ window.addEventListener('load',async()=>{
   // Falls ein Timer aus vorheriger Session noch läuft, Auto-Resume
   resumeMobileTimerIfNeeded();
   // Versuche Auto-Login
+  // BUG-FIX: Wenn DOMContentLoaded bereits den Token aus dem OAuth-Hash gelesen
+  // und afterLogin() gestartet hat (gdriveToken gesetzt), nicht nochmals aufrufen.
+  if(gdriveToken)return;
   try{
     const stored=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
     if(stored&&stored.token&&stored.exp&&Date.now()<stored.exp){
