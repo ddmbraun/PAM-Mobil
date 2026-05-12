@@ -3846,8 +3846,9 @@ async function uploadFoto(files){
   await Promise.all(fotoObjs.map(async({file,fo})=>{
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
-      // Blob-URL im Cache eintragen damit Lightbox sofort öffnet
-      _fotoBlobCache.set(meta.id,fo.localUrl);
+      // Kein _fotoBlobCache.set hier – auf iOS Chrome können lokale Blob-URLs
+      // (Kamera/Galerie) unzuverlässig sein und den Lightbox-Öffner stumm scheitern lassen.
+      // _fetchFotoBlob holt den Blob frisch von Drive (Bearer-Token) und ist zuverlässiger.
       // Foto-Objekt in-place aktualisieren (Index bleibt gleich)
       fo.driveId=meta.id;
       fo.name=meta.name||fo.name;
@@ -3889,6 +3890,21 @@ async function openFotoFullscreen(i){
   openLightbox(cached||_thumbFb,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
   if(cached)return; // Cache-Hit: Vollbild bereits geladen, fertig
   if(!_vid)return;  // Nur lokales Foto (localUrl bereits als src gesetzt) oder kein Bild → fertig
+
+  // Wenn keine zuverlässige lokale Vorschau vorhanden: img.onerror überschreiben
+  // damit der Nutzer „Foto wird geladen…" sieht (statt „Vorschau nicht verfügbar")
+  // während _fetchFotoBlob das Vollbild von Drive lädt.
+  if(!_localSrc){
+    const _lbImg2=document.getElementById('lbImg');
+    const _lbCap2=document.getElementById('lbCaption');
+    if(_lbImg2){
+      _lbImg2.onerror=()=>{
+        _lbImg2.style.display='none';
+        if(_lbCap2)_lbCap2.textContent=(f.editedName||f.name||'Foto')+' — Foto wird geladen…';
+      };
+    }
+  }
+
   // Thumbnail-Voransicht per Drive-API (schnell, ~20-50 KB) parallel starten,
   // damit bei Cookie-losen Browsern sofort etwas zu sehen ist.
   const _baseId=f.driveId||'';
