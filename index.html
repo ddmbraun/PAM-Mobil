@@ -3846,9 +3846,8 @@ async function uploadFoto(files){
   await Promise.all(fotoObjs.map(async({file,fo})=>{
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
-      // Kein _fotoBlobCache.set hier – auf iOS Chrome können lokale Blob-URLs
-      // (Kamera/Galerie) unzuverlässig sein und den Lightbox-Öffner stumm scheitern lassen.
-      // _fetchFotoBlob holt den Blob frisch von Drive (Bearer-Token) und ist zuverlässiger.
+      // Blob-URL im Thumbnail-Cache eintragen (für Grid-Vorschau)
+      _fotoBlobCache.set(meta.id,fo.localUrl);
       // Foto-Objekt in-place aktualisieren (Index bleibt gleich)
       fo.driveId=meta.id;
       fo.name=meta.name||fo.name;
@@ -3868,9 +3867,9 @@ async function uploadFoto(files){
   // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   forceSave();
   renderDetail(t); // Spinner entfernen, Drive-IDs jetzt bekannt
-  if(success&&!failed)toast('✓ '+success+' Foto(s) in Drive hochgeladen','success');
-  else if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' fehlgeschlagen','error');
-  else toast('✗ Upload fehlgeschlagen: '+lastErr,'error');
+  if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' fehlgeschlagen','error');
+  else if(!success)toast('✗ Upload fehlgeschlagen: '+lastErr,'error');
+  // Erfolg: kein Toast – Foto ist bereits sichtbar im Grid, kein Extra-Hinweis nötig
 }
 // Tap auf Thumbnail → Lightbox in der App (mit Fallback-Link zum Drive-Viewer)
 async function openFotoFullscreen(i){
