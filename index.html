@@ -1208,28 +1208,35 @@ async function saveFile(){
             statuses=remoteStatuses;
             mobileWhitelist=rWhite;
             hiddenBoards=remoteHidden;
-            // Kein Task offen (_savingTaskId null) → lokale Boards behalten,
-            // aber Desktop-Neuzugänge übernehmen (ohne gelöschte Tasks zurückzubringen)
+            // Kein Task offen (_savingTaskId null):
+            // Remote als Basis nehmen (PC-Änderungen an bestehenden Tasks erhalten).
+            // Nur lokal neue Tasks (noch nicht in Remote) hinzufügen.
+            // Lokal gelöschte Tasks (nicht mehr in local, aber in Remote) NICHT zurückbringen.
             if(!_savingTaskId){
+              // Alle lokal noch vorhandenen IDs über alle Boards sammeln (Löschungen fehlen hier)
+              const _allLocalIds=new Set();
+              for(const arr of Object.values(boards||{})){
+                for(const t of (arr||[])){if(t&&t.id)_allLocalIds.add(t.id);}
+              }
+              // Alle lokal bekannten IDs (inkl. gelöschter) aus dem letzten geladenen Remote-Stand
+              // können wir nicht direkt kennen – daher: Remote als Basis, lokal-neue hinzu
               const merged={};
-              // Alle Remote-Boards als Basis
               for(const bn of Object.keys(remoteVisible)){
                 const localArr=boards[bn]||[];
                 const remoteArr=remoteVisible[bn]||[];
-                // Lokale IDs: was lokal noch vorhanden ist (Löschungen sind weg)
-                const localIds=new Set(localArr.map(t=>t&&t.id).filter(Boolean));
-                // Remote-IDs: was der Desktop hat
-                const mergedArr=[...localArr];
-                for(const rt of remoteArr){
-                  if(!rt||!rt.id)continue;
-                  // Nur hinzufügen wenn lokal nicht vorhanden UND nicht lokal gelöscht
-                  if(!localIds.has(rt.id))mergedArr.push(rt);
+                const remoteIds=new Set(remoteArr.map(t=>t&&t.id).filter(Boolean));
+                // Remote-Tasks als Basis (PC-Änderungen bleiben erhalten)
+                const mergedArr=[...remoteArr];
+                // Lokal neue Tasks hinzufügen (nur IDs die Remote noch nicht kennt)
+                for(const lt of localArr){
+                  if(!lt||!lt.id)continue;
+                  if(!remoteIds.has(lt.id))mergedArr.push(lt); // neu auf Mobile, noch nicht auf PC
                 }
                 merged[bn]=mergedArr;
               }
-              // Boards die nur remote existieren (neue Desktop-Boards) übernehmen
-              for(const bn of Object.keys(remoteVisible)){
-                if(!merged[bn])merged[bn]=remoteVisible[bn];
+              // Boards die nur lokal existieren (auf Mobile neu angelegt, noch nicht in Remote)
+              for(const bn of Object.keys(boards||{})){
+                if(!merged[bn])merged[bn]=(boards[bn]||[]).slice();
               }
               boards=merged;
             } else {
@@ -3817,14 +3824,49 @@ async function openFotoFullscreen(i){
   const viewUrl=_vid?'https://drive.google.com/file/d/'+_vid+'/view':(f.url||'');
   // Erst Lightbox öffnen (mit Cache-Hit, falls vorhanden), dann ggf. nachladen.
   const cached=_vid?_fotoBlobCache.get(_vid):null;
+  // Fallback-Thumbnail: Drive-URL braucht Browser-Cookies → kann auf Mobile scheitern.
+  // _mobFetchThumb nutzt Drive-API-Token → zuverlässiger auf Mobile.
   const _thumbFb=f.thumbnail||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
   openLightbox(cached||_thumbFb,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
-  if(!cached&&_vid){
-    const url=await _fetchFotoBlob(_vid);
-    if(url){
-      const img=document.getElementById('lbImg');
-      // Nur setzen, wenn die Lightbox noch offen ist und dasselbe Bild gemeint ist
-      if(img&&document.getElementById('lightbox').classList.contains('open')){img.src=url;}
+  if(cached)return; // Cache-Hit: Vollbild bereits geladen, fertig
+  if(!_vid)return;  // Kein Drive-Bild
+  // Thumbnail-Voransicht per Drive-API (schnell, ~20-50 KB) parallel starten,
+  // damit bei Cookie-losen Browsern sofort etwas zu sehen ist.
+  const _baseId=f.driveId||'';
+  if(_baseId){
+    _mobFetchThumb(_baseId).then(tUrl=>{
+      if(!tUrl)return;
+      const lb=document.getElementById('lightbox');if(!lb||!lb.classList.contains('open'))return;
+      const img=document.getElementById('lbImg');if(!img)return;
+      // Nur setzen wenn Vollbild noch nicht geladen (img.src wäre dann blob:...)
+      if(!img.src||img.src.startsWith('https://')||!img.style.display||img.style.display==='none'){
+        img.src=tUrl;img.style.display='';
+      }
+    }).catch(()=>{});
+  }
+  // Vollbild laden (höhere Qualität, kann mehrere MB groß sein)
+  const url=await _fetchFotoBlob(_vid);
+  const lb=document.getElementById('lightbox');
+  if(!lb||!lb.classList.contains('open'))return; // Lightbox zwischenzeitlich geschlossen
+  const img=document.getElementById('lbImg');
+  const cap=document.getElementById('lbCaption');
+  if(url&&img){
+    img.src=url;
+    // Sicherstellen dass Bild sichtbar ist.
+    // Bei 360°-Bildern übernimmt onload die Pannellum-Initialisierung und blendet img selbst aus;
+    // für normale Fotos ist diese Zeile der zuverlässige Fallback wenn onload nicht feuert.
+    if(img.style.display==='none')img.style.display='';
+  } else {
+    // Blob-Fetch fehlgeschlagen: Hinweis anzeigen, Extern-Button prominenter machen
+    if(img&&img.style.display==='none'){
+      // Kein Bild zu sehen → aussagekräftige Meldung
+      if(cap) cap.textContent=(f.editedName||f.name||'Foto')+' — Im Drive öffnen';
+    }
+    const btnOrig=document.getElementById('lbOpenOrig');
+    if(btnOrig&&viewUrl){
+      btnOrig.style.display='';
+      btnOrig.textContent='📂 In Drive öffnen';
+      btnOrig.style.cssText+='background:#e67e22;color:#fff;font-size:14px;padding:12px 18px;';
     }
   }
 }
@@ -3931,14 +3973,17 @@ function newTask(){
   scheduleSave();
   openDetail(newT.id);
 }
-function deleteTask(){
+async function deleteTask(){
   const t=currentTask();if(!t)return;
   if(!confirm('Task „'+(t.title||'')+'" wirklich löschen?'))return;
   const bn=findBoardByTaskId(t.id);
   if(bn){boards[bn]=boards[bn].filter(x=>x.id!==t.id);}
+  // currentTaskId bleibt gesetzt bis nach dem Save, damit _savingTaskId im Konflikt-Merge
+  // den richtigen Task referenziert und PC-Änderungen an anderen Tasks erhalten bleiben.
+  dirty=true;_dirtyTs=Date.now();
+  clearTimeout(saveTimer);
+  try{await saveFile();}catch(e){console.warn('[PTP-Mobile] deleteTask save:',e);}
   currentTaskId=null;
-  // Sofort speichern (kein Debounce) – verhindert dass Poll die Löschung überschreibt
-  forceSave();
   closeDetail();
   toast('Task gelöscht','success');
 }
@@ -4185,8 +4230,9 @@ function openLightbox(src,name,externalUrl,opts){
   img.onload=()=>{
     cap.textContent=name||'';
     // 360°-Erkennung: Seitenverhältnis >= 1.8 → Pannellum
+    // Wichtig: img.src verwenden (kann blob-URL sein), nicht closure-Variable src
     if(img.naturalWidth&&img.naturalHeight&&(img.naturalWidth/img.naturalHeight)>=1.8){
-      _lbInitPannellum(src);
+      _lbInitPannellum(img.src);
     }else{
       img.style.display='';
     }
@@ -4564,7 +4610,16 @@ async function closeLightbox(){
   document.removeEventListener('keydown',_lbOnKey);
 }
 function _lbOnKey(e){if(e.key==='Escape'){closeLightbox();}}
-function lbOpenOriginal(){if(_lbCurrentUrl)window.open(_lbCurrentUrl,'_blank');}
+function lbOpenOriginal(){
+  if(!_lbCurrentUrl)return;
+  // window.open(_blank) kann in iOS-PWA (Standalone) blockiert werden.
+  // Fallback: <a>-Element programmatisch klicken.
+  try{
+    const a=document.createElement('a');
+    a.href=_lbCurrentUrl;a.target='_blank';a.rel='noopener noreferrer';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+  }catch(e){window.open(_lbCurrentUrl,'_blank');}
+}
 
 /* ── Foto teilen (Web Share API) ─────────────────────────────── */
 async function shareFoto(fotoIdx){
