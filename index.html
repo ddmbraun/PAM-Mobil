@@ -3793,6 +3793,10 @@ async function uploadFoto(files){
     const file=fileArr[i];
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
+      // Blob-URL aus Original-Datei erstellen: zeigt sofort in der Lightbox (kein Drive-Thumbnail nötig)
+      const _localBlobUrl=URL.createObjectURL(file);
+      // Im In-Memory-Cache eintragen, damit openFotoFullscreen sofort einen Cache-Hit hat
+      _fotoBlobCache.set(meta.id,_localBlobUrl);
       t.fotos.push({
         driveId:meta.id,
         name:meta.name,
@@ -3802,7 +3806,8 @@ async function uploadFoto(files){
         url:meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view'),
         download:meta.webContentLink||'',
         uploadedAt:new Date().toISOString(),
-        source:'mobile'
+        source:'mobile',
+        localUrl:_localBlobUrl
       });
       success++;
       _mOpenSections['Fotos']=true;
@@ -3826,8 +3831,9 @@ async function openFotoFullscreen(i){
   const cached=_vid?_fotoBlobCache.get(_vid):null;
   // Fallback-Thumbnail: Drive-URL braucht Browser-Cookies → kann auf Mobile scheitern.
   // _mobFetchThumb nutzt Drive-API-Token → zuverlässiger auf Mobile.
-  // Fix: localUrl direkt verwenden wenn kein Drive-Bild vorhanden (z.B. noch nicht hochgeladen).
-  const _localSrc=(!_vid&&f.localUrl)?f.localUrl:'';
+  // Fix: localUrl als sofortige Vorschau verwenden wenn vorhanden (frische Blob-URL nach Upload, oder nur-lokal).
+  // Stale blob-URLs scheitern schnell per onerror; _fetchFotoBlob lädt dann das Drive-Bild nach.
+  const _localSrc=f.localUrl||'';
   const _thumbFb=_localSrc||f.thumbnail||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
   openLightbox(cached||_thumbFb,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
   if(cached)return; // Cache-Hit: Vollbild bereits geladen, fertig
