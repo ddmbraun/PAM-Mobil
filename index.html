@@ -3964,34 +3964,16 @@ async function openFotoFullscreen(i){
   const _vid=f.editedDriveId||f.driveId||'';
   const viewUrl=_vid?'https://drive.google.com/file/d/'+_vid+'/view':(f.url||'');
   const cached=_vid?_fotoBlobCache.get(_vid):null;
-  // Sofort-Vorschau: gecachter Blob ODER lokale Blob-URL ODER Drive-Thumbnail
-  const _preview=cached||(f.localUrl||'')||(f.thumbnail||'')||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
-  openLightbox(_preview,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
-  // Drive-Vollbild nachladen (außer wenn bereits Drive-Blob gecacht)
-  if(!_vid)return;
-  if(cached&&cached.startsWith('blob:')&&!f.localUrl)return; // Drive-Blob bereits gecacht → fertig
-  const url=await _fetchFotoBlob(_vid);
-  const lb=document.getElementById('lightbox');
-  if(!lb||!lb.classList.contains('open'))return; // Lightbox zwischenzeitlich geschlossen
-  const img=document.getElementById('lbImg');
-  const cap=document.getElementById('lbCaption');
-  if(url&&img){
-    img.src=url;
-    // Sicherstellen dass Bild sichtbar ist.
-    // Bei 360°-Bildern übernimmt onload die Pannellum-Initialisierung und blendet img selbst aus;
-    // für normale Fotos ist diese Zeile der zuverlässige Fallback wenn onload nicht feuert.
-    if(img.style.display==='none')img.style.display='';
-  } else {
-    // Blob-Fetch fehlgeschlagen: Hinweis anzeigen, Extern-Button prominenter machen
-    if(img&&img.style.display==='none'){
-      // Kein Bild zu sehen → aussagekräftige Meldung
-      if(cap) cap.textContent=(f.editedName||f.name||'Foto')+' — Im Drive öffnen';
-    }
-    const btnOrig=document.getElementById('lbOpenOrig');
-    if(btnOrig&&viewUrl){
-      btnOrig.style.display='';
-      btnOrig.textContent='📂 In Drive öffnen';
-      btnOrig.style.cssText+='background:#e67e22;color:#fff;font-size:14px;padding:12px 18px;';
+  const _thumbFb=f.thumbnail||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
+  openLightbox(cached||_thumbFb,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
+  if(!cached&&_vid){
+    const url=await _fetchFotoBlob(_vid);
+    if(url){
+      const img=document.getElementById('lbImg');
+      if(img&&document.getElementById('lightbox').classList.contains('open')){
+        img.src=url;
+        if(img.style.display==='none')img.style.display='';
+      }
     }
   }
 }
