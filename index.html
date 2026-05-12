@@ -511,8 +511,9 @@ function applyStoredSizeBarVisibility(){
 }
 
 // ══ AUTH ══
-function _gdriveFullLogin(){
-  // Normaler Login-Dialog (Konto-Auswahl erscheint nur wenn nötig)
+function gdriveLogin(){
+  _mobSilentGaveUp=false;
+  // Redirect-Flow: kein Popup – funktioniert zuverlässig auf iPhone und allen Browsern
   const hint=localStorage.getItem('mob_user_email_v1')||'';
   const params=new URLSearchParams({
     client_id:GDRIVE_CLIENT_ID,
@@ -523,26 +524,6 @@ function _gdriveFullLogin(){
   });
   if(hint)params.set('login_hint',hint);
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
-}
-function gdriveLogin(){
-  _mobSilentGaveUp=false;
-  const hint=localStorage.getItem('mob_user_email_v1')||'';
-  if(hint){
-    // Stiller Versuch: prompt=none + login_hint – überspringt Konto-Auswahl komplett
-    // Falls kein aktiver Google-Session → #error=access_denied → _gdriveFullLogin() springt an
-    const params=new URLSearchParams({
-      client_id:GDRIVE_CLIENT_ID,
-      redirect_uri:window.location.origin+window.location.pathname,
-      response_type:'token',
-      scope:GDRIVE_SCOPE,
-      include_granted_scopes:'true',
-      prompt:'none',
-      login_hint:hint,
-    });
-    window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
-  } else {
-    _gdriveFullLogin();
-  }
 }
 function initTokenClient(){
   if(gdriveTokenClient)return;
@@ -2440,22 +2421,14 @@ async function forceReloadFromDrive(){
 // ── Redirect-Rückkehr: Token aus URL-Hash nach Google-Login lesen ──
 document.addEventListener('DOMContentLoaded',function(){
   const hash=window.location.hash;
-  if(!hash)return;
-  const p=new URLSearchParams(hash.substring(1));
-  const token=p.get('access_token');
-  const exp=p.get('expires_in');
-  if(token){
-    // Erfolgreicher Login (auch nach prompt=none)
-    window.history.replaceState({},'',window.location.pathname);
-    onTokenResponse({access_token:token,expires_in:exp||3600});
-    return;
-  }
-  // Fehler von prompt=none: stiller Login nicht möglich → normalen Login starten
-  const err=p.get('error');
-  if(err&&(err==='access_denied'||err==='interaction_required'||err==='login_required')){
-    window.history.replaceState({},'',window.location.pathname);
-    // Zweiter Versuch: ohne prompt-Einschränkung, Nutzer wählt Konto
-    _gdriveFullLogin();
+  if(hash&&hash.includes('access_token')){
+    const p=new URLSearchParams(hash.substring(1));
+    const token=p.get('access_token');
+    const exp=p.get('expires_in');
+    if(token){
+      window.history.replaceState({},'',window.location.pathname);
+      onTokenResponse({access_token:token,expires_in:exp||3600});
+    }
   }
 });
 document.addEventListener('DOMContentLoaded',function(){
