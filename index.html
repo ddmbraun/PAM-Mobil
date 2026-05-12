@@ -3613,6 +3613,22 @@ function hydrateFotoThumbs(){
     if(id){img.dataset.hydrated='1';loadFotoThumb(img,id);}
   });
 }
+// Fallback wenn thumbnail-URL abgelaufen: Auth-Fetch (blob) nachladen
+function _mobThumbFallback(img){
+  if(img.dataset.fbDone==='1')return;
+  img.dataset.fbDone='1';
+  const id=img.getAttribute('data-foto-id');
+  if(id&&gdriveToken){
+    img.removeAttribute('onerror');
+    _fetchFotoBlob(id).then(u=>{
+      if(u){img.src=u;img.style.display='';}
+      else{img.style.display='none';if(img.parentElement)img.parentElement.classList.add('fallback');}
+    });
+  } else {
+    img.style.display='none';
+    if(img.parentElement)img.parentElement.classList.add('fallback');
+  }
+}
 function renderFotos(list){
   if(!list||!list.length)return '';
   return list.map((f,i)=>{
@@ -3634,7 +3650,7 @@ function renderFotos(list){
     const editedBadge=f.editedDriveId?'<span style="position:absolute;top:3px;left:3px;background:var(--accent);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;">✏</span>':'';
     const uploadOverlay=f._uploading?'<div class="foto-upload-overlay"><span class="up-icon">⬆</span><span class="up-lbl">lädt hoch…</span></div>':'';
     return '<div class="foto-thumb" onclick="openFotoFullscreen('+i+')" title="'+escAttr(tip)+'">'
-      +'<img '+srcAttr+'alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'fallback\')">'
+      +'<img '+srcAttr+'alt="" loading="lazy" onerror="_mobThumbFallback(this)">'
       +editedBadge
       +uploadOverlay
       +'<button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button>'
