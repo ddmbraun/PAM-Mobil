@@ -3826,10 +3826,12 @@ async function openFotoFullscreen(i){
   const cached=_vid?_fotoBlobCache.get(_vid):null;
   // Fallback-Thumbnail: Drive-URL braucht Browser-Cookies → kann auf Mobile scheitern.
   // _mobFetchThumb nutzt Drive-API-Token → zuverlässiger auf Mobile.
-  const _thumbFb=f.thumbnail||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
+  // Fix: localUrl direkt verwenden wenn kein Drive-Bild vorhanden (z.B. noch nicht hochgeladen).
+  const _localSrc=(!_vid&&f.localUrl)?f.localUrl:'';
+  const _thumbFb=_localSrc||f.thumbnail||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
   openLightbox(cached||_thumbFb,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
   if(cached)return; // Cache-Hit: Vollbild bereits geladen, fertig
-  if(!_vid)return;  // Kein Drive-Bild
+  if(!_vid)return;  // Nur lokales Foto (localUrl bereits als src gesetzt) oder kein Bild → fertig
   // Thumbnail-Voransicht per Drive-API (schnell, ~20-50 KB) parallel starten,
   // damit bei Cookie-losen Browsern sofort etwas zu sehen ist.
   const _baseId=f.driveId||'';
@@ -3839,7 +3841,10 @@ async function openFotoFullscreen(i){
       const lb=document.getElementById('lightbox');if(!lb||!lb.classList.contains('open'))return;
       const img=document.getElementById('lbImg');if(!img)return;
       // Nur setzen wenn Vollbild noch nicht geladen (img.src wäre dann blob:...)
-      if(!img.src||img.src.startsWith('https://')||!img.style.display||img.style.display==='none'){
+      // Fix: !img.style.display entfernt – leerer String '' bedeutet sichtbar, nicht versteckt.
+      //       alreadyBlob verhindert, dass Thumbnail ein bereits geladenes Vollbild überschreibt.
+      const alreadyBlob=img.src&&img.src.startsWith('blob:');
+      if(!alreadyBlob&&(!img.src||img.src.startsWith('https://')||img.style.display==='none')){
         img.src=tUrl;img.style.display='';
       }
     }).catch(()=>{});
