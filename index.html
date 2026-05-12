@@ -699,12 +699,40 @@ function _hideMobDriveWarnBanner(){
   const b=document.getElementById('_mobDriveWarnBanner');
   if(b)b.remove();
 }
+// Öffnet Google-OAuth in neuem Tab (Safari-kompatibler Redirect-Flow)
+// Da durch User-Geste ausgelöst, ist window.open in Safari erlaubt.
+function _openOAuthNewTab(){
+  const hint=localStorage.getItem('mob_user_email_v1')||'';
+  const params=new URLSearchParams({
+    client_id:GDRIVE_CLIENT_ID,
+    redirect_uri:_getRedirectUri(),
+    response_type:'token',
+    scope:GDRIVE_SCOPE,
+    include_granted_scopes:'true',
+  });
+  if(hint)params.set('login_hint',hint);
+  const authUrl='https://accounts.google.com/o/oauth2/v2/auth?'+params;
+  const w=window.open(authUrl,'_blank');
+  if(w){
+    toast('Bitte im neuen Tab anmelden und danach zurückwechseln','info');
+  }else{
+    // Neuer Tab wurde blockiert → direkter Seitenaufruf
+    window.location.href=authUrl;
+  }
+}
 function _mobDriveRenew(){
   _hideMobDriveWarnBanner();
   initTokenClient();
-  if(!gdriveTokenClient){toast('Google-Dienst lädt noch – bitte Seite neu laden','error');return;}
+  if(!gdriveTokenClient){
+    // GIS nicht geladen → direkt neuer Tab (Safari-Fallback)
+    _openOAuthNewTab();
+    return;
+  }
+  let _done=false;
+  const _fallback=setTimeout(()=>{if(!_done){_done=true;_openOAuthNewTab();}},6000);
   const prev=gdriveTokenClient.callback;
   gdriveTokenClient.callback=(r)=>{
+    if(_done)return;_done=true;clearTimeout(_fallback);
     gdriveTokenClient.callback=prev;
     if(r&&r.access_token){
       gdriveToken=r.access_token;
@@ -713,11 +741,12 @@ function _mobDriveRenew(){
       _scheduleGdriveRefresh(Number(r.expires_in||3600));
       toast('✓ Drive-Verbindung erneuert','success');
     }else{
-      toast('Anmeldung fehlgeschlagen – bitte erneut versuchen','error');
+      // GIS fehlgeschlagen (z.B. Safari ITP) → Fallback: neuer Tab
+      _openOAuthNewTab();
       _showMobDriveWarnBanner();
     }
   };
-  try{gdriveTokenClient.requestAccessToken({});}catch(e){toast('Fehler: '+e.message,'error');}
+  try{gdriveTokenClient.requestAccessToken({});}catch(e){if(!_done){_done=true;clearTimeout(_fallback);_openOAuthNewTab();}}
 }
 function _scheduleGdriveRefresh(expiresIn){
   clearTimeout(_gdriveRefreshTimer);
@@ -750,8 +779,12 @@ function silentRefresh(){
   return new Promise(resolve=>{
     initTokenClient();
     if(!gdriveTokenClient){resolve(false);return;}
+    let _done=false;
+    // Timeout: Safari blockiert GIS-Hidden-Iframe (ITP) → Callback feuert nie → würde ewig hängen
+    const _t=setTimeout(()=>{if(!_done){_done=true;console.warn('[PTP-Mobile] silentRefresh Timeout (Safari ITP?)');resolve(false);}},5000);
     const prev=gdriveTokenClient.callback;
     gdriveTokenClient.callback=(resp)=>{
+      if(_done)return;_done=true;clearTimeout(_t);
       gdriveTokenClient.callback=prev;
       if(resp&&resp.access_token){
         gdriveToken=resp.access_token;
@@ -761,7 +794,7 @@ function silentRefresh(){
         resolve(true);
       }else resolve(false);
     };
-    try{gdriveTokenClient.requestAccessToken({prompt:'none'});}catch(e){console.warn('[PTP-Mobile]',e);resolve(false);}
+    try{gdriveTokenClient.requestAccessToken({prompt:'none'});}catch(e){console.warn('[PTP-Mobile]',e);if(!_done){_done=true;clearTimeout(_t);resolve(false);}}
   });
 }
 async function ensureToken(){
@@ -3585,14 +3618,19 @@ function renderFotos(list){
     const caption=f.caption||'';
     const cached=id?_fotoBlobCache.get(id):null;
     const thumbSrc=f.thumbnail||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
+    // localUrl als Sofort-Vorschau wenn kein Cache und keine Drive-ID (Upload läuft noch)
+    const localFallback=(!cached&&!id&&f.localUrl)?f.localUrl:'';
     const srcAttr=cached?('src="'+escAttr(cached)+'" ')
                  :(id?'data-foto-id="'+escAttr(id)+'" src="'+escAttr(thumbSrc)+'" '
-                     :(thumbSrc?'src="'+escAttr(thumbSrc)+'" ':''));
+                     :(localFallback?'src="'+escAttr(localFallback)+'" '
+                     :(thumbSrc?'src="'+escAttr(thumbSrc)+'" ':'')));
     const tip=caption?(caption+' — '+name):name;
     const editedBadge=f.editedDriveId?'<span style="position:absolute;top:3px;left:3px;background:var(--accent);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;">✏</span>':'';
+    const uploadOverlay=f._uploading?'<div class="foto-upload-overlay"><span class="up-icon">⬆</span><span class="up-lbl">lädt hoch…</span></div>':'';
     return '<div class="foto-thumb" onclick="openFotoFullscreen('+i+')" title="'+escAttr(tip)+'">'
       +'<img '+srcAttr+'alt="" loading="lazy" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'fallback\')">'
       +editedBadge
+      +uploadOverlay
       +'<button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button>'
       +'<button style="position:absolute;top:2px;right:26px;background:rgba(0,0,0,.6);color:#fff;border:none;width:22px;height:22px;border-radius:11px;font-size:11px;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center;" onclick="event.stopPropagation();shareFoto('+i+')" title="Teilen">📤</button>'
       +(caption?'<div class="cap-badge">'+esc(caption)+'</div>':'')
@@ -3771,12 +3809,9 @@ async function _uploadOneFotoToDrive(file,folderId){
 }
 async function uploadFoto(files){
   if(!files||!files.length)return;
-  // Sofort in ein Array kopieren – das input-Element wird direkt nach dem Aufruf
-  // mit this.value='' zurückgesetzt, wodurch die FileList ungültig werden kann.
   const fileArr=Array.from(files);
   const t=currentTask();
   if(!t){toast('Keine Task geöffnet','error');return;}
-  // Foto-Ordner (gdrive) – wird am Desktop gesetzt, hier nur genutzt
   const folderId=extractDriveFolderId(t.gdrive);
   if(!folderId){
     toast('❗ Foto-Ordner fehlt – bitte am Desktop unter Verknüpfungen eintragen','error');
@@ -3785,37 +3820,53 @@ async function uploadFoto(files){
     return;
   }
   if(!(await ensureToken())){toast('Nicht angemeldet','error');return;}
-  const n=fileArr.length;
-  toast('⬆ Lade '+n+' Foto(s) hoch …','info');
   if(!t.fotos)t.fotos=[];
+
+  // ── Schritt 1: Fotos SOFORT anzeigen (Blob-URL) + Upload-Spinner ──────────
+  const fotoObjs=fileArr.map(file=>{
+    const localUrl=URL.createObjectURL(file);
+    const fo={
+      name:file.name,
+      mimeType:file.type||'image/jpeg',
+      size:file.size||0,
+      localUrl,
+      driveId:null,
+      _uploading:true,
+      uploadedAt:new Date().toISOString(),
+      source:'mobile'
+    };
+    t.fotos.push(fo);
+    return{file,fo};
+  });
+  _mOpenSections['Fotos']=true;
+  renderDetail(t); // Foto erscheint sofort mit Spinner
+
+  // ── Schritt 2: Upload im Hintergrund ──────────────────────────────────────
   let success=0,failed=0,lastErr='';
-  for(let i=0;i<n;i++){
-    const file=fileArr[i];
+  await Promise.all(fotoObjs.map(async({file,fo})=>{
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
-      // Blob-URL aus Original-Datei erstellen: zeigt sofort in der Lightbox (kein Drive-Thumbnail nötig)
-      const _localBlobUrl=URL.createObjectURL(file);
-      // Im In-Memory-Cache eintragen, damit openFotoFullscreen sofort einen Cache-Hit hat
-      _fotoBlobCache.set(meta.id,_localBlobUrl);
-      t.fotos.push({
-        driveId:meta.id,
-        name:meta.name,
-        mimeType:meta.mimeType||file.type||'image/jpeg',
-        size:Number(meta.size)||file.size||0,
-        thumbnail:meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400'),
-        url:meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view'),
-        download:meta.webContentLink||'',
-        uploadedAt:new Date().toISOString(),
-        source:'mobile',
-        localUrl:_localBlobUrl
-      });
+      // Blob-URL im Cache eintragen damit Lightbox sofort öffnet
+      _fotoBlobCache.set(meta.id,fo.localUrl);
+      // Foto-Objekt in-place aktualisieren (Index bleibt gleich)
+      fo.driveId=meta.id;
+      fo.name=meta.name||fo.name;
+      fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
+      fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
+      fo.download=meta.webContentLink||'';
+      fo._uploading=false;
       success++;
-      _mOpenSections['Fotos']=true;
-    }catch(e){failed++;lastErr=e.message||String(e);console.error('Foto-Upload-Fehler:',e);}
-  }
-  // Immer sichern & neu rendern
+    }catch(e){
+      fo._uploading=false;
+      fo._uploadError=true;
+      failed++;lastErr=e.message||String(e);
+      console.error('Foto-Upload-Fehler:',e);
+    }
+  }));
+
+  // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   forceSave();
-  renderDetail(t);
+  renderDetail(t); // Spinner entfernen, Drive-IDs jetzt bekannt
   if(success&&!failed)toast('✓ '+success+' Foto(s) in Drive hochgeladen','success');
   else if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' fehlgeschlagen','error');
   else toast('✗ Upload fehlgeschlagen: '+lastErr,'error');
