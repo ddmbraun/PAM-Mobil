@@ -1218,7 +1218,7 @@ async function saveFile(){
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
                     // COMPAT-FIX: 'anfrageEingangDatum' ergänzt – Desktop-Only-Feld, das Mobile
                     // nie bearbeitet und das bei einem Konflikt-Merge sonst überschrieben würde.
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum']; // Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum','freieTermine']; // Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
