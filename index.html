@@ -1218,7 +1218,7 @@ async function saveFile(){
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
                     // COMPAT-FIX: 'anfrageEingangDatum' ergänzt – Desktop-Only-Feld, das Mobile
                     // nie bearbeitet und das bei einem Konflikt-Merge sonst überschrieben würde.
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum','freieTermine']; // Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum','freieTermine','msMessageId','msConversationId','msThreadMessages']; // Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
@@ -1951,7 +1951,8 @@ function _openWartungsprotokollMobil(existingIdx){
               img.style.cssText='width:100%;height:100%;object-fit:cover;';
               if(f.localUrl)img.src=f.localUrl;
               else if(f.driveId){
-                _mobFetchThumb(f.driveId).then(u=>{if(u)img.src=u;});
+                if(f.thumbnail){img.src=f.thumbnail;}
+                else{_mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;scheduleSave();}});}
               }
               th.appendChild(img);
             }
@@ -2077,9 +2078,12 @@ function _wpMobRenderFotos(bericht,grid){
       cell.appendChild(img);
     }else if(f.driveId){
       const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
-      // Thumbnail zuerst: thumbnailLink (~20-50 KB) statt Vollbild (~5-10 MB).
-      // Lightbox öffnet später das Vollbild via _fetchFotoBlob.
-      _mobFetchThumb(f.driveId).then(u=>{if(u)img.src=u;});
+      // Gecachte thumbnailLink nutzen (kein API-Call nötig) – sonst live holen und cachen.
+      if(f.thumbnail){
+        img.src=f.thumbnail;
+      }else{
+        _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;scheduleSave();}});
+      }
       cell.appendChild(img);
     }
     // Upload-Overlay für Fotos die noch hochgeladen werden
@@ -2256,6 +2260,15 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
               const j=await r.json();fo.driveId=j.id;ok++;
               // Drive-Upload erfolgreich → lokale IndexedDB-Kopie kann bereinigt werden
               if(fo.localKey)_mobPhotoDelete(fo.localKey).catch(()=>{});
+              // thumbnailLink sofort holen (erspart API-Call beim nächsten Öffnen)
+              // Google braucht manchmal 2-3 Sek zum Generieren → kurz warten dann holen
+              setTimeout(async()=>{
+                try{
+                  const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(j.id)+'?fields=thumbnailLink',
+                    {headers:{Authorization:'Bearer '+gdriveToken}});
+                  if(mr.ok){const md=await mr.json();if(md.thumbnailLink){fo.thumbnail=md.thumbnailLink;scheduleSave();}}
+                }catch(_){}
+              },3000);
             }
             else fail++;
           }catch(ex){fail++;console.warn('[MobPhoto] Upload:',ex);}
