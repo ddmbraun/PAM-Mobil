@@ -221,8 +221,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 
 <!-- ══ LOGIN-SCREEN ══ -->
 <div id="loginScreen" class="screen">
-  <h1>PTP Mobile</h1>
-  <p>Verbindung zu Google Drive einrichten. Die App nutzt dieselbe <code>workboard.json</code> wie PTP am Desktop.</p>
+  <h1>PAM Mobile</h1>
+  <p>Verbindung zu Google Drive einrichten. Die App nutzt dieselbe <code>workboard.json</code> wie PAM am Desktop.</p>
   <button id="loginBtn" onclick="gdriveLogin()">🔐 Mit Google anmelden</button>
   <div class="login-status" id="loginStatus"></div>
 </div>
@@ -230,7 +230,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 <!-- ══ LISTE-SCREEN ══ -->
 <div id="listScreen" class="screen hidden">
   <div class="hdr">
-    <div class="hdr-title">PTP Mobile</div>
+    <div class="hdr-title">PAM Mobile</div>
     <button class="hdr-btn icon theme-toggle-btn" onclick="toggleTheme()" title="Hell/Dunkel wechseln">☀️</button>
     <button class="hdr-btn icon" id="refreshBtn" onclick="refreshData()" title="Neu laden – lange drücken = PC-Stand erzwingen">🔄</button>
     <button class="hdr-btn" onclick="_openStammblattMob()" title="Stammblatt öffnen" style="font-size:12px;font-weight:700">📋</button>
@@ -283,6 +283,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
       <div class="sect-body">
         <div class="field"><label>Verbundene Datei</label><div id="settFileName" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px"></div></div>
         <div class="field"><label>Eingeloggt als</label><div id="settUserEmail" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)"></div></div>
+        <div class="field"><label>App-Version</label><div id="settAppVersion" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)">–</div></div>
       </div>
     </div>
     <div class="sect open">
@@ -321,7 +322,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
 <script>
 /* ═══════════════════════════════════════════════
-   PTP Mobile – nutzt dieselbe workboard.json wie PTP
+   PAM Mobile – nutzt dieselbe workboard.json wie PAM
    ═══════════════════════════════════════════════ */
 const GDRIVE_CLIENT_ID='56419258975-2ri3eujer9p6saph1mesa5hihlcae1pl.apps.googleusercontent.com';
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly'; // Sync mit Desktop
@@ -1030,7 +1031,7 @@ async function findOrPickFile(){
   // Auf Drive suchen
   try{
     const found=await _searchWorkboardInDrive();
-    if(!found){document.getElementById('loginStatus').textContent='Keine workboard.json gefunden — erst in PTP am Desktop anlegen.';return;}
+    if(!found){document.getElementById('loginStatus').textContent='Keine workboard.json gefunden — erst in PAM am Desktop anlegen.';return;}
     fileId=found.id;fileName=found.name||'workboard.json';
     try{localStorage.setItem(FILE_KEY,JSON.stringify({id:fileId,name:fileName}));}catch(e){console.warn('[PTP-Mobile]',e);}
     const ok=await loadFile();
@@ -3924,7 +3925,7 @@ async function _uploadOneFotoToDrive(file,folderId){
   // Sinnvoller Dateiname: Zeitstempel_Originalname
   const origName=file.name||'foto.jpg';
   const safeName=stamp+'_'+origName.replace(/[^\w.\-]+/g,'_');
-  const metadata={name:safeName,parents:[folderId],description:'PTP Mobile Upload'};
+  const metadata={name:safeName,parents:[folderId],description:'PAM Mobile Upload'};
   const body=new FormData();
   body.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}));
   body.append('file',file);
@@ -4174,6 +4175,16 @@ function openSettings(){
   document.getElementById('listScreen').classList.add('hidden');
   document.getElementById('settFileName').textContent=fileName||'(noch nicht verbunden)';
   document.getElementById('settUserEmail').textContent=userEmail||'(unbekannt)';
+  // Versionsnummer aus Service-Worker-Cache-Namen auslesen (z.B. "pam-mobil-v9" → "v9")
+  (async()=>{
+    try{
+      const el=document.getElementById('settAppVersion');if(!el)return;
+      if(!('caches' in window)){el.textContent='PAM Mobile';return;}
+      const keys=await caches.keys();
+      const k=keys.find(k=>k.startsWith('pam-mobil-'));
+      el.textContent=k?'PAM Mobile – '+k.replace('pam-mobil-',''):'PAM Mobile';
+    }catch(e){const el=document.getElementById('settAppVersion');if(el)el.textContent='PAM Mobile';}
+  })();
 }
 function closeSettings(){
   document.getElementById('settingsScreen').classList.add('hidden');
