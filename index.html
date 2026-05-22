@@ -7,8 +7,8 @@
 <meta name="theme-color" content="#1a1a2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="PTP Mobile">
-<title>PTP Mobile</title>
+<meta name="apple-mobile-web-app-title" content="PAM Mobile">
+<title>PAM Mobile</title>
 <style>
 :root{--bg:#0f0f1a;--bg2:#1a1a2e;--bg3:#242438;--text:#e8e8f0;--text2:#9090a8;--accent:#6a8aff;--accent2:#8aa0ff;--green:#4ade80;--orange:#fb923c;--red:#f87171;--border:#333350;}
 /* ── HELL-MODUS (Sonnenlicht) ── */
@@ -606,6 +606,8 @@ async function afterLogin(){
   // HV-Bild-Cache vorladen (schnellere Thumbnails)
   try{ _preloadHvBildCacheMob(); }catch(e){}
   await findOrPickFile();
+  // Timer-State prüfen: jetzt sind Boards geladen, Timer kann sicher wiederhergestellt werden
+  resumeMobileTimerIfNeeded();
   // Ausstehende Foto-Uploads aus vorherigen Sessions nachholen
   setTimeout(()=>{_mobRetryPendingUploads().catch(()=>{});},4000);
 }
@@ -3184,6 +3186,9 @@ function _stopListTickLoop(){
 }
 function resumeMobileTimerIfNeeded(){
   const s=_loadTimerState();if(!s||!s.taskId)return;
+  // Boards noch nicht geladen (z.B. direkt nach App-Start vor Drive-Sync):
+  // Timer-State erhalten – nach findOrPickFile() wird diese Funktion erneut aufgerufen.
+  if(Object.keys(boards).length===0)return;
   const t=findTaskById(s.taskId);
   if(!t){_saveTimerState(null);return;}
   // Wenn Detail dieser Task offen ist, Tick starten
