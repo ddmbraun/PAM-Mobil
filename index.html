@@ -2900,7 +2900,7 @@ function renderDetail(t){
             </div>
           </div>`).join('')
         : '<div style="color:var(--text2);font-size:12px;padding:8px 4px;">Noch keine E-Mails – auf dem PC eine .eml in den Task hineinziehen.</div>';
-      return '<div class="sect'+oc('EmailPdfs')+'" data-sect="EmailPdfs"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📧 E-Mail Originale'+(count?' ('+count+')':'')+'</span></div><div class="sect-body">'+items+'</div></div>';
+      return '<div class="sect'+oc('EmailOriginals')+'" data-sect="EmailOriginals"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📧 E-Mail Originale'+(count?' ('+count+')':'')+'</span></div><div class="sect-body">'+items+'</div></div>';
     })()
     
         // ── FOTOS (nur Baustelle) ──
@@ -3776,50 +3776,7 @@ function downloadAttachMob(i){
   }
 }
 // ── E-Mail Originale: Vorschau / Download / Ordner ───────────────────────────
-function _mobOpenEmailPreview(ei){
-  const t=currentTask();if(!t||!t.emailOriginals||!t.emailOriginals[ei])return;
-  const e=t.emailOriginals[ei];
-  // Felder je nach Speicherformat (alt: subject/sender/date/body, neu: name/fileId/url)
-  const subj=e.subject||e.name||'(kein Betreff)';
-  const sender=e.sender||'';
-  const date=e.date?(new Date(e.date).toLocaleString('de-DE')):(e.uploadedAt||'');
-  const body=e.body||'';
-  const driveUrl=e.url||(e.fileId?'https://drive.google.com/file/d/'+e.fileId+'/view':'');
-
-  let ov=document.getElementById('mobEmailViewerOverlay');
-  if(ov)ov.remove();
-  ov=document.createElement('div');
-  ov.id='mobEmailViewerOverlay';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9900;display:flex;flex-direction:column;';
-  ov.innerHTML=`
-    <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;">
-      <button onclick="document.getElementById('mobEmailViewerOverlay').remove()" style="background:rgba(255,255,255,.12);border:none;color:#fff;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer;flex-shrink:0;">✕</button>
-      <span style="flex:1;font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📧 ${esc(subj)}</span>
-      ${driveUrl?`<button onclick="window.open('${escAttr(driveUrl)}','_blank')" style="background:var(--accent);color:#fff;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;">📂 Drive</button>`:''}
-    </div>
-    <div style="flex:1;overflow-y:auto;padding:14px;">
-      ${sender?`<div style="font-size:12px;color:var(--text2);margin-bottom:4px;"><b>Von:</b> ${esc(sender)}</div>`:''}
-      ${date?`<div style="font-size:12px;color:var(--text2);margin-bottom:12px;"><b>Datum:</b> ${esc(date)}</div>`:''}
-      ${body
-        ?`<pre style="white-space:pre-wrap;word-break:break-word;font-size:13px;color:var(--text);font-family:inherit;margin:0;line-height:1.6;">${esc(body)}</pre>`
-        :`<div style="color:var(--text2);font-size:13px;font-style:italic;">Kein Textinhalt – Datei in Drive öffnen.</div>`}
-    </div>`;
-  document.body.appendChild(ov);
-}
-function _mobDownloadEml(ei){
-  const t=currentTask();if(!t||!t.emailOriginals||!t.emailOriginals[ei])return;
-  const e=t.emailOriginals[ei];
-  const url=e.url||(e.fileId?'https://drive.google.com/uc?export=download&id='+e.fileId:'');
-  if(url)window.open(url,'_blank');
-  else toast('Keine Datei verfügbar','error');
-}
-function _mobOpenEmailFolder(ei){
-  const t=currentTask();if(!t||!t.emailOriginals||!t.emailOriginals[ei])return;
-  const e=t.emailOriginals[ei];
-  const url=e.url||(e.fileId?'https://drive.google.com/file/d/'+e.fileId+'/view':'');
-  if(url)window.open(url,'_blank');
-  else toast('Keine Datei verfügbar','error');
-}
+// Fix 2026-05-24: Alte doppelte Definitionen entfernt. Aktive Versionen stehen weiter unten (async _mobOpenEmailPreview, _mobDownloadEml, _mobOpenEmailFolder).
 // ── DRIVE-ORDNER-LADER ──
 async function loadFotosFromDriveFolder(){
   if(!gdriveToken){toast('Bitte zuerst mit Google Drive verbinden','error');return;}
