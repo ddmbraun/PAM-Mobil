@@ -1,32 +1,31 @@
-// Service Worker – PAM Mobil
-// Cached: HTML-Shell + CDN-Bibliotheken für schnelles Laden via GitHub Pages
-// Google-APIs (Drive, Sheets, accounts.google.com) werden NIEMALS gecacht –
-// sie brauchen Auth-Token und müssen immer live abgefragt werden.
+// Service Worker - PAM Desktop (Workboard + Stammblatt)
+// Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v16'; // Phase 3c: Baudoku Foto-Lightbox Fix
+const CACHE_NAME = 'pam-desktop-2026-05-25-b40'; // b40: Material-Popup, Task-Sektionen geschlossen, Checkbox-Overlap-Fix
 const PRECACHE = [
-  './',
-  './index.html',
-  './artikel.json',
-  // CDN-Bibliotheken (versioniert → stabile URLs, sicher zum Precachen)
   'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css',
   'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js',
   'https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js',
   'https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.7/dist/jspdf.plugin.autotable.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  // 'https://accounts.google.com/gsi/client' → Cache-Control: no-store, nicht cachebar
 ];
 
-// Installation: alle statischen Ressourcen vorab cachen
+// Installation: CDN-Ressourcen einzeln cachen - ein Fehler blockiert nicht den ganzen Install
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache =>
+      Promise.allSettled(
+        PRECACHE.map(url =>
+          cache.add(url).catch(err => console.warn('[SW] Precache fehlgeschlagen:', url, err))
+        )
+      )
+    ).then(() => self.skipWaiting())
   );
 });
 
-// Aktivierung: veraltete Caches aus alten Versionen löschen
+// Aktivierung: veraltete Caches loeschen
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
@@ -37,38 +36,70 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch-Strategie:
-// – Google APIs (Drive, Sheets, OAuth, GSI): immer direkt ans Netzwerk
-//   → keine Interferenz mit der Datensynchronisation via workboard.json
-// – Alles andere: Cache-First, dann Netzwerk (und dynamisch nachcachen)
+function isHtmlPage(url) {
+  const u = new URL(url);
+  return u.pathname === '/' ||
+         u.pathname.endsWith('/index.html') ||
+         u.pathname.endsWith('/stammblatt.html') ||
+         u.pathname.endsWith('.html');
+}
+
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  // Blob-URLs und Data-URLs nie durch den SW routen – sie existieren nur im Tab
   if (url.startsWith('blob:') || url.startsWith('data:')) return;
 
-  // Google-Dienste immer live – kein SW-Eingriff
   if (
     url.includes('googleapis.com') ||
     url.includes('accounts.google.com') ||
     url.includes('drive.google.com') ||
     url.includes('oauth2.google') ||
-    url.includes('lh3.googleusercontent.com')
+    url.includes('lh3.googleusercontent.com') ||
+    url.includes('withgoogle.com') ||
+    url.includes('ssl.gstatic.com') ||
+    url.includes('microsoft.com') ||
+    url.includes('microsoftonline.com') ||
+    url.includes('microsoftauthenticator') ||
+    url.includes('graph.microsoft.com') ||
+    url.includes('login.live.com') ||
+    url.includes('cdn.jsdelivr.net/npm/@azure')
   ) {
-    return; // Browser-Standard-Fetch ohne SW-Cache
+    return;
   }
 
+  if (e.request.redirect && e.request.redirect !== 'follow') return;
+
+  const isSameOrigin = url.startsWith(self.location.origin);
+  const isKnownCdn   = PRECACHE.some(p => url === p);
+  if (!isSameOrigin && !isKnownCdn) return;
+
+  // Network-First fuer HTML-Seiten
+  if (isHtmlPage(url)) {
+    e.respondWith(
+      fetch(e.request)
+        .then(resp => {
+          if (resp.status === 200) {
+            const clone = resp.clone();
+            caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          }
+          return resp;
+        })
+        .catch(() => caches.match(e.request).then(c => c || new Response('Offline', {status: 503})))
+    );
+    return;
+  }
+
+  // Cache-First fuer CDN-Bibliotheken
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(resp => {
-        // Nur erfolgreiche GET-Antworten dynamisch nachlegen
         if (e.request.method === 'GET' && resp.status === 200) {
           const clone = resp.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
         }
         return resp;
-      });
+      }).catch(() => new Response('', {status: 503, statusText: 'Offline'}));
     })
   );
 });
