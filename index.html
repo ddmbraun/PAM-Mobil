@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com https://api.open-meteo.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com https://api.open-meteo.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#1a1a2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -3053,8 +3053,10 @@ function _renderBauMaterial(t){
   }
   html+='<div style="display:flex;gap:7px;margin-top:8px;">'
     +'<button class="inline-btn" style="flex:1" onclick="openBauMaterialSuche()">+ Material hinzufügen</button>'
+    +'<button class="inline-btn" style="flex:0 0 auto;padding:8px 14px;" title="EAN per Kamerafoto scannen" onclick="triggerBauEanScan()">📷</button>'
     +'<button class="inline-btn" style="flex:0 0 auto;padding:8px 12px;" onclick="startBauMaterialDiktat()">🎤</button>'
-    +'</div>';
+    +'</div>'
+    +'<input type="file" accept="image/*" capture="environment" id="bauEanScanInput" style="display:none;" onchange="processBauEanPhoto(this)">';
   return html;
 }
 
@@ -3104,6 +3106,83 @@ function openBauMaterialSuche(){
 function closeMatSuche(){
   const modal=document.getElementById('matSuchModal');
   if(modal)modal.style.display='none';
+}
+
+// ── EAN-Foto-Scan (Kamera → Bild → Barcode erkennen) ──────────────────────
+function triggerBauEanScan(){
+  const inp=document.getElementById('bauEanScanInput');
+  if(inp){inp.value='';inp.click();}
+}
+
+let _zxingLoaded=false,_zxingLoadPromise=null;
+function _loadZxing(){
+  if(_zxingLoaded)return Promise.resolve();
+  if(_zxingLoadPromise)return _zxingLoadPromise;
+  _zxingLoadPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js';
+    s.onload=()=>{_zxingLoaded=true;resolve();};
+    s.onerror=()=>reject(new Error('ZXing konnte nicht geladen werden'));
+    document.head.appendChild(s);
+  });
+  return _zxingLoadPromise;
+}
+
+async function processBauEanPhoto(input){
+  if(!input||!input.files||!input.files[0])return;
+  const file=input.files[0];
+  input.value='';
+  toast('Barcode wird erkannt…','info',2500);
+  let ean=null;
+
+  // Versuch 1: BarcodeDetector (Chrome/Android – schnell, keine Bibliothek nötig)
+  if('BarcodeDetector' in window){
+    try{
+      const detector=new BarcodeDetector({formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e']});
+      const img=await createImageBitmap(file);
+      const codes=await detector.detect(img);
+      if(codes.length)ean=codes[0].rawValue;
+    }catch(e){console.warn('[EAN BarcodeDetector]',e);}
+  }
+
+  // Versuch 2: ZXing (Fallback für iPhone Safari + Firefox)
+  if(!ean){
+    try{
+      await _loadZxing();
+      const url=URL.createObjectURL(file);
+      const reader=new ZXing.BrowserMultiFormatReader();
+      const result=await reader.decodeFromImageUrl(url);
+      URL.revokeObjectURL(url);
+      ean=result.getText();
+    }catch(e){
+      console.warn('[EAN ZXing]',e);
+      toast('Barcode nicht erkannt – Foto nochmal versuchen','error',3500);
+      return;
+    }
+  }
+
+  if(ean)await _bauEanMatch(ean);
+}
+
+async function _bauEanMatch(ean){
+  const liste=await _ladeArtikel();
+  // a[4] = EAN (nach VBA-Update: [name,einheit,gruppe,vk,ean])
+  const artikel=liste.find(a=>a[4]&&String(a[4]).trim()===String(ean).trim());
+  if(!artikel){
+    toast('EAN '+ean+' nicht in Lagerverwaltung gefunden','warn',4000);
+    return;
+  }
+  const t=currentTask();if(!t)return;
+  if(!t.materialGeplant)t.materialGeplant=[];
+  const exists=t.materialGeplant.some(m=>m.name===artikel[0]);
+  if(!exists){
+    t.materialGeplant.push({name:artikel[0],einheit:artikel[1],gruppe:artikel[2]||'',menge:null,vk:artikel[3]||null});
+    scheduleSave();
+  }
+  renderBaudokuTab(t);
+  const bm=document.querySelector('[data-sect="bau_Material"]');
+  if(bm&&!bm.classList.contains('open'))toggleMSect(bm);
+  toast('✓ '+artikel[0]+' hinzugefügt','success',3000);
 }
 
 function _matBaueGruppenFilter(){
