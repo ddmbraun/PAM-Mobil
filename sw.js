@@ -3,7 +3,7 @@
 // Google-APIs (Drive, Sheets, accounts.google.com) werden NIEMALS gecacht –
 // sie brauchen Auth-Token und müssen immer live abgefragt werden.
 
-const CACHE_NAME = 'pam-mobil-v14'; // Phase 3b: Tab-Fix, Diktat, Timer, Wetter
+const CACHE_NAME = 'pam-mobil-v15'; // Phase 3b: Tab-Fix, Diktat, Timer, Wetter (Cache-Refresh)
 const PRECACHE = [
   './',
   './index.html',
