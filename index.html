@@ -2889,17 +2889,35 @@ function renderBaudokuTab(t){
 function _renderBauFotoGrid(t){
   const grid=document.getElementById('bauFotoGrid');
   if(!grid)return;
+  const fotos=t.fotos||[];
+  if(!fotos.length){grid.innerHTML='<div style="font-size:12px;color:var(--text2);padding:4px 0;">Noch keine Fotos</div>';return;}
   grid.innerHTML='';
-  (t.fotos||[]).forEach((f,fi)=>{
+  fotos.forEach((f,fi)=>{
     const cell=document.createElement('div');
-    cell.style.cssText='aspect-ratio:1;border-radius:7px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;';
+    cell.style.cssText='aspect-ratio:1;border-radius:7px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;position:relative;';
     cell.onclick=()=>{if(currentTask())_openFotoViewer(currentTask().fotos||[],fi);};
+    // Bild (async laden)
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;';
     if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
     else if(f.localKey){_mobPhotoGet(f.localKey).then(u=>{if(u){f.localUrl=u;img.src=u;}});}
     else if(f.driveId){if(f.thumbnail)img.src=f.thumbnail;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;}});}
     cell.appendChild(img);
+    // Upload-Overlay
+    if(f._uploading){const ov=document.createElement('div');ov.className='foto-upload-overlay';ov.innerHTML='<span class="up-icon">⬆</span><span class="up-lbl">lädt hoch…</span>';cell.appendChild(ov);}
+    // Teilen-Button
+    const shareBtn=document.createElement('button');
+    shareBtn.style.cssText='position:absolute;top:2px;right:26px;background:rgba(0,0,0,.6);color:#fff;border:none;width:22px;height:22px;border-radius:11px;font-size:11px;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center;';
+    shareBtn.title='Teilen';shareBtn.textContent='📤';
+    shareBtn.onclick=(e)=>{e.stopPropagation();shareFoto(fi);};
+    cell.appendChild(shareBtn);
+    // Löschen-Button
+    const delBtn=document.createElement('button');
+    delBtn.className='del';delBtn.textContent='✕';
+    delBtn.onclick=(e)=>{e.stopPropagation();removeFoto(fi);};
+    cell.appendChild(delBtn);
+    // Caption-Badge
+    if(f.caption){const cap=document.createElement('div');cap.className='cap-badge';cap.textContent=f.caption;cell.appendChild(cap);}
     grid.appendChild(cell);
   });
 }
@@ -3120,9 +3138,9 @@ function _loadZxing(){
   if(_zxingLoadPromise)return _zxingLoadPromise;
   _zxingLoadPromise=new Promise((resolve,reject)=>{
     const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js';
+    s.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.19.3/umd/index.min.js';
     s.onload=()=>{_zxingLoaded=true;resolve();};
-    s.onerror=()=>reject(new Error('ZXing konnte nicht geladen werden'));
+    s.onerror=()=>reject(new Error('ZXing laden fehlgeschlagen'));
     document.head.appendChild(s);
   });
   return _zxingLoadPromise;
@@ -3132,36 +3150,55 @@ async function processBauEanPhoto(input){
   if(!input||!input.files||!input.files[0])return;
   const file=input.files[0];
   input.value='';
-  toast('Barcode wird erkannt…','info',2500);
+  toast('Barcode wird erkannt…','info',3000);
   let ean=null;
+  let objUrl=null;
 
-  // Versuch 1: BarcodeDetector (Chrome/Android – schnell, keine Bibliothek nötig)
-  if('BarcodeDetector' in window){
-    try{
-      const detector=new BarcodeDetector({formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e']});
-      const img=await createImageBitmap(file);
-      const codes=await detector.detect(img);
-      if(codes.length)ean=codes[0].rawValue;
-    }catch(e){console.warn('[EAN BarcodeDetector]',e);}
-  }
+  try{
+    objUrl=URL.createObjectURL(file);
 
-  // Versuch 2: ZXing (Fallback für iPhone Safari + Firefox)
-  if(!ean){
-    try{
-      await _loadZxing();
-      const url=URL.createObjectURL(file);
-      const reader=new ZXing.BrowserMultiFormatReader();
-      const result=await reader.decodeFromImageUrl(url);
-      URL.revokeObjectURL(url);
-      ean=result.getText();
-    }catch(e){
-      console.warn('[EAN ZXing]',e);
-      toast('Barcode nicht erkannt – Foto nochmal versuchen','error',3500);
-      return;
+    // Versuch 1: BarcodeDetector (Chrome/Android – nativ, kein Download)
+    if('BarcodeDetector' in window){
+      try{
+        const detector=new BarcodeDetector({formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e']});
+        const bmp=await createImageBitmap(file);
+        const codes=await detector.detect(bmp);
+        if(codes.length)ean=codes[0].rawValue;
+      }catch(e){console.warn('[EAN] BarcodeDetector:',e);}
     }
+
+    // Versuch 2: ZXing via Canvas (iOS Safari + Firefox)
+    if(!ean){
+      try{
+        await _loadZxing();
+        // Bild in Canvas laden (löst auch EXIF-Rotation)
+        const img=document.createElement('img');
+        await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=objUrl;});
+        const canvas=document.createElement('canvas');
+        canvas.width=img.naturalWidth;
+        canvas.height=img.naturalHeight;
+        canvas.getContext('2d').drawImage(img,0,0);
+        const hints=new Map();
+        if(typeof ZXing!=='undefined'&&ZXing.DecodeHintType){
+          hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+        }
+        const reader=new ZXing.BrowserMultiFormatReader(hints);
+        // Canvas-Methode (synchron)
+        try{const r=reader.decodeFromCanvas(canvas);if(r)ean=r.getText();}catch(_){}
+        // Image-Element-Methode (async, Fallback)
+        if(!ean){try{const r=await reader.decodeFromImage(img);if(r)ean=r.getText();}catch(_){}}
+      }catch(e){console.warn('[EAN] ZXing:',e);}
+    }
+
+  }finally{
+    if(objUrl)URL.revokeObjectURL(objUrl);
   }
 
-  if(ean)await _bauEanMatch(ean);
+  if(!ean){
+    toast('Barcode nicht erkannt – bitte nochmal fotografieren (gute Beleuchtung, Barcode gerade halten)','warn',4500);
+    return;
+  }
+  await _bauEanMatch(ean);
 }
 
 async function _bauEanMatch(ean){
@@ -3407,8 +3444,13 @@ async function ladeBauWetter(){
       toast('✅ '+temp+'°C · '+lbl,'success');
     }catch(e){toast('Wetter-Fehler: '+e.message,'error');}
   },err=>{
-    toast('GPS-Fehler: '+err.message,'error');
-  },{timeout:10000,maximumAge:60000});
+    const gpsMsg={
+      1:'Standort-Zugriff verweigert – bitte in den Browser-Einstellungen erlauben.',
+      2:'Standort nicht verfügbar – bitte nochmal versuchen.',
+      3:'Zeitüberschreitung – bitte nochmal versuchen.'
+    };
+    toast('📍 '+(gpsMsg[err.code]||'GPS-Fehler: '+err.message),'error',5000);
+  },{timeout:15000,maximumAge:120000,enableHighAccuracy:false});
 }
 
 // ── Baudoku: Allgemeines Feld updaten ──
