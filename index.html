@@ -2930,14 +2930,16 @@ function _renderBauZeit(t){
   const entries=t.zeitEntries||[];
   const _pm=(v,b)=>{try{const[vh,vm]=(v||'0:0').split(':').map(Number);const[bh,bm]=(b||'0:0').split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
   let html='';
-  // ── Laufender Timer ──
-  if(_bauTimerStart){
+  // ── Laufender Timer (nutzt zentralen Mobile-Timer, kein eigener State) ──
+  const _mainTs=_loadTimerState();
+  if(_mainTs&&_mainTs.taskId===t.id){
+    const _sd=new Date(_mainTs.startMs);
+    const _shm=String(_sd.getHours()).padStart(2,'0')+':'+String(_sd.getMinutes()).padStart(2,'0');
     html+='<div class="bau-timer-display">'
-      +'<div><div class="bau-timer-lbl">▶ Läuft seit '+esc(_bauTimerStart.hm)+'</div>'
-      +'<div class="bau-timer-uhr" id="bauTimerUhr">–</div></div>'
+      +'<div><div class="bau-timer-lbl">▶ Läuft seit '+_shm+(_mainTs.beschreibung?' – '+esc(_mainTs.beschreibung):'')+'</div>'
+      +'<div class="bau-timer-uhr" id="bauTimerUhr">'+formatTimerFor(t.id)+'</div></div>'
       +'<button class="inline-btn danger" style="padding:10px 16px;font-size:14px;font-weight:700;" onclick="stopBauTimer()">⏹ Stop</button>'
       +'</div>';
-    // Tick-Anzeige starten (nach DOM-Einfügen)
     setTimeout(_bauTimerTick,0);
   }else{
     html+='<button class="inline-btn primary" style="width:100%;margin-bottom:8px;font-size:15px;font-weight:700;" onclick="startBauTimer()">▶ Zeit starten</button>';
@@ -2964,39 +2966,28 @@ function _renderBauZeit(t){
 
 function _bauTimerTick(){
   const el=document.getElementById('bauTimerUhr');
-  if(!el||!_bauTimerStart)return;
-  const diffMs=Date.now()-_bauTimerStart.ts;
-  const diffMin=Math.floor(diffMs/60000);
-  const h=Math.floor(diffMin/60);const m=diffMin%60;const s=Math.floor((diffMs%60000)/1000);
-  el.textContent=(h?h+'h ':'')+String(m).padStart(2,'0')+'min '+String(s).padStart(2,'0')+'s';
+  if(!el)return;
+  const t=currentTask();
+  if(!t||!isTimerRunningForTask(t.id))return;
+  el.textContent=formatTimerFor(t.id);
   _bauTimerInterval=setTimeout(_bauTimerTick,1000);
 }
 
 function startBauTimer(){
-  if(_bauTimerStart){toast('Timer läuft bereits','info');return;}
-  const jetzt=new Date();
-  const hm=String(jetzt.getHours()).padStart(2,'0')+':'+String(jetzt.getMinutes()).padStart(2,'0');
-  _bauTimerStart={hm,ts:jetzt.getTime()};
   const t=currentTask();if(!t)return;
-  renderBaudokuTab(t);
-  const bz=document.querySelector('[data-sect="bau_Zeit"]');
-  if(bz&&!bz.classList.contains('open'))toggleMSect(bz);
-  toast('▶ Zeit gestartet um '+hm,'success');
+  if(isTimerRunningForTask(t.id)){toast('Timer läuft bereits','info');return;}
+  // Zeiterfassung-Sektion aufklappen, dann zentralen Timer starten
+  _mOpenSections['bau_Zeit']=true;
+  toggleMobileTimer(t.id);
+  // toggleMobileTimer → renderDetail → renderBaudokuTab (alles in einem Schritt)
 }
 
 function stopBauTimer(){
-  if(!_bauTimerStart){return;}
-  clearTimeout(_bauTimerInterval);_bauTimerInterval=null;
-  const jetzt=new Date();
-  const hm=String(jetzt.getHours()).padStart(2,'0')+':'+String(jetzt.getMinutes()).padStart(2,'0');
-  const von=_bauTimerStart.hm;
-  _bauTimerStart=null;
   const t=currentTask();if(!t)return;
-  if(!t.zeitEntries)t.zeitEntries=[];
-  t.zeitEntries.push({date:jetzt.toISOString().slice(0,10),von,bis:hm,beschreibung:'',mitarbeiter:''});
-  scheduleSave();
-  renderBaudokuTab(t);
-  toast('⏹ '+von+' – '+hm+' gespeichert','success');
+  if(!isTimerRunningForTask(t.id))return;
+  clearTimeout(_bauTimerInterval);_bauTimerInterval=null;
+  toggleMobileTimer(t.id);
+  // toggleMobileTimer → speichert Eintrag in t.zeitEntries → renderDetail → renderBaudokuTab
 }
 
 // ── Baudoku: Neuen Zeiteintrag hinzufügen ──

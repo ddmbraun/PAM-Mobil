@@ -3,7 +3,7 @@
 // Google-APIs (Drive, Sheets, accounts.google.com) werden NIEMALS gecacht –
 // sie brauchen Auth-Token und müssen immer live abgefragt werden.
 
-const CACHE_NAME = 'pam-mobil-v16'; // Phase 3c: Baudoku Foto-Lightbox Fix
+const CACHE_NAME = 'pam-mobil-v17'; // Phase 3d: Baudoku-Timer vereinheitlicht (kein Doppel-Eintrag mehr)
 const PRECACHE = [
   './',
   './index.html',
