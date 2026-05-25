@@ -2895,7 +2895,7 @@ function _renderBauFotoGrid(t){
   fotos.forEach((f,fi)=>{
     const cell=document.createElement('div');
     cell.style.cssText='aspect-ratio:1;border-radius:7px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;position:relative;';
-    cell.onclick=()=>{if(currentTask())_openFotoViewer(currentTask().fotos||[],fi);};
+    cell.onclick=()=>{openFotoFullscreen(fi);};
     // Bild (async laden)
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;';
