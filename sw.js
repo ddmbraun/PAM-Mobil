@@ -3,10 +3,11 @@
 // Google-APIs (Drive, Sheets, accounts.google.com) werden NIEMALS gecacht –
 // sie brauchen Auth-Token und müssen immer live abgefragt werden.
 
-const CACHE_NAME = 'pam-mobil-v12'; // Baudoku-Tab + Foto-Thumbnails
+const CACHE_NAME = 'pam-mobil-v14'; // Phase 3b: Tab-Fix, Diktat, Timer, Wetter
 const PRECACHE = [
   './',
   './index.html',
+  './artikel.json',
   // CDN-Bibliotheken (versioniert → stabile URLs, sicher zum Precachen)
   'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css',
   'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js',
