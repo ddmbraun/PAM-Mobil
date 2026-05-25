@@ -49,12 +49,41 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .search-bar input{width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:13px 40px 13px 14px;border-radius:10px;font-size:16px}
 .search-clear{position:absolute;right:20px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;padding:4px;line-height:1;display:none}
 .task-list{flex:1;overflow-y:auto;padding:8px 10px 80px;-webkit-overflow-scrolling:touch}
-.task-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:background .15s}
+.task-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:background .15s;display:flex;gap:10px;align-items:stretch}
 .task-card:active{background:var(--bg3)}
+.task-card-body{flex:1;min-width:0}
 .task-card-title{font-weight:600;font-size:17px;margin:0 0 6px;line-height:1.3}
 .task-card-meta{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text2);flex-wrap:wrap}
+.card-foto-wrap{width:62px;height:62px;border-radius:8px;overflow:hidden;flex-shrink:0;background:var(--bg3);border:1px solid var(--border);position:relative;align-self:center;display:flex;align-items:center;justify-content:center}
+.card-foto-wrap img{width:100%;height:100%;object-fit:cover;display:block}
+.card-foto-cnt{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.72);color:#fff;font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;line-height:1.4}
+.card-foto-icon{font-size:20px;color:var(--border)}
 .badge{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:500;background:var(--bg3);border:1px solid var(--border)}
 .badge.status{background:rgba(106,138,255,.15);border-color:var(--accent);color:var(--accent2)}
+/* ── BAUDOKU TAB-BAR ── */
+.detail-tab-bar{display:flex;background:var(--bg2);border-bottom:2px solid var(--border);flex-shrink:0;}
+.detail-tab-btn{flex:1;padding:11px 8px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;color:var(--text2);border:none;background:transparent;border-bottom:3px solid transparent;margin-bottom:-2px;min-height:44px;}
+.detail-tab-btn.active{color:var(--text);border-bottom-color:var(--accent);}
+/* ── BAUDOKU INHALTE ── */
+.bau-textarea{width:100%;min-height:80px;resize:vertical;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:15px;font-family:inherit;box-sizing:border-box;}
+.bau-sect-summary{font-size:11px;font-weight:400;color:var(--text2);margin-top:1px;display:block;}
+.bau-mat-row{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+.bau-mat-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bau-mat-meta{font-size:11px;color:var(--text2);}
+.bau-mat-val{background:var(--bg);border:1px solid var(--accent);border-radius:6px;padding:5px 8px;font-size:14px;font-weight:700;color:var(--accent2);min-width:50px;text-align:center;width:50px;}
+.bau-wetter-row{display:flex;gap:7px;margin-top:4px;}
+.bau-wetter-btn{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;min-height:44px;}
+.bau-wetter-btn.active{border-color:var(--accent);background:rgba(106,138,255,.12);}
+.bau-wetter-icon{font-size:22px;line-height:1;}
+.bau-wetter-lbl{font-size:10px;color:var(--text2);}
+.bau-wetter-btn.active .bau-wetter-lbl{color:var(--accent2);}
+.bau-person-chip{display:inline-flex;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:7px 13px;font-size:13px;color:var(--text2);cursor:pointer;min-height:40px;margin:0 5px 5px 0;}
+.bau-person-chip.active{background:rgba(74,222,128,.1);border-color:var(--green);color:var(--green);font-weight:600;}
+.bau-separator{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);padding:10px 2px 4px;font-weight:600;}
+.bau-masch-row{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 11px;margin-bottom:5px;}
+.bau-masch-name{font-size:14px;font-weight:600;flex:1;}
+.bau-masch-del{background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;padding:2px 6px;}
+.bau-sect-head-inner{display:flex;flex-direction:column;gap:2px;text-align:left;}
 .badge.ampel-grün{background:rgba(74,222,128,.15);border-color:var(--green);color:var(--green)}
 .badge.ampel-orange{background:rgba(251,146,60,.15);border-color:var(--orange);color:var(--orange)}
 .badge.ampel-rot{background:rgba(248,113,113,.15);border-color:var(--red);color:var(--red)}
@@ -268,7 +297,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <input id="mSizeSlider" type="range" min="80" max="180" step="5" value="100" oninput="setMobileScale(this.value)" autocomplete="off">
     <span class="size-bar-val" id="mSizeVal">100%</span>
   </div>
+  <div class="detail-tab-bar" id="detailTabBar">
+    <button class="detail-tab-btn active" id="tabInfoBtn" onclick="switchDetailTab('info')">📋 Task-Info</button>
+    <button class="detail-tab-btn" id="tabBauBtn" onclick="switchDetailTab('bau')">🏗 Baudoku</button>
+  </div>
   <div class="detail-body" id="detailBody"></div>
+  <div class="detail-body" id="detailBodyBau" style="display:none"></div>
 </div>
 
 <!-- ══ EINSTELLUNGEN ══ -->
@@ -2621,7 +2655,16 @@ function renderList(){
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#2e7d32;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PIN+'</a>'
       :'';
     const showCardActions=!!(cardTelBtn||cardMapsBtn);
+    // Foto-Thumbnail für Karte
+    const _fotoCount=(t.fotos||[]).length;
+    const _fotoThumbHtml=_fotoCount>0
+      ?'<div class="card-foto-wrap">'
+        +'<img id="cfoto_'+escAttr(t.id)+'" src="" alt="" onerror="this.style.display=\'none\'">'
+        +(_fotoCount>1?'<div class="card-foto-cnt">'+_fotoCount+'&#x1F4F7;</div>':'')
+        +'</div>'
+      :'';
     return '<div class="task-card" onclick="openDetail(\''+escAttr(t.id)+'\')">'
+      +'<div class="task-card-body">'
       +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">'
       +(isNotizBoard
         ?'<span style="font-size:13px;line-height:1;">✅</span>'
@@ -2673,12 +2716,358 @@ function renderList(){
           +cardTelBtn+cardMapsBtn
           +'</div>'
         :'')
+      +'</div>'  // .task-card-body
+      +_fotoThumbHtml
       +'</div>';
   } catch(_e){ console.error('[renderList]',t&&t.id,_e); return '<div class="task-card" onclick="openDetail(\''+escAttr((t&&t.id)||'')+'\')">⚠ <span style="color:var(--red)">'+esc((t&&t.title)||'(Fehler)')+'</span></div>'; }
   }).join('');
   if(runningTaskId)_startListTickLoop();else _stopListTickLoop();
+  // Foto-Thumbnails asynchron nachladen
+  (async()=>{
+    for(const t of filtered){
+      if(!(t.fotos&&t.fotos.length))continue;
+      const img=document.getElementById('cfoto_'+t.id);
+      if(!img)continue;
+      const f=t.fotos[0];
+      try{
+        if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){
+          img.src=f.localUrl;
+        }else if(f.localKey){
+          const dataUrl=await _mobPhotoGet(f.localKey);
+          if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}
+        }else if(f.driveId){
+          if(f.thumbnail){img.src=f.thumbnail;}
+          else{const u=await _mobFetchThumb(f.driveId);if(u){img.src=u;f.thumbnail=u;}}
+        }
+      }catch(e){console.warn('[card-foto]',t.id,e);}
+    }
+  })();
 }
 function formatDate(iso){try{const d=new Date(iso);if(isNaN(d))return iso;return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});}catch(e){return iso;}}
+
+// ══════════════════════════════════════════════
+//  BAUDOKU-TAB  –  Tab-Switch + Render-Funktionen
+// ══════════════════════════════════════════════
+let _currentDetailTab='info'; // 'info' | 'bau'
+
+function switchDetailTab(tab){
+  _currentDetailTab=tab;
+  const isBau=tab==='bau';
+  document.getElementById('tabInfoBtn').classList.toggle('active',!isBau);
+  document.getElementById('tabBauBtn').classList.toggle('active',isBau);
+  document.getElementById('detailBody').style.display=isBau?'none':'';
+  document.getElementById('detailBodyBau').style.display=isBau?'':'none';
+}
+
+function renderBaudokuTab(t){
+  const body=document.getElementById('detailBodyBau');
+  if(!body)return;
+  const fotos=t.fotos||[];
+  const zeitEntries=t.zeitEntries||[];
+  const matGeplant=t.materialGeplant||[];
+  const matVerbrauch=t.materialVerbrauch||[];
+  const maschinen=t.baudokuMaschinen||[];
+  const personalAusgewaehlt=t.baudokuPersonal||[];
+  const wetter=t.wetter||'';
+  const oc=k=>isSectOpen('bau_'+k)?' open':'';
+  const _pm=(von,bis)=>{try{const[vh,vm]=(von||'0:0').split(':').map(Number);const[bh,bm]=(bis||'0:0').split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
+  const zeitMin=zeitEntries.reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
+  const zeitStr=zeitMin>0?(Math.floor(zeitMin/60)+'h '+(zeitMin%60)+'min').replace(' 0min',''):'';
+  const _wetterMap={sonnig:'☀️ Sonnig',bewoelkt:'⛅ Bewölkt',regen:'🌧 Regen',kalt:'🥶 Kalt'};
+
+  body.innerHTML=
+    // ── Notizen / Stellungnahme – immer offen ──
+    '<div class="sect open" data-sect="bau_Notizen">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen / Stellungnahme</div>'
+    +'<div class="sect-body">'
+    +'<textarea class="bau-textarea" id="baudokuNotizTA" placeholder="Befund, Notiz, Stellungnahme…" oninput="updateBaudokuField(\'baudokuNotiz\',this.value)" autocomplete="off">'+esc(t.baudokuNotiz||'')+'</textarea>'
+    +'<div style="display:flex;gap:8px;margin-top:6px;">'
+    +'<button class="inline-btn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;" onclick="startBaudokuDiktat()">🎤 Diktieren</button>'
+    +'</div>'
+    +'</div></div>'
+    // ── Fotos – immer offen ──
+    +'<div class="sect open" data-sect="bau_Fotos">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos ('+fotos.length+')</div>'
+    +'<div class="sect-body">'
+    +'<div id="bauFotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:8px;">'
+    +'<button class="inline-btn" style="flex:1" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
+    +'<button class="inline-btn" style="flex:1" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
+    +'</div>'
+    +'</div></div>'
+    // ── Separator ──
+    +'<div class="bau-separator">Bei Bedarf aufklappen</div>'
+    // ── Zeiterfassung – zugeklappt ──
+    +'<div class="sect'+oc('Zeit')+'" data-sect="bau_Zeit">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>⏱ Zeiterfassung</span>'
+    +(zeitEntries.length?'<span class="bau-sect-summary">'+zeitEntries.length+' Eintr. · '+zeitStr+'</span>':'<span class="bau-sect-summary">noch kein Eintrag</span>')
+    +'</div></div>'
+    +'<div class="sect-body">'+_renderBauZeit(t)+'</div></div>'
+    // ── Personal – zugeklappt ──
+    +'<div class="sect'+oc('Personal')+'" data-sect="bau_Personal">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>👷 Personal</span>'
+    +(personalAusgewaehlt.length?'<span class="bau-sect-summary">'+esc(personalAusgewaehlt.join(', '))+'</span>':'<span class="bau-sect-summary">niemand ausgewählt</span>')
+    +'</div></div>'
+    +'<div class="sect-body">'+_renderBauPersonal(t)+'</div></div>'
+    // ── Material – zugeklappt ──
+    +'<div class="sect'+oc('Material')+'" data-sect="bau_Material">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>📦 Material</span>'
+    +(matGeplant.length?'<span class="bau-sect-summary">'+matGeplant.length+' geplant · '+matVerbrauch.filter(m=>m.menge!=null).length+' verbraucht eingetragen</span>':'<span class="bau-sect-summary">noch kein Material</span>')
+    +'</div></div>'
+    +'<div class="sect-body">'+_renderBauMaterial(t)+'</div></div>'
+    // ── Maschinen – zugeklappt ──
+    +'<div class="sect'+oc('Maschinen')+'" data-sect="bau_Maschinen">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>🔧 Maschinen</span>'
+    +(maschinen.length?'<span class="bau-sect-summary">'+maschinen.length+' Gerät(e) eingesetzt</span>':'<span class="bau-sect-summary">kein Eintrag</span>')
+    +'</div></div>'
+    +'<div class="sect-body">'+_renderBauMaschinen(t)+'</div></div>'
+    // ── Wetter – zugeklappt ──
+    +'<div class="sect'+oc('Wetter')+'" data-sect="bau_Wetter">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>🌤 Wetter</span>'
+    +(wetter?'<span class="bau-sect-summary">'+(_wetterMap[wetter]||wetter)+'</span>':'<span class="bau-sect-summary">nicht eingetragen</span>')
+    +'</div></div>'
+    +'<div class="sect-body">'+_renderBauWetter(t)+'</div></div>'
+    // ── Tagesbericht ──
+    +'<button class="inline-btn primary" style="width:100%;margin-top:8px;padding:14px;font-size:14px;font-weight:700;" onclick="generateTagesbericht()">📄 Tagesbericht als PDF erstellen</button>';
+
+  // Foto-Grid asynchron befüllen (gleiche Logik wie Detail-Fotos)
+  _renderBauFotoGrid(t);
+}
+
+// ── Baudoku: Foto-Grid (asynchron) ──
+function _renderBauFotoGrid(t){
+  const grid=document.getElementById('bauFotoGrid');
+  if(!grid)return;
+  grid.innerHTML='';
+  (t.fotos||[]).forEach((f,fi)=>{
+    const cell=document.createElement('div');
+    cell.style.cssText='aspect-ratio:1;border-radius:7px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;';
+    cell.onclick=()=>{if(currentTask())_openFotoViewer(currentTask().fotos||[],fi);};
+    const img=document.createElement('img');
+    img.style.cssText='width:100%;height:100%;object-fit:cover;';
+    if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
+    else if(f.localKey){_mobPhotoGet(f.localKey).then(u=>{if(u){f.localUrl=u;img.src=u;}});}
+    else if(f.driveId){if(f.thumbnail)img.src=f.thumbnail;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;}});}
+    cell.appendChild(img);
+    grid.appendChild(cell);
+  });
+}
+
+// ── Baudoku: Zeiterfassung ──
+function _renderBauZeit(t){
+  const entries=t.zeitEntries||[];
+  const _pm=(v,b)=>{try{const[vh,vm]=(v||'0:0').split(':').map(Number);const[bh,bm]=(b||'0:0').split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
+  let html='';
+  if(entries.length){
+    entries.forEach((e,i)=>{
+      const min=_pm(e.von,e.bis);
+      const dauer=min>0?(Math.floor(min/60)>0?Math.floor(min/60)+'h ':'')+(min%60)+'min':'–';
+      html+='<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:6px;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;">'
+        +'<div style="font-size:14px;font-weight:600;">'+esc((e.von||'?')+' – '+(e.bis||'?'))+'</div>'
+        +'<div style="font-size:13px;font-weight:700;color:var(--accent2);">'+dauer+'</div>'
+        +'</div>'
+        +(e.beschreibung?'<div style="font-size:12px;color:var(--text2);margin-top:2px;">'+esc(e.beschreibung)+'</div>':'')
+        +(e.mitarbeiter?'<div style="font-size:12px;color:var(--green);margin-top:2px;">👷 '+esc(e.mitarbeiter)+'</div>':'')
+        +'</div>';
+    });
+  }else{html='<div style="color:var(--text2);font-size:13px;padding:6px 0;">Noch keine Einträge.</div>';}
+  html+='<div style="display:flex;gap:7px;margin-top:6px;">'
+    +'<button class="inline-btn" style="flex:1" onclick="addBauZeitEintrag()">+ Manuell eintragen</button>'
+    +'</div>';
+  return html;
+}
+
+// ── Baudoku: Neuen Zeiteintrag hinzufügen ──
+function addBauZeitEintrag(){
+  const t=currentTask();if(!t)return;
+  const jetzt=new Date();
+  const hm=h=>String(h).padStart(2,'0');
+  const von=hm(jetzt.getHours())+':'+hm(jetzt.getMinutes());
+  const entry={date:jetzt.toISOString().slice(0,10),von,bis:'',beschreibung:'',mitarbeiter:''};
+  if(!t.zeitEntries)t.zeitEntries=[];
+  t.zeitEntries.push(entry);
+  scheduleSave();
+  renderBaudokuTab(t);
+  // Direkt in Zeiterfassung-Sektion wechseln, wenn zugeklappt
+  const bz=document.querySelector('[data-sect="bau_Zeit"]');
+  if(bz&&!bz.classList.contains('open')){toggleMSect(bz);}
+  toast('Zeiteintrag angelegt','success');
+}
+
+// ── Baudoku: Personal-Chips ──
+function _renderBauPersonal(t){
+  const liste=(t.baudokuPersonalListe||[]);
+  const ausgewaehlt=t.baudokuPersonal||[];
+  if(!liste.length){
+    return '<div style="color:var(--text2);font-size:13px;padding:4px 0;">Keine Mitarbeiterliste hinterlegt. Am PC unter Baudoku-Planung eintragen.</div>';
+  }
+  let html='<div style="display:flex;flex-wrap:wrap;gap:0;margin-bottom:6px;">';
+  liste.forEach(name=>{
+    const aktiv=ausgewaehlt.includes(name);
+    html+='<span class="bau-person-chip'+(aktiv?' active':'')+'" onclick="toggleBauPersonal(\''+escAttr(name)+'\')">'+esc(name)+'</span>';
+  });
+  html+='</div><div style="font-size:11px;color:var(--text2);">Antippen = heute anwesend / nicht anwesend</div>';
+  return html;
+}
+
+function toggleBauPersonal(name){
+  const t=currentTask();if(!t)return;
+  if(!t.baudokuPersonal)t.baudokuPersonal=[];
+  const idx=t.baudokuPersonal.indexOf(name);
+  if(idx>=0)t.baudokuPersonal.splice(idx,1);
+  else t.baudokuPersonal.push(name);
+  scheduleSave();
+  renderBaudokuTab(t);
+  const bp=document.querySelector('[data-sect="bau_Personal"]');
+  if(bp&&!bp.classList.contains('open'))toggleMSect(bp);
+}
+
+// ── Baudoku: Material ──
+function _renderBauMaterial(t){
+  const matGeplant=t.materialGeplant||[];
+  const matVerbrauch=t.materialVerbrauch||[];
+  let html='';
+  if(matGeplant.length){
+    html+='<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">Geplant vom Büro → Verbrauch eintragen</div>';
+    matGeplant.forEach((m,i)=>{
+      const verbrauch=matVerbrauch.find(v=>v.name===m.name);
+      const verbrMenge=verbrauch?verbrauch.menge:'';
+      html+='<div class="bau-mat-row">'
+        +'<div style="flex:1;min-width:0;">'
+        +'<div class="bau-mat-name">'+esc(m.name||'')+'</div>'
+        +'<div class="bau-mat-meta">'+(m.gruppe?esc(m.gruppe)+' · ':'')+'geplant: '+esc(String(m.menge||'?'))+' '+esc(m.einheit||'')+'</div>'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">'
+        +'<input class="bau-mat-val" type="number" min="0" step="any" value="'+escAttr(String(verbrMenge))+'" placeholder="–" '
+        +'onchange="updateBauMaterialVerbrauch(\''+escAttr(m.name)+'\',this.value,\''+escAttr(m.einheit||'')+'\')"> '
+        +'<span style="font-size:11px;color:var(--text2);">'+esc(m.einheit||'')+'</span>'
+        +'</div>'
+        +'</div>';
+    });
+  }else{
+    html='<div style="color:var(--text2);font-size:13px;padding:4px 0;">Kein Material geplant. Am PC unter Baudoku-Planung eintragen.</div>';
+  }
+  html+='<div style="display:flex;gap:7px;margin-top:8px;">'
+    +'<button class="inline-btn" style="flex:1" onclick="openBauMaterialSuche()">+ Material hinzufügen</button>'
+    +'<button class="inline-btn" style="flex:0 0 auto;padding:8px 12px;" onclick="startBauMaterialDiktat()">🎤</button>'
+    +'</div>';
+  return html;
+}
+
+function updateBauMaterialVerbrauch(name,menge,einheit){
+  const t=currentTask();if(!t)return;
+  if(!t.materialVerbrauch)t.materialVerbrauch=[];
+  const idx=t.materialVerbrauch.findIndex(v=>v.name===name);
+  const val=menge===''?null:parseFloat(menge);
+  if(idx>=0){t.materialVerbrauch[idx].menge=val;}
+  else{t.materialVerbrauch.push({name,menge:val,einheit});}
+  scheduleSave();
+}
+
+function openBauMaterialSuche(){
+  toast('Material-Suche (Lagerverwaltung) – kommt in Phase 3','info');
+}
+function startBauMaterialDiktat(){
+  toast('Spracheingabe Material – kommt in Phase 3','info');
+}
+
+// ── Baudoku: Maschinen ──
+function _renderBauMaschinen(t){
+  const maschinen=t.baudokuMaschinen||[];
+  let html='';
+  maschinen.forEach((m,i)=>{
+    html+='<div class="bau-masch-row">'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div class="bau-masch-name">'+esc(m.name||'')+'</div>'
+      +(m.typ||m.mitarbeiter?'<div style="font-size:12px;color:var(--text2);">'+(m.typ?esc(m.typ):'')+(m.mitarbeiter?' · '+esc(m.mitarbeiter):'')+'</div>':'')
+      +'</div>'
+      +'<button class="bau-masch-del" onclick="removeBauMaschine('+i+')">✕</button>'
+      +'</div>';
+  });
+  if(!maschinen.length)html='<div style="color:var(--text2);font-size:13px;padding:4px 0;">Noch keine Maschinen eingetragen.</div>';
+  html+='<div style="display:flex;gap:7px;margin-top:8px;">'
+    +'<input id="bauMaschInput" class="inline-input" placeholder="Gerätebezeichnung…" style="flex:1;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:8px;font-size:14px;" autocomplete="off">'
+    +'<button class="inline-btn" onclick="addBauMaschine()">+ Hinzufügen</button>'
+    +'</div>';
+  return html;
+}
+
+function addBauMaschine(){
+  const inp=document.getElementById('bauMaschInput');
+  if(!inp||!inp.value.trim())return;
+  const t=currentTask();if(!t)return;
+  if(!t.baudokuMaschinen)t.baudokuMaschinen=[];
+  t.baudokuMaschinen.push({name:inp.value.trim()});
+  inp.value='';
+  scheduleSave();
+  renderBaudokuTab(t);
+  const bm=document.querySelector('[data-sect="bau_Maschinen"]');
+  if(bm&&!bm.classList.contains('open'))toggleMSect(bm);
+}
+
+function removeBauMaschine(idx){
+  const t=currentTask();if(!t||!t.baudokuMaschinen)return;
+  t.baudokuMaschinen.splice(idx,1);
+  scheduleSave();
+  renderBaudokuTab(t);
+}
+
+// ── Baudoku: Wetter ──
+function _renderBauWetter(t){
+  const wetter=t.wetter||'';
+  const opts=[{k:'sonnig',ico:'☀️',lbl:'Sonnig'},{k:'bewoelkt',ico:'⛅',lbl:'Bewölkt'},{k:'regen',ico:'🌧',lbl:'Regen'},{k:'kalt',ico:'🥶',lbl:'Kalt'}];
+  let html='<div class="bau-wetter-row">';
+  opts.forEach(o=>{
+    html+='<div class="bau-wetter-btn'+(wetter===o.k?' active':'')+'" onclick="setBauWetter(\''+o.k+'\')"><span class="bau-wetter-icon">'+o.ico+'</span><span class="bau-wetter-lbl">'+o.lbl+'</span></div>';
+  });
+  return html+'</div>';
+}
+
+function setBauWetter(val){
+  const t=currentTask();if(!t)return;
+  t.wetter=val;
+  scheduleSave();
+  renderBaudokuTab(t);
+  const bw=document.querySelector('[data-sect="bau_Wetter"]');
+  if(bw&&!bw.classList.contains('open'))toggleMSect(bw);
+}
+
+// ── Baudoku: Allgemeines Feld updaten ──
+function updateBaudokuField(field,value){
+  const t=currentTask();if(!t)return;
+  t[field]=value;
+  scheduleSave();
+}
+
+// ── Baudoku: Spracherkennung (Notiz) ──
+function startBaudokuDiktat(){
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    toast('Spracherkennung nicht verfügbar (Chrome/Android empfohlen)','error');return;
+  }
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const r=new SR();
+  r.lang='de-DE';r.interimResults=false;r.maxAlternatives=1;
+  r.onresult=e=>{
+    const txt=e.results[0][0].transcript;
+    const ta=document.getElementById('baudokuNotizTA');
+    if(ta){ta.value=(ta.value?ta.value+'\n':'')+txt;updateBaudokuField('baudokuNotiz',ta.value);}
+    toast('🎤 Erkannt: '+txt.slice(0,40),'success');
+  };
+  r.onerror=e=>toast('🎤 Fehler: '+e.error,'error');
+  r.start();
+  toast('🎤 Sprechen…','info');
+}
+
+// ── Baudoku: Tagesbericht PDF ──
+function generateTagesbericht(){
+  toast('📄 Tagesbericht PDF – folgt in Phase 5','info');
+}
 
 // ══ DETAIL ══
 function openDetail(id){
@@ -2959,6 +3348,15 @@ function renderDetail(t){
     if(p)p.classList.add('open');
     if(b)b.classList.add('open');
   }
+  // ── BAUDOKU-TAB: Beim Öffnen eines neuen Tasks immer auf Task-Info zurücksetzen ──
+  try{
+    _currentDetailTab='info';
+    document.getElementById('tabInfoBtn').classList.add('active');
+    document.getElementById('tabBauBtn').classList.remove('active');
+    document.getElementById('detailBody').style.display='';
+    document.getElementById('detailBodyBau').style.display='none';
+    renderBaudokuTab(t);
+  }catch(e){console.warn('[BaudokuTab]',e);}
 }
 
 // ══ FELD-EDITS ══

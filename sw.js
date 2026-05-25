@@ -3,7 +3,7 @@
 // Google-APIs (Drive, Sheets, accounts.google.com) werden NIEMALS gecacht –
 // sie brauchen Auth-Token und müssen immer live abgefragt werden.
 
-const CACHE_NAME = 'pam-mobil-v11';
+const CACHE_NAME = 'pam-mobil-v12'; // Baudoku-Tab + Foto-Thumbnails
 const PRECACHE = [
   './',
   './index.html',
