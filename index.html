@@ -1552,7 +1552,7 @@ function _openPruefformular(existingIdx){
   const hdrMeta=document.createElement('div');
   hdrMeta.style.cssText='flex:1;min-width:0;';
   hdrMeta.innerHTML='<div style="font-size:14px;font-weight:700;color:#fff;">'+esc(bericht.titel)+'</div>'
-    +'<div style="font-size:11px;color:rgba(255,255,255,.75);">'+(t.title||t.name||'Baustelle')+' · '+bericht.datum+'</div>';
+    +'<div style="font-size:11px;color:rgba(255,255,255,.75);">'+(t.title||t.name||'Objektadresse')+' · '+bericht.datum+'</div>';
   const statsEl=document.createElement('div');
   statsEl.id='_pfStats';
   statsEl.style.cssText='background:rgba(255,255,255,.15);border-radius:6px;padding:4px 10px;font-size:11px;color:#fff;';
@@ -1712,7 +1712,7 @@ async function _generatePruefPdf(bericht,task){
     doc.setFontSize(16);doc.setFont('helvetica','bold');
     doc.text(bericht.titel,M,12);
     doc.setFontSize(9);doc.setFont('helvetica','normal');
-    const taskName=(task.title||task.name||'Baustelle');
+    const taskName=(task.title||task.name||'Objektadresse');
     const addr=task.adresse||'';
     doc.text(taskName+(addr?' · '+addr:''),M,19);
     doc.text('Datum: '+bericht.datum,M,25);
@@ -1877,7 +1877,7 @@ function _openWartungsprotokollMobil(existingIdx){
   closeBtn.onclick=()=>ov.remove();
   const hdrMeta=document.createElement('div');hdrMeta.style.cssText='flex:1;min-width:0;';
   hdrMeta.innerHTML='<div style="font-size:14px;font-weight:700;color:#fff;">🏠 Wartungsprotokoll Flachdach</div>'
-    +'<div style="font-size:11px;color:rgba(255,255,255,.75);">'+(t.adresse||t.title||'Baustelle')+' · '+bericht.datum+'</div>';
+    +'<div style="font-size:11px;color:rgba(255,255,255,.75);">'+(t.adresse||t.title||'Objektadresse')+' · '+bericht.datum+'</div>';
   const statsEl=document.createElement('div');statsEl.id='_wpMobStats';
   statsEl.style.cssText='background:rgba(255,255,255,.15);border-radius:6px;padding:3px 8px;font-size:11px;color:#fff;white-space:nowrap;flex-shrink:0;';
   hdr.append(closeBtn,hdrMeta,statsEl);
@@ -3619,7 +3619,7 @@ function renderDetail(t){
         +'</div>';
     })()
     // ── STAMMDATEN ──
-    +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'✅ Aufgaben':'🏗 Baustelle')+'</div><div class="sect-body">'
+    +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'✅ Aufgaben':'🏗 Objektadresse')+'</div><div class="sect-body">'
       +'<div class="field"><label>Titel</label><input type="text" value="'+escAttr(t.title||'')+'" oninput="updateField(\'title\',this.value);document.getElementById(\'detailTitle\').textContent=this.value||\'(ohne Titel)\'" autocomplete="off"></div>'
       +'<div class="field-row"><div class="field"><label>Kostenstelle / Tags</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)" autocomplete="off"></div></div>'
       +(isNotiz
@@ -4054,6 +4054,43 @@ function _openGcalZeit(i){
   const url=_gcalUrl(z,t.title||'');
   if(url)window.open(url,'_blank');
 }
+// ── Outlook / ICS Export (Zeiterfassung Mobile) ──
+function _ez2(n){return n<10?'0'+n:String(n);}
+function _buildIcs(title,desc,dateStr,vonStr,bisStr){
+  const now=new Date();
+  const stamp=now.getFullYear()+_ez2(now.getMonth()+1)+_ez2(now.getDate())+'T'+_ez2(now.getHours())+_ez2(now.getMinutes())+'00Z';
+  let dtStart,dtEnd;
+  if(dateStr){
+    const d=dateStr.replace(/-/g,'');
+    if(vonStr&&bisStr){
+      function toT(hhmm){const[h,m]=(hhmm+':00').split(':');return d+'T'+(h||'00').padStart(2,'0')+(m||'00').padStart(2,'0')+'00';}
+      dtStart=toT(vonStr);dtEnd=toT(bisStr);
+    }else{dtStart='VALUE=DATE:'+d;dtEnd='VALUE=DATE:'+d;}
+  }else{
+    const d=now.getFullYear()+_ez2(now.getMonth()+1)+_ez2(now.getDate());
+    dtStart='VALUE=DATE:'+d;dtEnd='VALUE=DATE:'+d;
+  }
+  const esc2=s=>(s||'').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
+  return['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//PAM Mobil//DE','CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT','DTSTAMP:'+stamp,'UID:pam-mob-'+Date.now()+'@mobil',
+    'SUMMARY:'+esc2(title),'DESCRIPTION:'+esc2(desc),
+    dtStart.startsWith('VALUE')?'DTSTART;'+dtStart:'DTSTART:'+dtStart,
+    dtEnd.startsWith('VALUE')?'DTEND;'+dtEnd:'DTEND:'+dtEnd,
+    'END:VEVENT','END:VCALENDAR'].join('\r\n');
+}
+function _icsDownload(filename,icsContent){
+  const blob=new Blob([icsContent],{type:'text/calendar;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+}
+function _openOutlookZeitMob(i){
+  const t=currentTask();if(!t)return;
+  const z=(t.zeitEntries||[])[i];if(!z)return;
+  const title=z.beschreibung||t.title||'Zeiteintrag';
+  const desc=(t.title?t.title+'\n':'')+(z.beschreibung||'');
+  const ics=_buildIcs(title,desc,z.date||'',z.von||'',z.bis||'');
+  _icsDownload('zeiteintrag.ics',ics);
+}
 function renderZeitenRows(list){
   if(!list||!list.length)return '<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Einträge.</div>';
   const t=currentTask();
@@ -4062,6 +4099,9 @@ function renderZeitenRows(list){
     const hasTime=z.date&&z.von&&z.bis;
     const calBtn=hasTime
       ?'<button class="rm-btn" title="In Google Kalender eintragen" onclick="_openGcalZeit('+i+')" style="background:#1a73e8;color:#fff;padding:0 8px;font-size:15px;border-radius:6px;border:none;flex-shrink:0;">📅</button>'
+      :'';
+    const outlookBtn=hasTime
+      ?'<button class="rm-btn" title="In Outlook eintragen (.ics)" onclick="_openOutlookZeitMob('+i+')" style="background:#0078d4;color:#fff;padding:0 8px;font-size:15px;border-radius:6px;border:none;flex-shrink:0;">📆</button>'
       :'';
     return ''
     +'<div class="zeit-row">'
@@ -4073,6 +4113,7 @@ function renderZeitenRows(list){
       +'<div class="row-desc">'
         +'<input type="text" placeholder="Beschreibung" value="'+escAttr(z.beschreibung||'')+'" oninput="updateZeit('+i+',\'beschreibung\',this.value)" autocomplete="off">'
         +calBtn
+        +outlookBtn
         +'<button class="rm-btn" onclick="removeZeit('+i+')">✕</button>'
       +'</div>'
     +'</div>';
@@ -5037,6 +5078,9 @@ window.addEventListener('load',async()=>{
     const stored=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
     if(stored&&stored.token&&stored.exp&&Date.now()<stored.exp){
       gdriveToken=stored.token;gdriveTokenExpires=stored.exp;
+      // BUG-FIX: Refresh-Timer setzen, damit der Token-Ablauf-Banner auch beim
+      // Wiederherstellen aus localStorage ausgelöst wird (fehlte bisher).
+      _scheduleGdriveRefresh(Math.max(60,(stored.exp-Date.now())/1000));
       document.getElementById('loginStatus').textContent='Token wiederhergestellt, lade Datei…';
       afterLogin();return;
     }
