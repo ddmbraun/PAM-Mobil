@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v21'; // v21: Task-Karte ohne Ampel/Ausführungsdatum, Task-Typ-Dropdown
+const CACHE_NAME = 'pam-mobil-v22'; // v22: Baudoku-Notizen in Task-Info, Foto-Platzhalter, Notiz-Label vereinheitlicht
 const PRECACHE = [
   './',
   './index.html',

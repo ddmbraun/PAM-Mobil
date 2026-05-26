@@ -2991,9 +2991,19 @@ function _renderBauFotoStrip(t){
   fotos.slice(0,maxVisible).forEach((f,fi)=>{
     const thumb=document.createElement('div');
     thumb.className='bau-foto-strip-thumb';
+    thumb.style.position='relative';
     thumb.onclick=()=>openFotoFullscreen(fi);
+    // Platzhalter (sichtbar bis Bild geladen)
+    const ph=document.createElement('div');
+    ph.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;opacity:.4;pointer-events:none;';
+    ph.textContent='📷';
+    thumb.appendChild(ph);
+    // Bild-Element
     const img=document.createElement('img');
     img.alt='';
+    img.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+    img.onload=()=>{ph.style.display='none';};
+    img.onerror=()=>{/* Platzhalter bleibt sichtbar */};
     if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
     else if(f.localKey){_mobPhotoGet(f.localKey).then(u=>{if(u){f.localUrl=u;img.src=u;}});}
     else if(f.driveId){if(f.thumbnail)img.src=f.thumbnail;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;}});}
@@ -3856,16 +3866,38 @@ function renderDetail(t){
       +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
     +'</div></div>':'')
     // ── NOTIZEN ──
-    +'<div class="sect'+oc('Notizen')+'" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen</div><div class="sect-body">'
+    +'<div class="sect'+oc('Notizen')+'" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen'
+    +((notizVerlauf.length+(t.baudokuNotizLog&&t.baudokuNotizLog.length?t.baudokuNotizLog.length:0))>0?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+( notizVerlauf.length+(t.baudokuNotizLog&&t.baudokuNotizLog.length?t.baudokuNotizLog.length:0))+')</span>':'')
+    +'</div><div class="sect-body">'
+      // ── Dauerhafte Notiz ──
       +'<div class="field"><label>Dauerhafte Notiz</label><textarea rows="3" style="resize:none;transition:height .2s" placeholder="Dauerhafte Notizen zum Task…" oninput="updateField(\'desc\',this.value)" onfocus="this.rows=8" onblur="if(!this.value)this.rows=3;else this.rows=4" autocomplete="off">'+esc(t.desc||'')+'</textarea></div>'
-      +'<div class="field"><label>Chronologische Einträge</label><div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
-      +'<div class="field-row" style="margin-top:6px"><input type="text" id="newNotizInput" placeholder="Kurze Notiz mit Zeitstempel…" autocomplete="off"><button class="inline-btn primary" onclick="addNotiz()">+</button></div></div>'
-      +((!isNotiz&&t.baudokuNotiz&&t.baudokuNotiz.trim())
+      // ── Notiz-Protokoll (vereinheitlichte Beschriftung) ──
+      +'<div class="field"><label>📋 Notiz-Protokoll</label>'
+      +'<div class="field-row" style="margin-bottom:6px;"><input type="text" id="newNotizInput" placeholder="Notiz eingeben, Enter oder + drücken…" autocomplete="off" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addNotiz();}"><button class="inline-btn primary" onclick="addNotiz()">+</button></div>'
+      +'<div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
+      // ── Baudoku-Notizen (falls vorhanden) ──
+      +(!isNotiz&&t.baudokuNotizLog&&t.baudokuNotizLog.length
+        ?'<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">'
+          +'<div style="font-size:11px;font-weight:700;color:var(--green);margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">'
+            +'<span>🏗 Baudoku-Notizen ('+t.baudokuNotizLog.length+')</span>'
+            +'<button onclick="switchDetailTab(\'bau\')" style="font-size:11px;background:none;border:1px solid var(--green);border-radius:6px;color:var(--green);padding:2px 7px;cursor:pointer;">→ Baudoku</button>'
+          +'</div>'
+          +t.baudokuNotizLog.slice(0,3).map(e=>'<div style="background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2);border-radius:7px;padding:7px 10px;margin-bottom:5px;">'
+            +'<div style="font-size:10px;color:var(--text2);margin-bottom:2px;">'+esc(e.ts||'')+'</div>'
+            +'<div style="font-size:13px;color:var(--text);">'+esc((e.text||'').substring(0,100))+((e.text||'').length>100?'…':'')+'</div>'
+            +'</div>'
+          ).join('')
+          +(t.baudokuNotizLog.length>3?'<div style="font-size:12px;color:var(--text2);text-align:center;padding:4px;cursor:pointer;" onclick="switchDetailTab(\'bau\')">+'+(t.baudokuNotizLog.length-3)+' weitere → Baudoku öffnen</div>':'')
+        +'</div>'
+        :'')
+      // ── Stellungnahme-Vorschau ──
+      +(!isNotiz&&t.baudokuNotiz&&t.baudokuNotiz.trim()
         ?'<div style="margin-top:8px;padding:7px 10px;background:rgba(74,222,128,.08);border:1px solid var(--green);border-radius:8px;font-size:12px;color:var(--text2);cursor:pointer;" onclick="switchDetailTab(\'bau\')">'
           +'<span style="font-size:11px;font-weight:700;color:var(--green);display:block;margin-bottom:2px;">📋 Stellungnahme (Baudoku)</span>'
           +esc((t.baudokuNotiz||'').substring(0,120))+((t.baudokuNotiz||'').length>120?'…':'')
         +'</div>'
         :'')
+      +'</div>'
     +'</div></div>'
     // ── CHECKLISTE ──
     +'<div class="sect'+oc('Checkliste')+'" data-sect="Checkliste"><div class="sect-head" onclick="toggleMSect(this.parentElement)" id="mCkHead">'+_mCkTitle()+'</div><div class="sect-body">'
