@@ -1,4 +1,4 @@
-// Service Worker - PAM Mobil
+// Service Worker - PAM Desktop (Workboard + Stammblatt) v2
 // Google-APIs werden NIEMALS gecacht.
 
 const CACHE_NAME = 'pam-mobil-v22'; // v22: Baudoku-Notizen in Task-Info, Foto-Platzhalter, Notiz-Label vereinheitlicht
