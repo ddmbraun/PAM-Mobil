@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v23'; // v23: Unified Timer+Notizen, Stellungnahme entfernt, Haken-Button Notizen
+const CACHE_NAME = 'pam-mobil-v24'; // v24: Notiz-Textarea, Foto-Vorschau, Größenschieber Baudoku, Cache-Reset-Button
 
 const PRECACHE = [
   './',

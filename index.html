@@ -111,7 +111,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-timer-bar-desc{width:100%;box-sizing:border-box;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.12);border-radius:7px;padding:10px 12px;font-size:15px;color:#1a1a2e;font-family:inherit;outline:none;margin-top:9px;min-height:50px;}
 /* ── Baudoku: Notiz-Log ── */
 .bau-notiz-input-row{display:flex;gap:8px;margin-bottom:12px;align-items:center;}
-.bau-notiz-quick{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 13px;font-size:16px;font-family:inherit;color:var(--text);outline:none;min-height:54px;box-sizing:border-box;}
+.bau-notiz-quick{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 13px;font-size:16px;font-family:inherit;color:var(--text);outline:none;min-height:54px;box-sizing:border-box;resize:none;line-height:1.4;overflow:hidden;}
 .bau-notiz-log{display:flex;flex-direction:column;gap:6px;}
 .bau-notiz-entry{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;position:relative;}
 .bau-notiz-entry-ts{font-size:10px;color:var(--text2);margin-bottom:3px;}
@@ -599,8 +599,11 @@ const MSCALE_KEY='ptpm_detail_size';
 const MSIZEBAR_KEY='ptpm_sizebar_open';
 function setMobileScale(pct){
   const v=Math.max(70,Math.min(200,parseInt(pct,10)||100));
+  const scale=(v/100).toFixed(2);
   const body=document.getElementById('detailBody');
-  if(body)body.style.setProperty('--m-scale',(v/100).toFixed(2));
+  if(body)body.style.setProperty('--m-scale',scale);
+  const bodyBau=document.getElementById('detailBodyBau');
+  if(bodyBau)bodyBau.style.setProperty('--m-scale',scale);
   const lbl=document.getElementById('mSizeVal');if(lbl)lbl.textContent=v+'%';
   const sl=document.getElementById('mSizeSlider');if(sl&&String(sl.value)!==String(v))sl.value=String(v);
   try{localStorage.setItem(MSCALE_KEY,String(v));}catch(e){console.warn('[PTP-Mobile]',e);}
@@ -2288,14 +2291,19 @@ function _wpMobOpenFoto(bericht,startIdx){
     if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){
       imgEl.src=f.localUrl;
     }else if(f.localKey&&!f.driveId){
-      // Aus IndexedDB laden (lokal gespeichertes Foto noch nicht in Drive)
       _mobPhotoGet(f.localKey).then(dataUrl=>{
         if(dataUrl){f.localUrl=dataUrl;imgEl.src=dataUrl;}
         else imgEl.alt='Kein Vorschaubild';
       });
-    }else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){
-      fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
-        .then(r=>r.blob()).then(b=>{imgEl.src=URL.createObjectURL(b);}).catch(()=>{imgEl.alt='Fehler';});
+    }else if(f.driveId){
+      // Sofort Thumbnail zeigen – dann Vollbild nachladen
+      if(f.thumbnail){imgEl.src=f.thumbnail;}
+      else if(typeof _mobThumbCache!=='undefined'&&_mobThumbCache.has(f.driveId)){imgEl.src=_mobThumbCache.get(f.driveId);}
+      if(typeof gdriveToken!=='undefined'&&gdriveToken){
+        fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
+          .then(r=>r.blob()).then(b=>{const u=URL.createObjectURL(b);f.localUrl=u;imgEl.src=u;})
+          .catch(()=>{if(!imgEl.src||imgEl.src===window.location.href)imgEl.alt='Bild nicht verfügbar';});
+      } else if(!imgEl.src){imgEl.alt='Bitte erneut einloggen';}
     }
     prevBtn.style.opacity=cur>0?'1':'0.3';
     nextBtn.style.opacity=cur<fotos.length-1?'1':'0.3';
@@ -2943,8 +2951,9 @@ function renderBaudokuTab(t){
     +((t.notizVerlauf&&t.notizVerlauf.length)?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+t.notizVerlauf.length+')</span>':'')+'</div>'
     +'<div class="sect-body">'
     +'<div class="bau-notiz-input-row">'
-    +'<input id="bauNotizQuick" class="bau-notiz-quick" type="text" placeholder="Notiz, Befund, Beobachtung…" maxlength="300" autocomplete="off"'
-    +' onkeydown="if(event.key===\'Enter\'){event.preventDefault();_addBauNotizFromInput();}">'
+    +'<textarea id="bauNotizQuick" class="bau-notiz-quick" placeholder="Notiz, Befund, Beobachtung…" maxlength="500" rows="2" autocomplete="off"'
+    +' onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();_addBauNotizFromInput();}"'
+    +' oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,160)+\'px\';"></textarea>'
     +'<button class="inline-btn" style="min-width:52px;flex:0 0 auto;font-size:18px;padding:0;min-height:52px;" onclick="_addBauNotizFromInput()" title="Speichern">✓</button>'
     +'<button class="inline-btn bau-diktat-btn" id="baudokuDiktatBtn" style="min-width:52px;flex:0 0 auto;font-size:16px;padding:0;min-height:52px;" onclick="startBaudokuDiktat()" title="Diktieren">🎤</button>'
     +'</div>'
@@ -3048,6 +3057,7 @@ function _addBauNotizFromInput(){
   if(!inp||!inp.value.trim())return;
   const text=inp.value.trim();
   inp.value='';
+  if(inp.tagName==='TEXTAREA')inp.style.height='auto';
   addNotiz(text);
 }
 
