@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v18'; // v18: Objektadresse, Outlook-ICS, Login-Refresh-Fix
+const CACHE_NAME = 'pam-mobil-v19'; // v19: Timer einklappbar, Bearbeitungs-Felder, Diktat-Notiz, Login-Fix
 const PRECACHE = [
   './',
   './index.html',
@@ -45,7 +45,8 @@ self.addEventListener('fetch', e => {
     url.includes('accounts.google.com') ||
     url.includes('drive.google.com') ||
     url.includes('oauth2.google') ||
-    url.includes('lh3.googleusercontent.com')
+    url.includes('lh3.googleusercontent.com') ||
+    url.includes('api.open-meteo.com')
   ) {
     return;
   }

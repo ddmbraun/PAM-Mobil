@@ -175,6 +175,13 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .timer-bar{display:flex;flex-direction:column;gap:7px;padding:10px 12px;background:#E8ECFF;border:1.5px solid var(--accent);border-radius:12px;margin-bottom:10px;width:100%;box-sizing:border-box}
 .timer-bar.running{background:#FFF0DC;border-color:var(--orange)}
 .timer-bar.top{position:sticky;top:0;z-index:5;margin:0 0 12px;border-width:2px;box-shadow:0 2px 10px rgba(0,0,0,.14);border-radius:0 0 12px 12px;border-top:none;}
+.timer-bar.collapsed{padding:0;gap:0;background:transparent;border:none;box-shadow:none;margin:0;}
+.timer-collapsed-strip{display:flex;align-items:center;gap:8px;padding:7px 12px;background:#E8ECFF;border-bottom:2px solid var(--accent);cursor:pointer;min-height:38px;}
+.timer-collapsed-strip.running{background:#FFF0DC;border-bottom-color:var(--orange);}
+.timer-collapsed-time{font-family:'SF Mono',Consolas,monospace;font-size:16px;font-weight:700;letter-spacing:1px;color:#1a1a2e;}
+.timer-collapsed-strip.running .timer-collapsed-time{color:#b45309;}
+.timer-collapsed-desc{font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.timer-collapsed-expand{font-size:18px;color:var(--text2);flex-shrink:0;}
 .timer-top-row{display:flex;align-items:center;gap:8px;width:100%}
 .timer-display{flex:0 0 65%;font-family:'SF Mono',Consolas,monospace;font-size:26px;font-weight:700;letter-spacing:2px;color:#1a1a2e;line-height:1.1;min-width:0;overflow:hidden}
 .timer-bar.running .timer-display{color:#b45309}
@@ -839,25 +846,32 @@ function _scheduleGdriveRefresh(expiresIn){
   const delay=Math.max(10000,(expiresIn-600)*1000); // Fix: Einheiten korrekt – zuerst *1000 (s→ms), dann Minimum
   _gdriveRefreshTimer=setTimeout(()=>{
     initTokenClient();
-    if(!gdriveTokenClient)return;
-    // Banner sofort zeigen – nicht erst nach fehlgeschlagenem Silent-Refresh
-    _showMobDriveWarnBanner();
-    toast('⚠ Drive-Verbindung läuft ab – bitte oben erneuern','error');
+    if(!gdriveTokenClient){_showMobDriveWarnBanner();return;}
+    // Erst stillen Refresh versuchen, Banner nur bei Scheitern zeigen
     try{
       const prev=gdriveTokenClient.callback;
+      const _failTimer=setTimeout(()=>{
+        // Nach 5s kein Callback → Banner zeigen
+        gdriveTokenClient.callback=prev;
+        _showMobDriveWarnBanner();
+        toast('⚠ Drive-Verbindung läuft ab – bitte oben erneuern','error');
+      },5000);
       gdriveTokenClient.callback=(r)=>{
+        clearTimeout(_failTimer);
         gdriveTokenClient.callback=prev;
         if(r&&r.access_token){
           gdriveToken=r.access_token;
           gdriveTokenExpires=Date.now()+(Number(r.expires_in||3600)-60)*1000;
           try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){console.warn('[PTP-Mobile] Token speichern in Refresh:',e);}
           _scheduleGdriveRefresh(Number(r.expires_in||3600));
-          _hideMobDriveWarnBanner(); // Stiller Refresh hat geklappt → Banner weg
+          _hideMobDriveWarnBanner(); // Stiller Refresh hat geklappt → kein Banner
+        }else{
+          _showMobDriveWarnBanner();
+          toast('⚠ Drive-Verbindung läuft ab – bitte oben erneuern','error');
         }
-        // Falls stiller Refresh fehlschlägt: Banner bleibt, Nutzer muss klicken
       };
       gdriveTokenClient.requestAccessToken({prompt:'none'});
-    }catch(e){console.warn('[PTP-Mobile] Token-Refresh:',e);}
+    }catch(e){console.warn('[PTP-Mobile] Token-Refresh:',e);_showMobDriveWarnBanner();}
   },delay);
 }
 function silentRefresh(){
@@ -889,7 +903,15 @@ async function ensureToken(){
   return true;
 }
 function logout(){
-  try{localStorage.removeItem(TOKEN_KEY);localStorage.removeItem(FILE_KEY);}catch(e){console.warn('[PTP-Mobile] localStorage löschen:',e);}
+  try{
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(FILE_KEY);
+    localStorage.removeItem(MOBILE_TIMER_KEY);
+    localStorage.removeItem(MOBILE_TIMER_COLLAPSED_KEY);
+    localStorage.removeItem(MOBILE_BACKUP_KEY);
+    // Stammblatt-Ordner-Cache leeren
+    Object.keys(localStorage).filter(k=>k.startsWith('ptpm_sb_')).forEach(k=>localStorage.removeItem(k));
+  }catch(e){console.warn('[PTP-Mobile] localStorage löschen:',e);}
   const tokenToRevoke=gdriveToken;
   gdriveToken=null;gdriveTokenExpires=0;fileId=null;boards={};statuses=[];
   try{if(window.google&&google.accounts&&google.accounts.oauth2&&tokenToRevoke)google.accounts.oauth2.revoke(tokenToRevoke,()=>{});}catch(e){}
@@ -2923,7 +2945,6 @@ function _renderBauFotoGrid(t){
 }
 
 // ── Baudoku: Zeiterfassung ──
-let _bauTimerStart=null; // {hm:'08:15', ts:Date} wenn läuft
 let _bauTimerInterval=null;
 
 function _renderBauZeit(t){
@@ -2957,7 +2978,7 @@ function _renderBauZeit(t){
         +(e.mitarbeiter?'<div style="font-size:12px;color:var(--green);margin-top:2px;">👷 '+esc(e.mitarbeiter)+'</div>':'')
         +'</div>';
     });
-  }else if(!_bauTimerStart){html+='<div style="color:var(--text2);font-size:13px;padding:6px 0;">Noch keine Einträge.</div>';}
+  }else{html+='<div style="color:var(--text2);font-size:13px;padding:6px 0;">Noch keine Einträge.</div>';}
   html+='<div style="display:flex;gap:7px;margin-top:6px;">'
     +'<button class="inline-btn" style="flex:1" onclick="addBauZeitEintrag()">+ Manuell eintragen</button>'
     +'</div>';
@@ -3453,6 +3474,7 @@ function updateBaudokuField(field,value){
 
 // ── Baudoku: Spracherkennung (Notiz) mit visuellem Indikator ──
 let _bauDiktatRec=null;
+let _bauDiktatFinalText=''; // Gesammelter finaler Text dieser Aufnahme-Session
 function startBaudokuDiktat(){
   // Läuft bereits → stoppen
   if(_bauDiktatRec){try{_bauDiktatRec.stop();}catch(_){}return;}
@@ -3463,44 +3485,104 @@ function startBaudokuDiktat(){
   const r=new SR();
   r.lang='de-DE';r.interimResults=true;r.maxAlternatives=1;r.continuous=true;
   _bauDiktatRec=r;
+  _bauDiktatFinalText='';
+  const _restoreBtn=()=>{
+    // Wird nach renderDetail aufgerufen um den Button-Zustand wiederherzustellen
+    const btn2=document.getElementById('baudokuDiktatBtn');
+    if(btn2&&_bauDiktatRec){
+      btn2.classList.add('recording');
+      btn2.innerHTML='<span class="bau-diktat-dot"></span>Aufnahme läuft – Tippen zum Stoppen';
+      btn2.onclick=startBaudokuDiktat;
+    }
+  };
   const btn=document.getElementById('baudokuDiktatBtn');
   const ta=document.getElementById('baudokuNotizTA');
   const _setActive=on=>{
-    if(btn){
-      btn.classList.toggle('recording',on);
-      btn.innerHTML=on?'<span class="bau-diktat-dot"></span>Aufnahme läuft – Tippen zum Stoppen':'🎤 Diktieren';
+    const b=document.getElementById('baudokuDiktatBtn');
+    if(b){
+      b.classList.toggle('recording',on);
+      b.innerHTML=on?'<span class="bau-diktat-dot"></span>Aufnahme läuft – Tippen zum Stoppen':'🎤 Diktieren';
     }
   };
   _setActive(true);
-  let _interim='';
   r.onresult=e=>{
     let final='',interim='';
     for(let i=e.resultIndex;i<e.results.length;i++){
       if(e.results[i].isFinal)final+=e.results[i][0].transcript;
       else interim+=e.results[i][0].transcript;
     }
-    if(ta){
-      if(final){
-        ta.value=(ta.value?ta.value+'\n':'')+final.trim();
-        updateBaudokuField('baudokuNotiz',ta.value);
-        _interim='';
+    const currentTA=document.getElementById('baudokuNotizTA');
+    if(final){
+      _bauDiktatFinalText+=((_bauDiktatFinalText?'\n':'')+final.trim());
+      if(currentTA){
+        currentTA.value=(currentTA.value?currentTA.value+'\n':'')+final.trim();
+        updateBaudokuField('baudokuNotiz',currentTA.value);
       }
-      // Zwischenresultat als Vorschau unter dem Textarea zeigen
+    }
+    // Zwischenresultat als Vorschau unter dem Textarea zeigen
+    const currentRef=document.getElementById('baudokuNotizTA');
+    if(currentRef){
       let prev=document.getElementById('bauDiktatVorschau');
-      if(!prev){prev=document.createElement('div');prev.id='bauDiktatVorschau';prev.style.cssText='font-size:12px;color:var(--text2);padding:4px 2px;min-height:18px;font-style:italic;';ta.parentNode.insertBefore(prev,ta.nextSibling);}
+      if(!prev){prev=document.createElement('div');prev.id='bauDiktatVorschau';prev.style.cssText='font-size:12px;color:var(--text2);padding:4px 2px;min-height:18px;font-style:italic;';currentRef.parentNode.insertBefore(prev,currentRef.nextSibling);}
       prev.textContent=interim?'💬 '+interim:'';
     }
+    // Button-Zustand nach eventuell zwischenzeitlichem renderDetail wiederherstellen
+    _restoreBtn();
   };
   r.onend=()=>{
-    _bauDiktatRec=null;_setActive(false);
+    const finalText=_bauDiktatFinalText.trim();
+    _bauDiktatRec=null;_bauDiktatFinalText='';
+    _setActive(false);
     const prev=document.getElementById('bauDiktatVorschau');if(prev)prev.remove();
+    // Automatisch notizVerlauf-Eintrag anlegen wenn Text vorhanden
+    if(finalText){
+      const t=currentTask();
+      if(t){
+        if(!t.notizVerlauf)t.notizVerlauf=[];
+        const ts=new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+        t.notizVerlauf.push({ts,text:'🎤 '+finalText});
+        _mOpenSections['Notizen']=true;
+        forceSave();
+        toast('🎤 Diktat gespeichert','success');
+      }
+    }
   };
   r.onerror=e=>{
-    _bauDiktatRec=null;_setActive(false);
+    _bauDiktatRec=null;_bauDiktatFinalText='';
+    _setActive(false);
     const prev=document.getElementById('bauDiktatVorschau');if(prev)prev.remove();
     toast('🎤 Fehler: '+e.error,'error');
   };
   r.start();
+}
+
+// ── Akte nachtragen (Mobile) ──
+function loadAkteNachtragen(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onerror=()=>toast('Fehler beim Lesen der Akte','error');
+  reader.onload=ev=>{
+    try{
+      const text=ev.target.result;if(!text)throw new Error('Datei leer');
+      const t=currentTask();if(!t){toast('Kein Task geöffnet','error');return;}
+      const lines=text.split('\n');
+      const get=key=>{for(const l of lines){if(!l)continue;if(l.toLowerCase().includes(key.toLowerCase()+':')){const idx=l.indexOf(':');if(idx<0)continue;const v=l.substring(idx+1).trim();return(v===''||v==='(noch offen)')?'':v;}}return'';};
+      const getML=key=>{for(let i=0;i<lines.length;i++){const l=lines[i];if(!l)continue;if(l.toLowerCase().includes(key.toLowerCase()+':')){const idx=l.indexOf(':');if(idx<0)continue;let val=l.substring(idx+1).trim();for(let j=i+1;j<lines.length;j++){const nlt=(lines[j]||'').trim();if(nlt.length>2&&/^[A-Z][A-Z0-9_]+$/.test(nlt))break;if(/^[A-Za-z][A-Za-z0-9_]{1,39}:/.test(nlt))break;if(val!==''||nlt!=='')val+=(val?'\n':'')+nlt;}const r=val.trim();return(r===''||r==='(noch offen)')?'':r;}}return'';};
+      const _set=(field,val,fn)=>{if(!val||(t[field]&&t[field].toString().trim()))return false;fn?fn(val):updateField(field,val);return true;};
+      const filled=[];
+      if(_set('tags',get('Auftrag_Kostenstelle'),v=>{updateTags(v);}))filled.push('Kostenstelle');
+      if(_set('repNr',get('Rep_Nr')))filled.push('Rep.-Nr.');
+      if(_set('kundenNr',get('Kunden_Nr')))filled.push('Kunden-Nr.');
+      if(_set('hausverwaltung',get('Objekt_Hausverwaltung')||get('Auftraggeber')))filled.push('Hausverwaltung');
+      if(_set('adresse',get('Objekt_Strasse')))filled.push('Adresse');
+      if(_set('schadensbild',getML('Baustelle_Schadensbild')))filled.push('Schadensbild');
+      if(_set('owner',get('Bearbeiter')))filled.push('Bearbeiter');
+      if(filled.length){forceSave();renderDetail(t);toast('📂 Akte: '+filled.join(', '),'success');}
+      else toast('Akte geladen – keine neuen Felder zu füllen','info');
+    }catch(err){toast('Fehler: '+err.message,'error');}
+  };
+  reader.readAsText(file,'windows-1252');
+  e.target.value='';
 }
 
 // ── Baudoku: Tagesbericht PDF ──
@@ -3573,11 +3655,24 @@ function renderDetail(t){
             return '<div class="qa-thumb"><img '+srcAttr+'alt=""></div>';
           }).join('')
         :'')+'<div class="qa-thumb" style="background:#e8ecff;border:1.5px dashed var(--accent);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);">+</div>';
+      const collapsed=_isTimerCollapsed();
+      if(collapsed){
+        // ── Eingeklappt: schmale Leiste ──
+        return '<div id="timerBar" class="timer-bar top collapsed">'
+          +'<div class="timer-collapsed-strip'+(running?' running':'')+'" onclick="toggleTimerCollapse()">'
+            +'<span style="font-size:14px;margin-right:2px;">'+(running?'⏱':'⏱')+'</span>'
+            +'<span id="timerDisplay" class="timer-collapsed-time">'+formatTimerFor(t.id)+'</span>'
+            +(savedDesc?'<span class="timer-collapsed-desc">· '+esc(savedDesc)+'</span>':'<span class="timer-collapsed-desc">'+esc(t.title||'')+'</span>')
+            +'<span class="timer-collapsed-expand">▾</span>'
+          +'</div>'
+        +'</div>';
+      }
       return '<div id="timerBar" class="timer-bar top'+(running?' running':'')+'">'
         +'<div class="timer-top-row">'
           +'<div id="timerDisplay" class="timer-display'+(running?' running':'')+'">'+formatTimerFor(t.id)+'</div>'
           +'<button id="timerBtn" class="timer-btn '+(running?'stop':'start')+'" onclick="toggleMobileTimer(\''+escAttr(t.id)+'\')">'+(running?'⏹ Stopp':'▶ Start')+'</button>'
           +'<button id="qaToggleBtn" class="qa-toggle" onclick="toggleQuickActions()" title="Schnellaktionen">+</button>'
+          +'<button onclick="toggleTimerCollapse()" title="Einklappen" style="flex:0 0 36px;height:44px;background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text2);padding:0;">▴</button>'
         +'</div>'
         +'<div id="qaPanel" class="qa-panel">'
           +'<div class="qa-panel-header">Task: '+esc(t.title||'(ohne Titel)')+'</div>'
@@ -3621,25 +3716,28 @@ function renderDetail(t){
     // ── STAMMDATEN ──
     +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'✅ Aufgaben':'🏗 Objektadresse')+'</div><div class="sect-body">'
       +'<div class="field"><label>Titel</label><input type="text" value="'+escAttr(t.title||'')+'" oninput="updateField(\'title\',this.value);document.getElementById(\'detailTitle\').textContent=this.value||\'(ohne Titel)\'" autocomplete="off"></div>'
-      +'<div class="field-row"><div class="field"><label>Kostenstelle / Tags</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)" autocomplete="off"></div></div>'
-      +(isNotiz
-        ? '<div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>'
-        : '<div class="field-row"><div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>'
-          +'<div class="field" style="flex:0 0 100px"><label>Ampel</label><select onchange="updateField(\'ampel\',this.value)">'
-            +['grün','orange','rot'].map(a=>'<option value="'+a+'"'+(a===(t.ampel||'grün')?' selected':'')+'>'+({'grün':'🟢','orange':'🟠','rot':'🔴'}[a])+'</option>').join('')
-          +'</select></div></div>')
-      // Baustelle-spezifische Felder: Ausführungsdaten + Aktivität
-      +(!isNotiz?'<div class="field"><label>Ausführungsdatum</label><input type="date" value="'+escAttr(t.ausführungsdatum||'')+'" onchange="updateField(\'ausführungsdatum\',this.value)" autocomplete="off"></div>':'')
-      +(!isNotiz?'<div class="field"><label>Ausführungstermin (Ausführung geplant)</label><input type="date" value="'+escAttr(t.ausfuehrungstermin||'')+'" onchange="updateField(\'ausfuehrungstermin\',this.value)" autocomplete="off"></div>':'')
-      +(!isNotiz?'<div class="field"><label>Aktivität</label><select onchange="updateField(\'aktivitaet\',this.value)">'
-        +'<option value=""'+(!(t.aktivitaet)?' selected':'')+'>— keine —</option>'
-        +'<option value="anruf"'+(t.aktivitaet==='anruf'?' selected':'')+'>📞 Telefonanruf</option>'
-        +'<option value="besichtigung"'+(t.aktivitaet==='besichtigung'?' selected':'')+'>📍 Besichtigungstermin</option>'
-      +'</select></div>':'')
+      +(isNotiz?'<div class="field-row"><div class="field"><label>Kostenstelle</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)" autocomplete="off"></div></div>':'')
+      +(isNotiz?'<div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>':'')
       // Notiz-Board: Fälligkeitsdatum
       +(isNotiz?'<div class="field"><label>📅 Fälligkeitsdatum</label><input type="date" value="'+escAttr(t.due||'')+'" onchange="updateField(\'due\',this.value)" autocomplete="off"></div>':'')
       +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="updateField(\'adresse\',this.value);updateNavBtn()" onblur="_autoFillSbOrdner()" autocomplete="off"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
-      +(!isNotiz?'<div class="field"><label>Hausverwaltung</label><input type="text" value="'+escAttr(t.hausverwaltung||'')+'" oninput="updateField(\'hausverwaltung\',this.value)" autocomplete="off"></div>':'')
+      +(!isNotiz?'<div class="field"><label>Auftraggeber / Hausverwaltung</label><input type="text" value="'+escAttr(t.hausverwaltung||'')+'" oninput="updateField(\'hausverwaltung\',this.value)" autocomplete="off"></div>':'')
+      // ── Bearbeitung (nur Baustelle) ──
+      +(!isNotiz?'<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:6px;">'
+        +'<div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.04em;margin-bottom:8px;">BEARBEITUNG</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px;">'
+          +'<div class="field" style="margin:0"><label>Bearbeiter</label><input type="text" value="'+escAttr(t.owner||'')+'" placeholder="Name" oninput="updateField(\'owner\',this.value)" autocomplete="off"></div>'
+          +'<div class="field" style="margin:0"><label>Task</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>'
+        +'</div>'
+        +'<div class="field" style="margin:0 0 7px"><label>Anfrage vom</label><input type="date" value="'+escAttr(t.anfrageEingangDatum||'')+'" onchange="updateField(\'anfrageEingangDatum\',this.value)" autocomplete="off"></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:7px;align-items:flex-end;">'
+          +'<div class="field" style="margin:0"><label>Kostenstelle</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)" autocomplete="off"></div>'
+          +'<div class="field" style="margin:0"><label>Rep.-Nr.</label><input type="text" value="'+escAttr(t.repNr||'')+'" placeholder="z.B. 3483" oninput="updateField(\'repNr\',this.value)" autocomplete="off"></div>'
+          +'<div class="field" style="margin:0"><label>Kunden-Nr.</label><input type="text" value="'+escAttr(t.kundenNr||'')+'" placeholder="z.B. 777" oninput="updateField(\'kundenNr\',this.value)" autocomplete="off"></div>'
+          +'<button type="button" onclick="document.getElementById(\'akteNachtragenMobInput\').click()" title="Auftragsakte.txt laden" style="flex-shrink:0;padding:6px 10px;border-radius:8px;font-size:12px;font-weight:600;background:var(--bg2);border:1px solid var(--border);color:var(--text);cursor:pointer;white-space:nowrap;align-self:flex-end;">📂 Akte</button>'
+          +'<input type="file" id="akteNachtragenMobInput" accept=".txt" style="display:none" onchange="loadAkteNachtragen(event)">'
+        +'</div>'
+      +'</div>':'')
       +'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">'+(isNotiz?'Beschreibung':'Schaden / Beschreibung')+'</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>'
     +'</div></div>'
     // ── AUFGABEN MIT TERMIN (beide Board-Typen, read-only auf Mobile) ──
@@ -3678,6 +3776,12 @@ function renderDetail(t){
       +'<div class="field"><label>Dauerhafte Notiz</label><textarea rows="3" style="resize:none;transition:height .2s" placeholder="Dauerhafte Notizen zum Task…" oninput="updateField(\'desc\',this.value)" onfocus="this.rows=8" onblur="if(!this.value)this.rows=3;else this.rows=4" autocomplete="off">'+esc(t.desc||'')+'</textarea></div>'
       +'<div class="field"><label>Chronologische Einträge</label><div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
       +'<div class="field-row" style="margin-top:6px"><input type="text" id="newNotizInput" placeholder="Kurze Notiz mit Zeitstempel…" autocomplete="off"><button class="inline-btn primary" onclick="addNotiz()">+</button></div></div>'
+      +((!isNotiz&&t.baudokuNotiz&&t.baudokuNotiz.trim())
+        ?'<div style="margin-top:8px;padding:7px 10px;background:rgba(74,222,128,.08);border:1px solid var(--green);border-radius:8px;font-size:12px;color:var(--text2);cursor:pointer;" onclick="switchDetailTab(\'bau\')">'
+          +'<span style="font-size:11px;font-weight:700;color:var(--green);display:block;margin-bottom:2px;">📋 Stellungnahme (Baudoku)</span>'
+          +esc((t.baudokuNotiz||'').substring(0,120))+((t.baudokuNotiz||'').length>120?'…':'')
+        +'</div>'
+        :'')
     +'</div></div>'
     // ── CHECKLISTE ──
     +'<div class="sect'+oc('Checkliste')+'" data-sect="Checkliste"><div class="sect-head" onclick="toggleMSect(this.parentElement)" id="mCkHead">'+_mCkTitle()+'</div><div class="sect-body">'
@@ -3927,7 +4031,14 @@ function openGcal(i){
 // ══ ZEITEN ══
 // ── STOPPUHR (persistent über localStorage, Eintrag in task.timeEntries) ──
 const MOBILE_TIMER_KEY='ptpm_timer';
+const MOBILE_TIMER_COLLAPSED_KEY='ptpm_timer_collapsed';
 let mobileTimerInterval=null;
+function _isTimerCollapsed(){try{return localStorage.getItem(MOBILE_TIMER_COLLAPSED_KEY)==='1';}catch(e){return false;}}
+function _setTimerCollapsed(v){try{v?localStorage.setItem(MOBILE_TIMER_COLLAPSED_KEY,'1'):localStorage.removeItem(MOBILE_TIMER_COLLAPSED_KEY);}catch(e){}}
+function toggleTimerCollapse(){
+  _setTimerCollapsed(!_isTimerCollapsed());
+  const t=currentTask();if(t)renderDetail(t);
+}
 function _loadTimerState(){try{const r=localStorage.getItem(MOBILE_TIMER_KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
 function _saveTimerState(s){try{s?localStorage.setItem(MOBILE_TIMER_KEY,JSON.stringify(s)):localStorage.removeItem(MOBILE_TIMER_KEY);}catch(e){}}
 function isTimerRunningForTask(taskId){
@@ -3977,6 +4088,7 @@ function toggleMobileTimer(taskId){
     if(!t.zeitEntries)t.zeitEntries=[];
     t.zeitEntries.push(entry);
     _saveTimerState(null);_stopTickLoop();
+    clearTimeout(_bauTimerInterval);_bauTimerInterval=null;
     _mOpenSections['Zeiterfassung']=true;
     forceSave();
     renderDetail(t);
