@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v25'; // v25: Größenschieber A-/A+ Buttons, Baudoku komplett skalierbar
+const CACHE_NAME = 'pam-mobil-v26'; // v26: Foto-Lightbox neu (funktioniert jetzt), Swipe, Drive-Link
 
 const PRECACHE = [
   './',
