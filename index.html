@@ -101,75 +101,30 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-tages-date{font-size:calc(13px * var(--m-scale,1));font-weight:700;color:var(--text);}
 .bau-tages-chip{font-size:calc(12px * var(--m-scale,1));background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:3px 9px;color:var(--text2);}
 .bau-tages-stat{font-size:calc(11px * var(--m-scale,1));color:var(--accent2);background:rgba(106,138,255,.1);border-radius:10px;padding:2px 8px;font-weight:600;}
-/* ── Baudoku: Stoppuhr ── */
-.bau-timer-bar{position:sticky;top:0;z-index:5;background:var(--bg2);border:1.5px solid var(--accent);border-top:none;border-radius:0 0 16px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.18);overflow:hidden;}
-.bau-timer-bar.running{border-color:var(--orange);}
-.bau-timer-bar.collapsed{border:none;border-radius:0;box-shadow:none;margin:0;background:transparent;}
-.bau-timer-strip{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg2);border-bottom:2px solid var(--accent);cursor:pointer;min-height:44px;}
-.bau-timer-strip.running{border-bottom-color:var(--orange);}
-.bau-timer-strip-dot{width:7px;height:7px;border-radius:50%;background:var(--text2);flex-shrink:0;}
-.bau-timer-strip-dot.pulse{background:var(--green);animation:bauDotPulse 1.2s infinite;}
-@keyframes bauDotPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.4);}}
-.bau-timer-strip-time{font-family:'SF Mono',Consolas,monospace;font-size:16px;font-weight:700;letter-spacing:1px;color:var(--accent);}
-.bau-timer-strip.running .bau-timer-strip-time{color:var(--orange);}
-.bau-timer-strip-desc{font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bau-timer-head{display:flex;align-items:center;gap:10px;padding:11px 14px 4px;cursor:pointer;user-select:none;}
-.bau-timer-head-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;flex:1;color:var(--text2);}
-.bau-timer-head-lbl.running{color:var(--orange);}
-.bau-timer-body{padding:0 14px 13px;}
-.bau-timer-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
-.bau-timer-big{font-family:'SF Mono',Consolas,monospace;font-size:calc(34px * var(--m-scale,1));font-weight:800;letter-spacing:2px;flex:1;color:var(--accent);}
-.bau-timer-bar.running .bau-timer-big{color:var(--orange);}
-.bau-timer-bar-desc{width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:calc(14px * var(--m-scale,1));color:var(--text);font-family:inherit;outline:none;}
-.bau-timer-bar-desc::placeholder{color:var(--text2);}
-/* ── Baudoku: Fotos ── */
-.bau-foto-section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;}
-.bau-foto-sect-head{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;user-select:none;}
-.bau-foto-sect-icon{width:28px;height:28px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
-.bau-foto-sect-lbl{font-size:14px;font-weight:700;flex:1;}
-.bau-foto-sect-badge{font-size:11px;color:var(--text2);background:var(--bg3);border-radius:6px;padding:2px 8px;font-weight:600;}
-.bau-foto-sect-body{padding:0 13px 13px;}
-.bau-foto-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:9px;}
-.bau-foto-grid-thumb{aspect-ratio:1;border-radius:10px;background:var(--bg3);border:1px solid var(--border);overflow:hidden;cursor:pointer;position:relative;}
-.bau-foto-grid-thumb img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;display:block;}
-.bau-foto-grid-add{aspect-ratio:1;border-radius:10px;border:1.5px dashed rgba(106,138,255,.5);background:rgba(106,138,255,.07);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;}
-.bau-foto-grid-add-icon{font-size:20px;color:var(--accent);}
-.bau-foto-grid-add-lbl{font-size:9px;color:var(--accent);font-weight:700;letter-spacing:.3px;}
-.bau-foto-btns{display:flex;gap:7px;}
-.bau-foto-btn{flex:1;padding:10px 0;border-radius:10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;text-align:center;}
-.bau-foto-btn.primary{background:rgba(106,138,255,.13);border-color:rgba(106,138,255,.5);color:var(--accent);}
-/* ── Baudoku: Notizen ── */
-.bau-notiz-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;}
-.bau-notiz-card-head{display:flex;align-items:center;gap:9px;padding:12px 14px 8px;}
-.bau-notiz-card-icon{width:28px;height:28px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
-.bau-notiz-card-lbl{font-size:14px;font-weight:700;flex:1;}
-.bau-notiz-card-badge{font-size:11px;color:var(--text2);background:var(--bg3);border-radius:6px;padding:2px 8px;font-weight:600;}
-.bau-notiz-input-area{padding:0 13px 11px;}
-.bau-notiz-quick{width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1.5px solid var(--border);border-radius:12px;padding:11px 13px;font-size:calc(15px * var(--m-scale,1));font-family:inherit;color:var(--text);outline:none;min-height:52px;resize:none;line-height:1.45;overflow:hidden;display:block;margin-bottom:8px;transition:border-color .15s;}
-.bau-notiz-quick:focus{border-color:var(--accent);}
-.bau-notiz-quick::placeholder{color:var(--text2);}
-.bau-notiz-action-row{display:flex;gap:7px;}
-.bau-notiz-action-btn{flex:1;padding:11px 0;border-radius:11px;font-size:calc(13px * var(--m-scale,1));font-weight:700;border:none;cursor:pointer;text-align:center;}
-.bau-notiz-action-btn.confirm{background:var(--accent);color:#fff;}
-.bau-notiz-action-btn.mic{background:var(--bg3);color:var(--text2);border:1px solid var(--border);}
-.bau-notiz-action-btn.mic.recording{background:rgba(248,113,113,.15);color:var(--red);border-color:var(--red);}
-.bau-notiz-log-toggle{display:flex;align-items:center;gap:8px;padding:9px 13px;border-top:1px solid var(--border);cursor:pointer;user-select:none;}
-.bau-notiz-log-toggle-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);flex:1;}
-.bau-notiz-log-toggle-badge{font-size:11px;background:var(--bg3);color:var(--text2);border-radius:6px;padding:2px 7px;font-weight:600;}
-.bau-notiz-log-toggle-arr{font-size:13px;color:var(--text2);display:inline-block;transition:transform .2s;}
-.bau-notiz-log-toggle-arr.open{transform:rotate(90deg);}
-.bau-notiz-log{padding:0 13px 12px;display:flex;flex-direction:column;gap:7px;}
-.bau-notiz-entry{background:var(--bg3);border-radius:11px;padding:9px 12px;position:relative;}
-.bau-notiz-entry-ts{font-size:calc(10px * var(--m-scale,1));color:var(--text2);margin-bottom:3px;font-weight:600;}
-.bau-notiz-entry-text{font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.45;padding-right:22px;}
-.bau-notiz-entry-del{position:absolute;top:8px;right:9px;background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;padding:2px 4px;line-height:1;}
-/* ── Compat-Aliase (alter Strip wird nicht mehr gerendert) ── */
+/* ── Baudoku: Timer-Bar ── */
+.bau-timer-bar{position:sticky;top:0;z-index:5;background:#E8ECFF;border:2px solid var(--accent);border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;margin-bottom:10px;box-shadow:0 2px 10px rgba(0,0,0,.14);}
+.bau-timer-bar.running{background:#FFF0DC;border-color:var(--orange);}
+.bau-timer-bar.collapsed{padding:0;background:transparent;border:none;box-shadow:none;margin:0;}
+.bau-timer-bar-row{display:flex;align-items:center;gap:10px;}
+.bau-timer-big{font-size:calc(32px * var(--m-scale,1));font-weight:800;font-family:'SF Mono',Consolas,monospace;letter-spacing:2px;flex:1;color:#1a1a2e;}
+.bau-timer-bar.running .bau-timer-big{color:#b45309;}
+.bau-timer-bar-desc{width:100%;box-sizing:border-box;background:rgba(255,255,255,.3);border:1px solid rgba(0,0,0,.12);border-radius:7px;padding:10px 12px;font-size:calc(15px * var(--m-scale,1));color:#1a1a2e;font-family:inherit;outline:none;margin-top:9px;min-height:50px;}
+/* ── Baudoku: Notiz-Log ── */
 .bau-notiz-input-row{display:flex;gap:8px;margin-bottom:12px;align-items:center;}
-.bau-foto-strip-row{display:flex;gap:8px;overflow-x:auto;min-height:90px;}
+.bau-notiz-quick{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 13px;font-size:calc(16px * var(--m-scale,1));font-family:inherit;color:var(--text);outline:none;min-height:54px;box-sizing:border-box;resize:none;line-height:1.4;overflow:hidden;}
+.bau-notiz-log{display:flex;flex-direction:column;gap:6px;}
+.bau-notiz-entry{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 12px;position:relative;}
+.bau-notiz-entry-ts{font-size:calc(10px * var(--m-scale,1));color:var(--text2);margin-bottom:3px;}
+.bau-notiz-entry-text{font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.5;padding-right:24px;}
+.bau-notiz-entry-del{position:absolute;top:8px;right:8px;background:none;border:none;color:var(--text2);cursor:pointer;font-size:14px;padding:2px 4px;line-height:1;}
+/* ── Baudoku: Foto-Strip ── */
+.bau-foto-section{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;}
+.bau-foto-strip-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;overflow-x:auto;padding-bottom:4px;min-height:90px;}
 .bau-foto-strip-thumb{width:80px;height:80px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;flex-shrink:0;}
 .bau-foto-strip-thumb img{width:100%;height:100%;object-fit:cover;}
 .bau-foto-strip-more{width:80px;height:80px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--accent2);flex-shrink:0;cursor:pointer;}
 .bau-foto-strip-empty{font-size:12px;color:var(--text2);padding:4px 0;}
+.bau-foto-btns{display:flex;gap:8px;}
 /* ── MATERIAL-SUCH-MODAL ── */
 .mat-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;flex-direction:column;}
 .mat-modal-box{background:var(--bg2);flex:1;display:flex;flex-direction:column;border-radius:16px 16px 0 0;margin-top:60px;overflow:hidden;}
@@ -690,16 +645,13 @@ function gdriveLogin(){
   const params=new URLSearchParams({
     client_id:GDRIVE_CLIENT_ID,
     redirect_uri:_getRedirectUri(),
-    response_type:'code',
-    access_type:'offline',
-    prompt:'consent',
+    response_type:'token',
     scope:GDRIVE_SCOPE,
     include_granted_scopes:'true',
   });
   if(hint)params.set('login_hint',hint);
-  // Redirect-Flow funktioniert in Browser und PWA-Modus (iOS/Android)
-  // Im PWA-Modus: Token landet in localStorage via DOMContentLoaded,
-  // App liest ihn per visibilitychange wenn Nutzer zurückwechselt
+  // Implicit Flow: Token kommt direkt im Hash zurück – kein Cloud-Server nötig
+  // Funktioniert in Safari, Chrome und iOS PWA
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
 }
 function initTokenClient(){
@@ -2974,8 +2926,7 @@ function renderBaudokuTab(t){
   const personalAusgewaehlt=t.baudokuPersonal||[];
   const wetter=t.wetter||'';
   // Notizen standardmäßig offen
-  if(!('bau_Notizen' in _mOpenSections))_mOpenSections['bau_Notizen']=false;
-  if(!('bau_Fotos' in _mOpenSections))_mOpenSections['bau_Fotos']=true;
+  if(!('bau_Notizen' in _mOpenSections))_mOpenSections['bau_Notizen']=true;
   const oc=k=>isSectOpen('bau_'+k)?' open':'';
   const _pm=(von,bis)=>{try{const[vh,vm]=(von||'0:0').split(':').map(Number);const[bh,bm]=(bis||'0:0').split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
   const zeitMin=zeitEntries.reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
@@ -2998,86 +2949,56 @@ function renderBaudokuTab(t){
     +(fotos.length?'<span class="bau-tages-stat">📷 '+fotos.length+'</span>':'')
     +((t.notizVerlauf&&t.notizVerlauf.length)?'<span class="bau-tages-stat">📝 '+t.notizVerlauf.length+'</span>':'')
     +'</div>'
-    // ── Stoppuhr (einklappbar, sticky) ──
+    // ── Timer-Bar (einklappbar, sticky) ──
     +(()=>{
       const bauCollapsed=_isTimerCollapsed();
       if(bauCollapsed){
         return '<div id="bauTimerBar" class="bau-timer-bar'+(running?' running':'')+' collapsed">'
-          +'<div class="bau-timer-strip'+(running?' running':'')+'" onclick="toggleTimerCollapse()">'
-            +'<span class="bau-timer-strip-dot'+(running?' pulse':'')+'" aria-hidden="true"></span>'
-            +'<span id="bauTimerDisplay" class="bau-timer-strip-time">'+formatTimerFor(t.id)+'</span>'
-            +(savedDesc?'<span class="bau-timer-strip-desc">'+esc(savedDesc)+'</span>':'<span class="bau-timer-strip-desc">Tätigkeit eingeben…</span>')
-            +'<span style="font-size:16px;color:var(--text2);">▾</span>'
+          +'<div class="timer-collapsed-strip'+(running?' running':'')+'" onclick="toggleTimerCollapse()">'
+            +'<span style="font-size:14px;margin-right:2px;">⏱</span>'
+            +'<span id="bauTimerDisplay" class="timer-collapsed-time">'+formatTimerFor(t.id)+'</span>'
+            +(savedDesc?'<span class="timer-collapsed-desc">· '+esc(savedDesc)+'</span>':'<span class="timer-collapsed-desc">'+esc(t.title||'')+'</span>')
+            +'<span class="timer-collapsed-expand">▾</span>'
           +'</div>'
         +'</div>';
       }
       return '<div id="bauTimerBar" class="bau-timer-bar'+(running?' running':'')+'">'
-        +'<div class="bau-timer-head" onclick="toggleTimerCollapse()">'
-          +'<span class="bau-timer-strip-dot'+(running?' pulse':'')+'" aria-hidden="true"></span>'
-          +'<span class="bau-timer-head-lbl'+(running?' running':'')+'">'+(running?'Stoppuhr · läuft':'Stoppuhr')+'</span>'
-          +'<span style="font-size:13px;color:var(--text2);">▴</span>'
+        +'<div class="bau-timer-bar-row">'
+          +'<div id="bauTimerDisplay" class="bau-timer-big">'+formatTimerFor(t.id)+'</div>'
+          +(running
+            ?'<button class="timer-btn stop" style="min-height:52px;" onclick="stopBauTimer()">⏹ Stop</button>'
+            :'<button class="timer-btn start" style="min-height:52px;" onclick="startBauTimer()">▶ Start</button>')
+          +'<button onclick="toggleTimerCollapse()" title="Einklappen" style="flex:0 0 44px;height:52px;background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text2);padding:0;">▴</button>'
         +'</div>'
-        +'<div class="bau-timer-body">'
-          +'<div class="bau-timer-bar-row">'
-            +'<div id="bauTimerDisplay" class="bau-timer-big">'+formatTimerFor(t.id)+'</div>'
-            +(running
-              ?'<button class="timer-btn stop" style="min-height:52px;" onclick="stopBauTimer()">⏹ Stop</button>'
-              :'<button class="timer-btn start" style="min-height:52px;" onclick="startBauTimer()">▶ Start</button>')
-          +'</div>'
-          +'<input id="bauTimerDesc" class="bau-timer-bar-desc" type="text" placeholder="Tätigkeit vor dem Start eingeben…" maxlength="120"'
-            +(running?' disabled':'')+' value="'+escAttr(savedDesc)+'" onchange="_bauSaveDesc(this.value)" autocomplete="off">'
-        +'</div>'
+        +'<input id="bauTimerDesc" class="bau-timer-bar-desc" type="text" placeholder="Tätigkeitsbeschreibung vor dem Start eingeben…" maxlength="120"'
+          +(running?' disabled':'')+' value="'+escAttr(savedDesc)+'" onchange="_bauSaveDesc(this.value)" autocomplete="off">'
       +'</div>';
     })()
-    // ── Fotos (einklappbar, Grid) ──
-    +(()=>{
-      const fotoOpen=isSectOpen('bau_Fotos');
-      return '<div class="bau-foto-section">'
-        +'<div class="bau-foto-sect-head" onclick="_toggleBauFotos()">'
-          +'<div class="bau-foto-sect-icon">📷</div>'
-          +'<span class="bau-foto-sect-lbl">Fotos</span>'
-          +(fotos.length?'<span class="bau-foto-sect-badge">'+fotos.length+'</span>':'')
-          +'<span style="font-size:13px;color:var(--text2);margin-left:4px;">'+(fotoOpen?'▾':'›')+'</span>'
-        +'</div>'
-        +(fotoOpen
-          ?'<div class="bau-foto-sect-body">'
-            +'<div class="bau-foto-grid" id="bauFotoGrid"></div>'
-            +'<div class="bau-foto-btns">'
-              +'<button class="bau-foto-btn primary" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
-              +'<button class="bau-foto-btn" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
-              +'<button class="bau-foto-btn" onclick="loadFotosFromDriveFolder()">☁ Drive</button>'
-            +'</div>'
-          +'</div>'
-          :'')
-      +'</div>';
-    })()
-    // ── Notizen: Eingabe + einklappbarer Verlauf ──
-    +'<div class="bau-notiz-card">'
-      +'<div class="bau-notiz-card-head">'
-        +'<div class="bau-notiz-card-icon">📝</div>'
-        +'<span class="bau-notiz-card-lbl">Notizen</span>'
-        +((t.notizVerlauf&&t.notizVerlauf.length)?'<span class="bau-notiz-card-badge">'+t.notizVerlauf.length+'</span>':'')
-      +'</div>'
-      +'<div class="bau-notiz-input-area">'
-        +'<textarea id="bauNotizQuick" class="bau-notiz-quick" placeholder="Notiz, Befund, Beobachtung…" maxlength="500" rows="2" autocomplete="off"'
-          +' onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();_addBauNotizFromInput();}"'
-          +' oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,160)+\'px\';"></textarea>'
-        +'<div class="bau-notiz-action-row">'
-          +'<button class="bau-notiz-action-btn mic" id="baudokuDiktatBtn" onclick="startBaudokuDiktat()">🎤 Diktieren</button>'
-          +'<button class="bau-notiz-action-btn confirm" onclick="_addBauNotizFromInput()">✓ Speichern</button>'
-        +'</div>'
-      +'</div>'
-      +((t.notizVerlauf&&t.notizVerlauf.length)
-        ?'<div class="bau-notiz-log-toggle" onclick="_toggleBauNotizLog()" id="bauNotizLogToggle">'
-            +'<span class="bau-notiz-log-toggle-lbl">Verlauf</span>'
-            +'<span class="bau-notiz-log-toggle-badge">'+t.notizVerlauf.length+' Einträge</span>'
-            +'<span class="bau-notiz-log-toggle-arr'+(isSectOpen('bau_Notizen')?' open':'')+'" id="bauNotizLogArr">›</span>'
-          +'</div>'
-          +(isSectOpen('bau_Notizen')
-            ?'<div class="bau-notiz-log" id="bauNotizList">'+_renderBauNotizEntries(t.notizVerlauf)+'</div>'
-            :'<div id="bauNotizList" style="display:none;"></div>')
-        :'<div id="bauNotizList"></div>')
+    // ── Fotos: Horizontaler Strip ──
+    +'<div class="bau-foto-section">'
+    +'<div style="display:flex;align-items:center;margin-bottom:8px;">'
+    +'<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;flex:1;">📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span>'
     +'</div>'
+    +'<div id="bauFotoStrip" class="bau-foto-strip-row"></div>'
+    +'<div class="bau-foto-btns">'
+    +'<button class="inline-btn" style="flex:1;min-height:52px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
+    +'<button class="inline-btn" style="flex:1;min-height:52px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
+    +'</div>'
+    +'</div>'
+    // ── Notizen: Chronologisches Log (unified mit t.notizVerlauf) ──
+    +'<div class="sect'+oc('Notizen')+'" data-sect="bau_Notizen">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen'
+    +((t.notizVerlauf&&t.notizVerlauf.length)?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+t.notizVerlauf.length+')</span>':'')+'</div>'
+    +'<div class="sect-body">'
+    +'<div class="bau-notiz-input-row">'
+    +'<textarea id="bauNotizQuick" class="bau-notiz-quick" placeholder="Notiz, Befund, Beobachtung…" maxlength="500" rows="2" autocomplete="off"'
+    +' onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();_addBauNotizFromInput();}"'
+    +' oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,160)+\'px\';"></textarea>'
+    +'<button class="inline-btn" style="min-width:52px;flex:0 0 auto;font-size:18px;padding:0;min-height:52px;" onclick="_addBauNotizFromInput()" title="Speichern">✓</button>'
+    +'<button class="inline-btn bau-diktat-btn" id="baudokuDiktatBtn" style="min-width:52px;flex:0 0 auto;font-size:16px;padding:0;min-height:52px;" onclick="startBaudokuDiktat()" title="Diktieren">🎤</button>'
+    +'</div>'
+    +'<div id="bauNotizList">'+renderNotizen(t.notizVerlauf||[])+'</div>'
+    +'</div></div>'
 
     // ── Separator ──
     +'<div class="bau-separator">Bei Bedarf aufklappen</div>'
@@ -3127,87 +3048,48 @@ function renderBaudokuTab(t){
 
 // ── Baudoku: Foto-Strip (horizontal, klickbar) ──
 function _renderBauFotoStrip(t){
-  const grid=document.getElementById('bauFotoGrid');
-  if(!grid)return;
+  const strip=document.getElementById('bauFotoStrip');
+  if(!strip)return;
   const fotos=t.fotos||[];
-  grid.innerHTML='';
-  const maxVisible=7;
+  strip.innerHTML='';
+  if(!fotos.length){
+    const empty=document.createElement('div');
+    empty.className='bau-foto-strip-empty';
+    empty.textContent='Noch keine Fotos';
+    strip.appendChild(empty);
+    return;
+  }
+  const maxVisible=5;
   fotos.slice(0,maxVisible).forEach((f,fi)=>{
-    const cell=document.createElement('div');
-    cell.className='bau-foto-grid-thumb';
-    cell.onclick=()=>openFotoFullscreen(fi);
+    const thumb=document.createElement('div');
+    thumb.className='bau-foto-strip-thumb';
+    thumb.style.position='relative';
+    thumb.onclick=()=>openFotoFullscreen(fi);
+    // Platzhalter (sichtbar bis Bild geladen)
     const ph=document.createElement('div');
-    ph.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;opacity:.35;pointer-events:none;';
+    ph.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;opacity:.4;pointer-events:none;';
     ph.textContent='📷';
-    cell.appendChild(ph);
-    if(f._uploading){
-      const sp=document.createElement('div');
-      sp.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.4);font-size:18px;';
-      sp.textContent='⏳';
-      cell.appendChild(sp);
-    }
+    thumb.appendChild(ph);
+    // Bild-Element
     const img=document.createElement('img');
     img.alt='';
+    img.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
     img.onload=()=>{ph.style.display='none';};
+    img.onerror=()=>{/* Platzhalter bleibt sichtbar */};
     if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
     else if(f.localKey){_mobPhotoGet(f.localKey).then(u=>{if(u){f.localUrl=u;img.src=u;}});}
     else if(f.driveId){if(f.thumbnail)img.src=f.thumbnail;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;}});}
-    cell.appendChild(img);
-    grid.appendChild(cell);
+    thumb.appendChild(img);
+    strip.appendChild(thumb);
   });
   if(fotos.length>maxVisible){
-    const lastCell=grid.children[maxVisible-1];
-    if(lastCell){
-      const ov=document.createElement('div');
-      ov.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;border-radius:10px;cursor:pointer;';
-      ov.textContent='+'+(fotos.length-maxVisible+1)+' mehr';
-      ov.onclick=(e)=>{e.stopPropagation();openFotoFullscreen(maxVisible-1);};
-      lastCell.style.position='relative';
-      lastCell.appendChild(ov);
-    }
+    const more=document.createElement('div');
+    more.className='bau-foto-strip-more';
+    more.textContent='+'+(fotos.length-maxVisible);
+    more.title='Alle Fotos anzeigen';
+    more.onclick=()=>openFotoFullscreen(maxVisible);
+    strip.appendChild(more);
   }
-  // Add-Button
-  const add=document.createElement('div');
-  add.className='bau-foto-grid-add';
-  add.onclick=()=>document.getElementById('fotoInputCamera').click();
-  const icon=document.createElement('span');icon.className='bau-foto-grid-add-icon';icon.textContent='+';
-  const lbl=document.createElement('span');lbl.className='bau-foto-grid-add-lbl';lbl.textContent='Foto';
-  add.appendChild(icon);add.appendChild(lbl);
-  grid.appendChild(add);
-}
-function _toggleBauFotos(){
-  _mOpenSections['bau_Fotos']=!isSectOpen('bau_Fotos');
-  const t=currentTask();if(t)renderBaudokuTab(t);
-}
-function _toggleBauNotizLog(){
-  const open=isSectOpen('bau_Notizen');
-  _mOpenSections['bau_Notizen']=!open;
-  const logDiv=document.getElementById('bauNotizList');
-  const arr=document.getElementById('bauNotizLogArr');
-  if(!logDiv)return;
-  if(!open){
-    const t=currentTask();if(!t)return;
-    logDiv.className='bau-notiz-log';logDiv.style.display='';
-    logDiv.innerHTML=_renderBauNotizEntries(t.notizVerlauf||[]);
-    if(arr)arr.classList.add('open');
-  }else{
-    logDiv.style.display='none';
-    if(arr)arr.classList.remove('open');
-  }
-}
-function _renderBauNotizEntries(list){
-  if(!list||!list.length)return '';
-  return list.slice().reverse().map((n,ri)=>{
-    const i=list.length-1-ri;
-    const isDone=!!n.done;
-    return '<div class="bau-notiz-entry" style="'+(isDone?'opacity:.5;':'')+'">'
-      +'<div class="bau-notiz-entry-ts">'+esc(n.ts||'')+(isDone?' · ✓':'')+'</div>'
-      +(isDone
-        ?'<div class="bau-notiz-entry-text"><s>'+esc(n.text||'')+'</s></div>'
-        :'<div class="bau-notiz-entry-text">'+esc(n.text||'')+'</div>')
-      +'<button class="bau-notiz-entry-del" onclick="removeNotiz('+i+')" title="Löschen">✕</button>'
-    +'</div>';
-  }).join('');
 }
 
 function _addBauNotizFromInput(){
@@ -4043,13 +3925,19 @@ function renderDetail(t){
       const count=origs.length;
       const items=count
         ? origs.map((e,ei)=>`
-          <div style="border:1px solid var(--border);border-radius:10px;background:var(--bg3);margin-bottom:8px;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;" onclick="_mobOpenEmailPreview(${ei})">
-            <span style="font-size:22px;flex-shrink:0;">📨</span>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.subject||e.name||'E-Mail')}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:2px;">${esc(e.uploadedAt||'')}</div>
+          <div id="mobEmailCard_${ei}" style="border:1px solid var(--border);border-radius:10px;background:var(--bg3);margin-bottom:8px;overflow:hidden;">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;" onclick="_mobOpenEmailPreview(${ei})">
+              <span style="font-size:22px;flex-shrink:0;">📨</span>
+              <div style="flex:1;min-width:0;">
+                <div id="mobEmailSubj_${ei}" style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.name||'E-Mail')}</div>
+                <div id="mobEmailFrom_${ei}" style="font-size:11px;color:var(--text2);margin-top:1px;">${esc(e.uploadedAt||'')}</div>
+              </div>
+              <span style="font-size:16px;color:var(--text2);">›</span>
             </div>
-            <span style="font-size:12px;font-weight:600;color:var(--accent);white-space:nowrap;flex-shrink:0;">📄 Ansehen</span>
+            <div style="display:flex;gap:6px;padding:6px 10px;border-top:1px solid var(--border);background:var(--bg2);">
+              <button onclick="_mobDownloadEml(${ei})" style="flex:1;padding:6px 0;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;cursor:pointer;">⬇ Download</button>
+              <button onclick="_mobOpenEmailFolder(${ei})" style="flex:1;padding:6px 0;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12px;cursor:pointer;">📂 Ordner</button>
+            </div>
           </div>`).join('')
         : '<div style="color:var(--text2);font-size:12px;padding:8px 4px;">Noch keine E-Mails – auf dem PC eine .eml in den Task hineinziehen.</div>';
       return '<div class="sect'+oc('EmailOriginals')+'" data-sect="EmailOriginals"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📧 E-Mail Originale'+(count?' ('+count+')':'')+'</span></div><div class="sect-body">'+items+'</div></div>';
@@ -4551,31 +4439,14 @@ function addNotiz(textParam){
   _mOpenSections['bau_Notizen']=true;
   forceSave();
   const nl=document.getElementById('notizList');if(nl)nl.innerHTML=renderNotizen(t.notizVerlauf);
-  const bnl=document.getElementById('bauNotizList');
-  if(bnl&&bnl.style.display!=='none'){
-    bnl.innerHTML=_renderBauNotizEntries(t.notizVerlauf);
-    const b=document.querySelector('.bau-notiz-card-badge');if(b)b.textContent=t.notizVerlauf.length;
-    const tb=document.querySelector('.bau-notiz-log-toggle-badge');if(tb)tb.textContent=t.notizVerlauf.length+' Einträge';
-    const arr=document.getElementById('bauNotizLogArr');if(arr)arr.classList.add('open');
-    _mOpenSections['bau_Notizen']=true;
-  }else if(bnl){
-    const tb=document.querySelector('.bau-notiz-log-toggle-badge');if(tb)tb.textContent=t.notizVerlauf.length+' Einträge';
-    const b=document.querySelector('.bau-notiz-card-badge');if(b)b.textContent=t.notizVerlauf.length;
-    _mOpenSections['bau_Notizen']=true;
-  }
+  const bnl=document.getElementById('bauNotizList');if(bnl)bnl.innerHTML=renderNotizen(t.notizVerlauf);
   if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);}
 }
 function removeNotiz(i){
   const t=currentTask();if(!t)return;
   t.notizVerlauf.splice(i,1);forceSave();
   const nl=document.getElementById('notizList');if(nl)nl.innerHTML=renderNotizen(t.notizVerlauf);
-  const bnl=document.getElementById('bauNotizList');
-  if(bnl){
-    if(t.notizVerlauf.length){bnl.innerHTML=_renderBauNotizEntries(t.notizVerlauf);}
-    else if(_currentDetailTab==='bau'){renderBaudokuTab(t);return;}
-    const b=document.querySelector('.bau-notiz-card-badge');if(b)b.textContent=t.notizVerlauf.length||'';
-    const tb=document.querySelector('.bau-notiz-log-toggle-badge');if(tb)tb.textContent=t.notizVerlauf.length+' Einträge';
-  }
+  const bnl=document.getElementById('bauNotizList');if(bnl)bnl.innerHTML=renderNotizen(t.notizVerlauf);
   if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);}
 }
 function toggleNotizDone(idx){
@@ -4585,7 +4456,7 @@ function toggleNotizDone(idx){
   else{n.done=true;n.doneTs=new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
   scheduleSave();
   const el=document.getElementById('notizList');if(el)el.innerHTML=renderNotizen(t.notizVerlauf);
-  const el2=document.getElementById('bauNotizList');if(el2)el2.innerHTML=_renderBauNotizEntries(t.notizVerlauf);
+  const el2=document.getElementById('bauNotizList');if(el2)el2.innerHTML=renderNotizen(t.notizVerlauf);
 }
 
 // ══ CHECKLISTE ══
@@ -5041,40 +4912,7 @@ function downloadAttachMob(i){
   }
 }
 // ── E-Mail Originale: Vorschau / Download / Ordner ───────────────────────────
-// ── E-Mail als Drive-PDF-Vorschau ──
-function _mobOpenEmailPreview(idx){
-  const t=currentTask();
-  const item=((t&&t.emailOriginals)||[])[idx];
-  if(!item){toast('E-Mail nicht gefunden','error');return;}
-  const fid=item.fileId||'';
-  if(!fid&&!item.url){toast('Keine Drive-Verknüpfung','error');return;}
-  const old=document.getElementById('_mobEmailPdfOv');if(old)old.remove();
-  const ov=document.createElement('div');
-  ov.id='_mobEmailPdfOv';
-  ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:9600;display:flex;flex-direction:column;';
-  const hdr=document.createElement('div');
-  hdr.style.cssText='display:flex;align-items:center;gap:10px;padding:max(env(safe-area-inset-top,12px),12px) 14px 10px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;';
-  const title=document.createElement('span');
-  title.style.cssText='flex:1;font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-  title.textContent='📨 '+(item.subject||item.name||'E-Mail');
-  const openBtn=document.createElement('button');
-  openBtn.textContent='↗ Drive';
-  openBtn.style.cssText='padding:7px 12px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;margin-right:6px;';
-  openBtn.onclick=()=>{const url=fid?'https://drive.google.com/file/d/'+fid+'/view':(item.url||'');if(url)window.open(url,'_blank');};
-  const closeBtn=document.createElement('button');
-  closeBtn.textContent='✕';
-  closeBtn.style.cssText='background:rgba(128,128,128,.2);border:none;color:var(--text);width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer;flex-shrink:0;';
-  closeBtn.onclick=()=>ov.remove();
-  hdr.append(title,openBtn,closeBtn);
-  const frame=document.createElement('iframe');
-  frame.src=fid?'https://drive.google.com/file/d/'+encodeURIComponent(fid)+'/preview':(item.url||'').replace('/view','/preview');
-  frame.style.cssText='flex:1;width:100%;border:none;background:var(--bg);';
-  frame.allow='autoplay';
-  ov.append(hdr,frame);
-  document.body.appendChild(ov);
-}
-function _mobDownloadEml(idx){_mobOpenEmailPreview(idx);}
-function _mobOpenEmailFolder(idx){_mobOpenEmailPreview(idx);}
+// Fix 2026-05-24: Alte doppelte Definitionen entfernt. Aktive Versionen stehen weiter unten (async _mobOpenEmailPreview, _mobDownloadEml, _mobOpenEmailFolder).
 // ── DRIVE-ORDNER-LADER ──
 async function loadFotosFromDriveFolder(){
   if(!gdriveToken){toast('Bitte zuerst mit Google Drive verbinden','error');return;}
