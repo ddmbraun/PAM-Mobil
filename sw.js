@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v26'; // v26: Foto-Lightbox neu (funktioniert jetzt), Swipe, Drive-Link
+const CACHE_NAME = 'pam-mobil-v27'; // v27: Baudoku-Redesign (Stoppuhr/Fotos/Notizen), E-Mail als PDF
 
 const PRECACHE = [
   './',
