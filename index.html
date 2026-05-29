@@ -101,49 +101,44 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-tages-date{font-size:calc(13px * var(--m-scale,1));font-weight:700;color:var(--text);}
 .bau-tages-chip{font-size:calc(12px * var(--m-scale,1));background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:3px 9px;color:var(--text2);}
 .bau-tages-stat{font-size:calc(11px * var(--m-scale,1));color:var(--accent2);background:rgba(106,138,255,.1);border-radius:10px;padding:2px 8px;font-weight:600;}
-/* ── Baudoku: Stoppuhr-Karte ── */
+/* ── Baudoku: Stoppuhr ── */
 .bau-timer-bar{position:sticky;top:0;z-index:5;background:var(--bg2);border:1.5px solid var(--accent);border-top:none;border-radius:0 0 16px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.18);overflow:hidden;}
 .bau-timer-bar.running{border-color:var(--orange);}
 .bau-timer-bar.collapsed{border:none;border-radius:0;box-shadow:none;margin:0;background:transparent;}
-/* Eingeklappter Strip */
 .bau-timer-strip{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg2);border-bottom:2px solid var(--accent);cursor:pointer;min-height:44px;}
 .bau-timer-strip.running{border-bottom-color:var(--orange);}
 .bau-timer-strip-dot{width:7px;height:7px;border-radius:50%;background:var(--text2);flex-shrink:0;}
-.bau-timer-strip-dot.pulse{background:var(--green);animation:bauPulse 1.2s infinite;}
-@keyframes bauPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.4);}}
+.bau-timer-strip-dot.pulse{background:var(--green);animation:bauDotPulse 1.2s infinite;}
+@keyframes bauDotPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.4);}}
 .bau-timer-strip-time{font-family:'SF Mono',Consolas,monospace;font-size:16px;font-weight:700;letter-spacing:1px;color:var(--accent);}
 .bau-timer-strip.running .bau-timer-strip-time{color:var(--orange);}
 .bau-timer-strip-desc{font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.bau-timer-strip-arr{font-size:16px;color:var(--text2);}
-/* Ausgeklappter Körper */
 .bau-timer-head{display:flex;align-items:center;gap:10px;padding:11px 14px 4px;cursor:pointer;user-select:none;}
 .bau-timer-head-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;flex:1;color:var(--text2);}
 .bau-timer-head-lbl.running{color:var(--orange);}
-.bau-timer-head-arr{font-size:13px;color:var(--text2);}
 .bau-timer-body{padding:0 14px 13px;}
 .bau-timer-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
 .bau-timer-big{font-family:'SF Mono',Consolas,monospace;font-size:calc(34px * var(--m-scale,1));font-weight:800;letter-spacing:2px;flex:1;color:var(--accent);}
 .bau-timer-bar.running .bau-timer-big{color:var(--orange);}
 .bau-timer-bar-desc{width:100%;box-sizing:border-box;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:calc(14px * var(--m-scale,1));color:var(--text);font-family:inherit;outline:none;}
 .bau-timer-bar-desc::placeholder{color:var(--text2);}
-/* ── Baudoku: Foto-Karte ── */
+/* ── Baudoku: Fotos ── */
 .bau-foto-section{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;}
 .bau-foto-sect-head{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;user-select:none;}
 .bau-foto-sect-icon{width:28px;height:28px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
 .bau-foto-sect-lbl{font-size:14px;font-weight:700;flex:1;}
 .bau-foto-sect-badge{font-size:11px;color:var(--text2);background:var(--bg3);border-radius:6px;padding:2px 8px;font-weight:600;}
-.bau-foto-sect-arr{font-size:13px;color:var(--text2);margin-left:4px;}
 .bau-foto-sect-body{padding:0 13px 13px;}
 .bau-foto-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:9px;}
 .bau-foto-grid-thumb{aspect-ratio:1;border-radius:10px;background:var(--bg3);border:1px solid var(--border);overflow:hidden;cursor:pointer;position:relative;}
-.bau-foto-grid-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.bau-foto-grid-thumb img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;display:block;}
 .bau-foto-grid-add{aspect-ratio:1;border-radius:10px;border:1.5px dashed rgba(106,138,255,.5);background:rgba(106,138,255,.07);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;}
-.bau-foto-grid-add-icon{font-size:18px;color:var(--accent);}
+.bau-foto-grid-add-icon{font-size:20px;color:var(--accent);}
 .bau-foto-grid-add-lbl{font-size:9px;color:var(--accent);font-weight:700;letter-spacing:.3px;}
 .bau-foto-btns{display:flex;gap:7px;}
 .bau-foto-btn{flex:1;padding:10px 0;border-radius:10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;text-align:center;}
 .bau-foto-btn.primary{background:rgba(106,138,255,.13);border-color:rgba(106,138,255,.5);color:var(--accent);}
-/* ── Baudoku: Notiz-Eingabe ── */
+/* ── Baudoku: Notizen ── */
 .bau-notiz-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;}
 .bau-notiz-card-head{display:flex;align-items:center;gap:9px;padding:12px 14px 8px;}
 .bau-notiz-card-icon{width:28px;height:28px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;}
@@ -158,21 +153,19 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-notiz-action-btn.confirm{background:var(--accent);color:#fff;}
 .bau-notiz-action-btn.mic{background:var(--bg3);color:var(--text2);border:1px solid var(--border);}
 .bau-notiz-action-btn.mic.recording{background:rgba(248,113,113,.15);color:var(--red);border-color:var(--red);}
-/* Verlauf-Toggle */
 .bau-notiz-log-toggle{display:flex;align-items:center;gap:8px;padding:9px 13px;border-top:1px solid var(--border);cursor:pointer;user-select:none;}
 .bau-notiz-log-toggle-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);flex:1;}
 .bau-notiz-log-toggle-badge{font-size:11px;background:var(--bg3);color:var(--text2);border-radius:6px;padding:2px 7px;font-weight:600;}
-.bau-notiz-log-toggle-arr{font-size:13px;color:var(--text2);transition:transform .2s;}
+.bau-notiz-log-toggle-arr{font-size:13px;color:var(--text2);display:inline-block;transition:transform .2s;}
 .bau-notiz-log-toggle-arr.open{transform:rotate(90deg);}
-/* Verlauf-Einträge */
 .bau-notiz-log{padding:0 13px 12px;display:flex;flex-direction:column;gap:7px;}
 .bau-notiz-entry{background:var(--bg3);border-radius:11px;padding:9px 12px;position:relative;}
-.bau-notiz-entry-ts{font-size:calc(10px * var(--m-scale,1));color:var(--text2);margin-bottom:3px;font-weight:600;letter-spacing:.2px;}
+.bau-notiz-entry-ts{font-size:calc(10px * var(--m-scale,1));color:var(--text2);margin-bottom:3px;font-weight:600;}
 .bau-notiz-entry-text{font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.45;padding-right:22px;}
 .bau-notiz-entry-del{position:absolute;top:8px;right:9px;background:none;border:none;color:var(--text2);cursor:pointer;font-size:13px;padding:2px 4px;line-height:1;}
-/* alte Klassen – Alias für Rückwärtskompatibilität */
+/* ── Compat-Aliase (alter Strip wird nicht mehr gerendert) ── */
 .bau-notiz-input-row{display:flex;gap:8px;margin-bottom:12px;align-items:center;}
-.bau-foto-strip-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;min-height:90px;}
+.bau-foto-strip-row{display:flex;gap:8px;overflow-x:auto;min-height:90px;}
 .bau-foto-strip-thumb{width:80px;height:80px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;flex-shrink:0;}
 .bau-foto-strip-thumb img{width:100%;height:100%;object-fit:cover;}
 .bau-foto-strip-more{width:80px;height:80px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--accent2);flex-shrink:0;cursor:pointer;}
@@ -2981,8 +2974,8 @@ function renderBaudokuTab(t){
   const personalAusgewaehlt=t.baudokuPersonal||[];
   const wetter=t.wetter||'';
   // Notizen standardmäßig offen
-  if(!('bau_Notizen' in _mOpenSections))_mOpenSections['bau_Notizen']=false; // Verlauf standardmäßig eingeklappt
-  if(!('bau_Fotos' in _mOpenSections))_mOpenSections['bau_Fotos']=true; // Fotos standardmäßig ausgeklappt
+  if(!('bau_Notizen' in _mOpenSections))_mOpenSections['bau_Notizen']=false;
+  if(!('bau_Fotos' in _mOpenSections))_mOpenSections['bau_Fotos']=true;
   const oc=k=>isSectOpen('bau_'+k)?' open':'';
   const _pm=(von,bis)=>{try{const[vh,vm]=(von||'0:0').split(':').map(Number);const[bh,bm]=(bis||'0:0').split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
   const zeitMin=zeitEntries.reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
@@ -3014,7 +3007,7 @@ function renderBaudokuTab(t){
             +'<span class="bau-timer-strip-dot'+(running?' pulse':'')+'" aria-hidden="true"></span>'
             +'<span id="bauTimerDisplay" class="bau-timer-strip-time">'+formatTimerFor(t.id)+'</span>'
             +(savedDesc?'<span class="bau-timer-strip-desc">'+esc(savedDesc)+'</span>':'<span class="bau-timer-strip-desc">Tätigkeit eingeben…</span>')
-            +'<span class="bau-timer-strip-arr">▾</span>'
+            +'<span style="font-size:16px;color:var(--text2);">▾</span>'
           +'</div>'
         +'</div>';
       }
@@ -3022,7 +3015,7 @@ function renderBaudokuTab(t){
         +'<div class="bau-timer-head" onclick="toggleTimerCollapse()">'
           +'<span class="bau-timer-strip-dot'+(running?' pulse':'')+'" aria-hidden="true"></span>'
           +'<span class="bau-timer-head-lbl'+(running?' running':'')+'">'+(running?'Stoppuhr · läuft':'Stoppuhr')+'</span>'
-          +'<span class="bau-timer-head-arr">▴</span>'
+          +'<span style="font-size:13px;color:var(--text2);">▴</span>'
         +'</div>'
         +'<div class="bau-timer-body">'
           +'<div class="bau-timer-bar-row">'
@@ -3039,12 +3032,12 @@ function renderBaudokuTab(t){
     // ── Fotos (einklappbar, Grid) ──
     +(()=>{
       const fotoOpen=isSectOpen('bau_Fotos');
-      return '<div class="bau-foto-section" id="bauFotoSect">'
+      return '<div class="bau-foto-section">'
         +'<div class="bau-foto-sect-head" onclick="_toggleBauFotos()">'
           +'<div class="bau-foto-sect-icon">📷</div>'
           +'<span class="bau-foto-sect-lbl">Fotos</span>'
           +(fotos.length?'<span class="bau-foto-sect-badge">'+fotos.length+'</span>':'')
-          +'<span class="bau-foto-sect-arr" id="bauFotoArr">'+(fotoOpen?'▾':'›')+'</span>'
+          +'<span style="font-size:13px;color:var(--text2);margin-left:4px;">'+(fotoOpen?'▾':'›')+'</span>'
         +'</div>'
         +(fotoOpen
           ?'<div class="bau-foto-sect-body">'
@@ -3133,13 +3126,12 @@ function renderBaudokuTab(t){
 }
 
 // ── Baudoku: Foto-Strip (horizontal, klickbar) ──
-// ── Baudoku: Foto-Grid befüllen (4er-Raster, letztes Feld = + Button) ──
 function _renderBauFotoStrip(t){
   const grid=document.getElementById('bauFotoGrid');
   if(!grid)return;
   const fotos=t.fotos||[];
   grid.innerHTML='';
-  const maxVisible=7; // 7 Fotos + 1 Add-Button = 8 Felder (2 Reihen à 4)
+  const maxVisible=7;
   fotos.slice(0,maxVisible).forEach((f,fi)=>{
     const cell=document.createElement('div');
     cell.className='bau-foto-grid-thumb';
@@ -3156,7 +3148,6 @@ function _renderBauFotoStrip(t){
     }
     const img=document.createElement('img');
     img.alt='';
-    img.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;display:block;';
     img.onload=()=>{ph.style.display='none';};
     if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
     else if(f.localKey){_mobPhotoGet(f.localKey).then(u=>{if(u){f.localUrl=u;img.src=u;}});}
@@ -3164,32 +3155,30 @@ function _renderBauFotoStrip(t){
     cell.appendChild(img);
     grid.appendChild(cell);
   });
-  // + Add-Feld
-  const add=document.createElement('div');
-  add.className='bau-foto-grid-add';
-  add.onclick=()=>document.getElementById('fotoInputCamera').click();
-  add.innerHTML='<span class="bau-foto-grid-add-icon">+</span><span class="bau-foto-grid-add-lbl">Foto</span>';
-  grid.appendChild(add);
-  // Falls mehr als maxVisible: letztes sichtbares Feld als "+N mehr" anzeigen
   if(fotos.length>maxVisible){
     const lastCell=grid.children[maxVisible-1];
     if(lastCell){
-      const more=document.createElement('div');
-      more.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;border-radius:10px;cursor:pointer;';
-      more.textContent='+'+(fotos.length-maxVisible+1)+' mehr';
-      more.onclick=(e)=>{e.stopPropagation();openFotoFullscreen(maxVisible-1);};
+      const ov=document.createElement('div');
+      ov.style.cssText='position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;border-radius:10px;cursor:pointer;';
+      ov.textContent='+'+(fotos.length-maxVisible+1)+' mehr';
+      ov.onclick=(e)=>{e.stopPropagation();openFotoFullscreen(maxVisible-1);};
       lastCell.style.position='relative';
-      lastCell.appendChild(more);
+      lastCell.appendChild(ov);
     }
   }
+  // Add-Button
+  const add=document.createElement('div');
+  add.className='bau-foto-grid-add';
+  add.onclick=()=>document.getElementById('fotoInputCamera').click();
+  const icon=document.createElement('span');icon.className='bau-foto-grid-add-icon';icon.textContent='+';
+  const lbl=document.createElement('span');lbl.className='bau-foto-grid-add-lbl';lbl.textContent='Foto';
+  add.appendChild(icon);add.appendChild(lbl);
+  grid.appendChild(add);
 }
-// ── Foto-Sektion ein-/ausklappen ──
 function _toggleBauFotos(){
-  const open=isSectOpen('bau_Fotos');
-  _mOpenSections['bau_Fotos']=!open;
+  _mOpenSections['bau_Fotos']=!isSectOpen('bau_Fotos');
   const t=currentTask();if(t)renderBaudokuTab(t);
 }
-// ── Notiz-Verlauf ein-/ausklappen (ohne ganzen Tab neu zu rendern) ──
 function _toggleBauNotizLog(){
   const open=isSectOpen('bau_Notizen');
   _mOpenSections['bau_Notizen']=!open;
@@ -3198,24 +3187,24 @@ function _toggleBauNotizLog(){
   if(!logDiv)return;
   if(!open){
     const t=currentTask();if(!t)return;
-    logDiv.className='bau-notiz-log';
-    logDiv.style.display='';
+    logDiv.className='bau-notiz-log';logDiv.style.display='';
     logDiv.innerHTML=_renderBauNotizEntries(t.notizVerlauf||[]);
-    if(arr){arr.classList.add('open');}
+    if(arr)arr.classList.add('open');
   }else{
     logDiv.style.display='none';
-    if(arr){arr.classList.remove('open');}
+    if(arr)arr.classList.remove('open');
   }
 }
-// ── Notiz-Einträge rendern (kompaktes Format für Baudoku-Tab) ──
 function _renderBauNotizEntries(list){
   if(!list||!list.length)return '';
   return list.slice().reverse().map((n,ri)=>{
     const i=list.length-1-ri;
     const isDone=!!n.done;
     return '<div class="bau-notiz-entry" style="'+(isDone?'opacity:.5;':'')+'">'
-      +'<div class="bau-notiz-entry-ts">'+esc(n.ts||'')+(isDone?' · ✓ erledigt':'')+'</div>'
-      +(isDone?'<div class="bau-notiz-entry-text"><s>'+esc(n.text||'')+'</s></div>':'<div class="bau-notiz-entry-text">'+esc(n.text||'')+'</div>')
+      +'<div class="bau-notiz-entry-ts">'+esc(n.ts||'')+(isDone?' · ✓':'')+'</div>'
+      +(isDone
+        ?'<div class="bau-notiz-entry-text"><s>'+esc(n.text||'')+'</s></div>'
+        :'<div class="bau-notiz-entry-text">'+esc(n.text||'')+'</div>')
       +'<button class="bau-notiz-entry-del" onclick="removeNotiz('+i+')" title="Löschen">✕</button>'
     +'</div>';
   }).join('');
@@ -4054,7 +4043,7 @@ function renderDetail(t){
       const count=origs.length;
       const items=count
         ? origs.map((e,ei)=>`
-          <div style="border:1px solid var(--border);border-radius:10px;background:var(--bg3);margin-bottom:8px;overflow:hidden;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;" onclick="_mobOpenEmailPreview(${ei})">
+          <div style="border:1px solid var(--border);border-radius:10px;background:var(--bg3);margin-bottom:8px;display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;" onclick="_mobOpenEmailPreview(${ei})">
             <span style="font-size:22px;flex-shrink:0;">📨</span>
             <div style="flex:1;min-width:0;">
               <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.subject||e.name||'E-Mail')}</div>
@@ -4563,15 +4552,16 @@ function addNotiz(textParam){
   forceSave();
   const nl=document.getElementById('notizList');if(nl)nl.innerHTML=renderNotizen(t.notizVerlauf);
   const bnl=document.getElementById('bauNotizList');
-  if(bnl){
-    bnl.className='bau-notiz-log';bnl.style.display='';
+  if(bnl&&bnl.style.display!=='none'){
     bnl.innerHTML=_renderBauNotizEntries(t.notizVerlauf);
-    // Badge + Verlauf-Toggle aktualisieren
-    const badge=document.querySelector('.bau-notiz-card-badge');if(badge)badge.textContent=t.notizVerlauf.length;
-    const toggle=document.getElementById('bauNotizLogToggle');
-    if(!toggle){if(_currentDetailTab==='bau')renderBaudokuTab(t);}
-    else{const b2=toggle.querySelector('.bau-notiz-log-toggle-badge');if(b2)b2.textContent=t.notizVerlauf.length+' Einträge';}
+    const b=document.querySelector('.bau-notiz-card-badge');if(b)b.textContent=t.notizVerlauf.length;
+    const tb=document.querySelector('.bau-notiz-log-toggle-badge');if(tb)tb.textContent=t.notizVerlauf.length+' Einträge';
     const arr=document.getElementById('bauNotizLogArr');if(arr)arr.classList.add('open');
+    _mOpenSections['bau_Notizen']=true;
+  }else if(bnl){
+    const tb=document.querySelector('.bau-notiz-log-toggle-badge');if(tb)tb.textContent=t.notizVerlauf.length+' Einträge';
+    const b=document.querySelector('.bau-notiz-card-badge');if(b)b.textContent=t.notizVerlauf.length;
+    _mOpenSections['bau_Notizen']=true;
   }
   if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);}
 }
@@ -4582,7 +4572,9 @@ function removeNotiz(i){
   const bnl=document.getElementById('bauNotizList');
   if(bnl){
     if(t.notizVerlauf.length){bnl.innerHTML=_renderBauNotizEntries(t.notizVerlauf);}
-    else{if(_currentDetailTab==='bau')renderBaudokuTab(t);}
+    else if(_currentDetailTab==='bau'){renderBaudokuTab(t);return;}
+    const b=document.querySelector('.bau-notiz-card-badge');if(b)b.textContent=t.notizVerlauf.length||'';
+    const tb=document.querySelector('.bau-notiz-log-toggle-badge');if(tb)tb.textContent=t.notizVerlauf.length+' Einträge';
   }
   if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);}
 }
@@ -5049,14 +5041,13 @@ function downloadAttachMob(i){
   }
 }
 // ── E-Mail Originale: Vorschau / Download / Ordner ───────────────────────────
-// ── E-Mail als PDF/Drive-Vorschau anzeigen ──
+// ── E-Mail als Drive-PDF-Vorschau ──
 function _mobOpenEmailPreview(idx){
   const t=currentTask();
   const item=((t&&t.emailOriginals)||[])[idx];
   if(!item){toast('E-Mail nicht gefunden','error');return;}
   const fid=item.fileId||'';
-  if(!fid&&!item.url){toast('Keine Drive-Verknüpfung vorhanden','error');return;}
-  // Vollbild-Overlay mit Drive-Vorschau (PDF-ähnliche Ansicht)
+  if(!fid&&!item.url){toast('Keine Drive-Verknüpfung','error');return;}
   const old=document.getElementById('_mobEmailPdfOv');if(old)old.remove();
   const ov=document.createElement('div');
   ov.id='_mobEmailPdfOv';
@@ -5076,16 +5067,12 @@ function _mobOpenEmailPreview(idx){
   closeBtn.onclick=()=>ov.remove();
   hdr.append(title,openBtn,closeBtn);
   const frame=document.createElement('iframe');
-  const previewUrl=fid
-    ?'https://drive.google.com/file/d/'+encodeURIComponent(fid)+'/preview'
-    :(item.url||'').replace('/view','/preview');
-  frame.src=previewUrl;
+  frame.src=fid?'https://drive.google.com/file/d/'+encodeURIComponent(fid)+'/preview':(item.url||'').replace('/view','/preview');
   frame.style.cssText='flex:1;width:100%;border:none;background:var(--bg);';
   frame.allow='autoplay';
   ov.append(hdr,frame);
   document.body.appendChild(ov);
 }
-// Alias – nicht mehr eigenständig genutzt, aber für Rückwärtskompatibilität erhalten
 function _mobDownloadEml(idx){_mobOpenEmailPreview(idx);}
 function _mobOpenEmailFolder(idx){_mobOpenEmailPreview(idx);}
 // ── DRIVE-ORDNER-LADER ──
@@ -5369,6 +5356,80 @@ async function removeFoto(i){
   forceSave();
   renderDetail(t);
 }
+
+// ══ ABSCHLUSSAKTE ══
+async function _mobDriveCreateFolder(name,parentId){
+  const r=await fetch('https://www.googleapis.com/drive/v3/files',{
+    method:'POST',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
+    body:JSON.stringify({name,mimeType:'application/vnd.google-apps.folder',parents:[parentId]})
+  });
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return(await r.json()).id;
+}
+async function _mobDriveCreateTextFile(name,content,parentId){
+  const meta={name,mimeType:'text/plain',parents:[parentId]};
+  const form=new FormData();
+  form.append('metadata',new Blob([JSON.stringify(meta)],{type:'application/json'}));
+  form.append('file',new Blob([content],{type:'text/plain;charset=utf-8'}));
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
+    method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form
+  });
+  if(!r.ok)throw new Error('HTTP '+r.status);
+}
+async function createAbschlussakteMobile(){
+  const t=currentTask();if(!t)return;
+  const folderId=extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner);
+  if(!folderId){toast('Zuerst Drive-Ordner am Desktop unter Verknüpfungen eintragen','error');return;}
+  if(!(await ensureToken())){toast('Nicht angemeldet','error');return;}
+  const btn=document.getElementById('abschlussBtn');
+  if(btn){btn.textContent='⏳ Erstelle…';btn.disabled=true;}
+  try{
+    const now=new Date().toLocaleString('de-DE');
+    const zeitMin=(t.zeitEntries||[]).reduce((s,z)=>{try{const[vh,vm]=z.von.split(':').map(Number);const[bh,bm]=z.bis.split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return s+(d>0?d:0);}catch(e){return s;}},0);
+    const zeitH=Math.floor(zeitMin/60),zeitM=zeitMin%60;
+    let txt='ABSCHLUSSAKTE\n=============\nErstellt: '+now+'\n\n';
+    txt+='AUFTRAG\n-------\n';
+    txt+='Titel:           '+( t.title||'')+'\n';
+    if(t.adresse)txt+='Adresse:         '+t.adresse+'\n';
+    if(t.hausverwaltung)txt+='Hausverwaltung:  '+t.hausverwaltung+'\n';
+    if(t.status)txt+='Status:          '+t.status+'\n';
+    if(t.ausführungsdatum)txt+='Ausführungsdatum:'+t.ausführungsdatum+'\n';
+    if(t.nas)txt+='NAS-Pfad:        '+t.nas+'\n';
+    if(t.gdriveOrdner)txt+='Projektordner:   '+t.gdriveOrdner+'\n';
+    if(t.gdrive)txt+='Foto-Ordner:     '+t.gdrive+'\n';
+    if(t.schadensbild)txt+='\nSCHADENSBILD\n------------\n'+t.schadensbild+'\n';
+    if(t.desc)txt+='\nNOTIZ\n-----\n'+t.desc+'\n';
+    if((t.kontakte||[]).length){
+      txt+='\nKONTAKTE\n--------\n';
+      t.kontakte.forEach(k=>{txt+=(k.rolle||'')+(k.name?' | '+k.name:'')+(k.tel?' | Tel: '+k.tel:'')+(k.email?' | '+k.email:'')+'\n';});
+    }
+    if((t.zeitEntries||[]).length){
+      txt+='\nZEITERFASSUNG\n-------------\n';
+      t.zeitEntries.forEach(z=>{txt+=(z.date||'')+'  '+(z.von||'')+'–'+(z.bis||'')+'  '+(z.beschreibung||'')+'\n';});
+      txt+='Gesamt: '+zeitH+'h '+zeitM+'min\n';
+    }
+    if((t.ausserhausTermine||[]).length){
+      txt+='\nAUSSER-HAUS-TERMINE\n-------------------\n';
+      t.ausserhausTermine.forEach(tm=>{txt+=(tm.date||'')+'  '+(tm.von||'')+'–'+(tm.bis||'')+'  '+(tm.beschreibung||'')+'\n';});
+    }
+    if((t.notizVerlauf||[]).length){
+      txt+='\nNOTIZVERLAUF\n------------\n';
+      t.notizVerlauf.forEach(n=>{txt+=(n.ts||'')+': '+(n.text||'')+'\n';});
+    }
+    if((t.fotos||[]).length){
+      txt+='\nFOTOS\n-----\n';
+      t.fotos.forEach((f,i)=>{txt+=(i+1)+'. '+(f.name||'Foto')+(f.caption?' — '+f.caption:'')+'\n';});
+    }
+    const subId=await _mobDriveCreateFolder('Abschlussakte',folderId);
+    await _mobDriveCreateTextFile('Auftragsakte.txt',txt,subId);
+    if(btn){btn.textContent='✓ Erstellt!';setTimeout(()=>{btn.textContent='📁 Abschlussakte erstellen';btn.disabled=false;},3000);}
+    toast('✓ Abschlussakte erstellt','success');
+  }catch(e){
+    if(btn){btn.textContent='📁 Abschlussakte erstellen';btn.disabled=false;}
+    toast('Fehler: '+e.message,'error');
+  }
+}
+
 // ══ TASK ANLEGEN / LÖSCHEN ══
 function newTask(){
   if(!currentBoard){toast('Erst ein Board wählen','error');return;}
