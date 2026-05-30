@@ -3104,8 +3104,10 @@ function _addBauNotizFromInput(){
   const inp=document.getElementById('bauNotizQuick');
   if(!inp||!inp.value.trim())return;
   const text=inp.value.trim();
-  // Text NICHT löschen — bleibt stehen bis Nutzer wegklickt oder manuell löscht
   addNotiz(text);
+  // Feld nach erfolgreichem Speichern leeren
+  inp.value='';
+  inp.style.height='auto';
   // Verlauf-Toggle nach Speichern aufklappen und Zähler aktualisieren
   const t=currentTask();
   const n=(t&&t.notizVerlauf)?t.notizVerlauf.length:0;
