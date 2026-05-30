@@ -3120,33 +3120,14 @@ function _bauSaveDesc(val){
   if(s){s.beschreibung=val;_saveTimerState(s);}
 }
 
-// ── Baudoku: Zeiterfassung (Einträge-Liste, Timer ist oben in Timer-Bar) ──
+// ── Baudoku: Zeiterfassung — identisch mit Task-Info ──
 let _bauTimerInterval=null;
 
 function _renderBauZeit(t){
-  const entries=t.zeitEntries||[];
-  const _pm=(v,b)=>{try{const[vh,vm]=(v||'0:0').split(':').map(Number);const[bh,bm]=(b||'0:0').split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
-  let html='';
-  if(entries.length){
-    entries.forEach((e,i)=>{
-      const min=_pm(e.von,e.bis);
-      const dauer=min>0?(Math.floor(min/60)>0?Math.floor(min/60)+'h ':'')+(min%60)+'min':'–';
-      html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:6px;">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center;">'
-        +'<div style="font-size:14px;font-weight:600;">'+esc((e.von||'?')+' – '+(e.bis||'?'))+'</div>'
-        +'<div style="font-size:13px;font-weight:700;color:var(--accent2);">'+dauer+'</div>'
-        +'</div>'
-        +(e.beschreibung?'<div style="font-size:12px;color:var(--text2);margin-top:2px;">'+esc(e.beschreibung)+'</div>':'')
-        +(e.mitarbeiter?'<div style="font-size:12px;color:var(--green);margin-top:2px;">👷 '+esc(e.mitarbeiter)+'</div>':'')
-        +'</div>';
-    });
-  }else{
-    html+='<div style="color:var(--text2);font-size:13px;padding:6px 0;">Noch keine abgeschlossenen Einträge.</div>';
-  }
-  html+='<div style="display:flex;gap:7px;margin-top:6px;">'
-    +'<button class="inline-btn" style="flex:1" onclick="addBauZeitEintrag()">+ Manuell eintragen</button>'
-    +'</div>';
-  return html;
+  const zeiten=t.zeitEntries||[];
+  return '<div id="zeitenList">'+renderZeitenRows(zeiten)+'</div>'
+    +'<button class="add-btn" onclick="addZeit()">+ Zeit manuell hinzufügen</button>'
+    +'<div id="zeitGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderZeitGesamtText(zeiten)+'</div>';
 }
 
 function _bauTimerTick(){
@@ -4380,11 +4361,14 @@ function addZeit(){
   const today=new Date().toISOString().split('T')[0];
   t.zeitEntries.push({date:today,von:'',bis:'',beschreibung:''});
   _mOpenSections['Zeiterfassung']=true;
-  forceSave();renderDetail(t);
+  _mOpenSections['bau_Zeit']=true;
+  forceSave();
+  if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);
 }
 function removeZeit(i){
   const t=currentTask();if(!t)return;
-  t.zeitEntries.splice(i,1);forceSave();renderDetail(t);
+  t.zeitEntries.splice(i,1);forceSave();
+  if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);
 }
 function updateZeit(i,f,v){
   const t=currentTask();if(!t)return;
