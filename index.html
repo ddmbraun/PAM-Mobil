@@ -5411,4 +5411,103 @@ window.addEventListener('load',async()=>{
     initTokenClient();
     const stored=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
     if(stored&&stored.token&&!_mobSilentGaveUp){
-      document.getElementById(
+      document.getElementById('loginStatus').textContent='Verbinde automatisch…';
+      const ok=await silentRefresh();
+      if(ok){afterLogin();return;}
+    }
+    document.getElementById('loginStatus').textContent='';
+  };
+  // Wenn Google bereits geladen → sofort versuchen, sonst auf onGsiLoaded warten
+  if(window.google&&window.google.accounts){
+    setTimeout(async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PTP-Mobile]',e);}},300);
+  } else {
+    // onGsiLoaded() wird aufgerufen wenn der GSI-Script fertig ist
+    _pendingAutoConnect=async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PTP-Mobile]',e);}};
+    // Sicherheits-Fallback: falls onload nicht feuert (z.B. cached Script)
+    setTimeout(async()=>{
+      if(_pendingAutoConnect){
+        const fn=_pendingAutoConnect;_pendingAutoConnect=null;
+        initTokenClient();
+        try{await fn();}catch(e){console.warn('[PTP-Mobile]',e);}
+      }
+    },3000);
+  }
+});
+
+// Auto-Speichern beim Schließen
+window.addEventListener('beforeunload',(e)=>{if(dirty){saveFile();}});
+window.addEventListener('pagehide',()=>{if(dirty){saveFile();}});
+</script>
+
+<!-- ══ EXIF HELPER ══ -->
+<script>
+function _loadPiexif(cb){
+  if(window.piexif){cb();return;}
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js';
+  s.onload=cb;s.onerror=()=>{console.warn('[PTP-Mobile] piexif load error');};
+  document.head.appendChild(s);
+}
+function embedExifCaption(dataUrl,caption){
+  try{
+    if(!window.piexif)return dataUrl;
+    let exifObj;
+    try{exifObj=piexif.load(dataUrl);}
+    catch(e){exifObj={'0th':{},'Exif':{},'GPS':{},'1st':{},'thumbnail':null};}
+    if(!exifObj['0th'])exifObj['0th']={};
+    exifObj['0th'][piexif.ImageIFD.ImageDescription]=caption;
+    const exifBytes=piexif.dump(exifObj);
+    return piexif.insert(exifBytes,dataUrl);
+  }catch(e){console.warn('[PTP-Mobile] EXIF embed:',e);return dataUrl;}
+}
+</script>
+'loginStatus').textContent='Verbinde automatisch…';
+      const ok=await silentRefresh();
+      if(ok){afterLogin();return;}
+    }
+    document.getElementById('loginStatus').textContent='';
+  };
+  // Wenn Google bereits geladen → sofort versuchen, sonst auf onGsiLoaded warten
+  if(window.google&&window.google.accounts){
+    setTimeout(async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PTP-Mobile]',e);}},300);
+  } else {
+    // onGsiLoaded() wird aufgerufen wenn der GSI-Script fertig ist
+    _pendingAutoConnect=async()=>{try{await tryAutoConnect();}catch(e){console.warn('[PTP-Mobile]',e);}};
+    // Sicherheits-Fallback: falls onload nicht feuert (z.B. cached Script)
+    setTimeout(async()=>{
+      if(_pendingAutoConnect){
+        const fn=_pendingAutoConnect;_pendingAutoConnect=null;
+        initTokenClient();
+        try{await fn();}catch(e){console.warn('[PTP-Mobile]',e);}
+      }
+    },3000);
+  }
+});
+
+// Auto-Speichern beim Schließen
+window.addEventListener('beforeunload',(e)=>{if(dirty){saveFile();}});
+window.addEventListener('pagehide',()=>{if(dirty){saveFile();}});
+</script>
+
+<!-- ══ EXIF HELPER ══ -->
+<script>
+function _loadPiexif(cb){
+  if(window.piexif){cb();return;}
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js';
+  s.onload=cb;s.onerror=()=>{console.warn('[PTP-Mobile] piexif load error');};
+  document.head.appendChild(s);
+}
+function embedExifCaption(dataUrl,caption){
+  try{
+    if(!window.piexif)return dataUrl;
+    let exifObj;
+    try{exifObj=piexif.load(dataUrl);}
+    catch(e){exifObj={'0th':{},'Exif':{},'GPS':{},'1st':{},'thumbnail':null};}
+    if(!exifObj['0th'])exifObj['0th']={};
+    exifObj['0th'][piexif.ImageIFD.ImageDescription]=caption;
+    const exifBytes=piexif.dump(exifObj);
+    return piexif.insert(exifBytes,dataUrl);
+  }catch(e){console.warn('[PTP-Mobile] EXIF embed:',e);return dataUrl;}
+}
+</script>
