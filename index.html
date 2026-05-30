@@ -3878,10 +3878,14 @@ function renderDetail(t){
     +'<div class="sect'+oc('Notizen')+'" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen'
     +(notizVerlauf.length>0?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
     +'</div><div class="sect-body">'
-      // ── Dauerhafte Notiz ──
-      +'<div class="field"><label>Dauerhafte Notiz</label><textarea rows="3" style="resize:none;transition:height .2s" placeholder="Dauerhafte Notizen zum Task…" oninput="updateField(\'desc\',this.value)" onfocus="this.rows=8" onblur="if(!this.value)this.rows=3;else this.rows=4" autocomplete="off">'+esc(t.desc||'')+'</textarea></div>'
-      // ── Notiz-Protokoll ──
-      +'<div class="field"><label>📋 Notiz-Protokoll</label>'
+      // ── Info BST (ehemals "Dauerhafte Notiz") ──
+      +'<div class="field"><label>📋 Info BST</label><textarea rows="3" style="resize:none;transition:height .2s" placeholder="Dauerhafte Infos zur Baustelle…" oninput="updateField(\'desc\',this.value)" onfocus="this.rows=8" onblur="if(!this.value)this.rows=3;else this.rows=4" autocomplete="off">'+esc(t.desc||'')+'</textarea></div>'
+      // ── Notiz-Protokoll (einklappbar) ──
+      +'<div class="sect'+(isSectOpen('NotizProtokoll')?' open':'')+'" data-sect="NotizProtokoll" style="margin-bottom:0;border:none;background:transparent;">'
+      +'<div class="sect-head" onclick="toggleMSect(this.parentElement)" style="padding:8px 0;font-size:13px;">📋 Notiz-Protokoll'
+      +(notizVerlauf.length>0?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
+      +'</div>'
+      +'<div class="sect-body" style="padding:0;border:none;">'
       +'<textarea id="newNotizInput" placeholder="Notiz eingeben…" autocomplete="off" rows="2" style="width:100%;resize:none;margin-bottom:8px;overflow:hidden;" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,180)+\'px\';" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();addNotiz();}"></textarea>'
       +'<div style="display:flex;gap:8px;margin-bottom:10px;">'
       +'<button class="inline-btn" style="flex:1;min-height:46px;font-size:14px;" onclick="startDiktatNotiz&&startDiktatNotiz()||startBaudokuDiktat&&startBaudokuDiktat()">🎤 Diktieren</button>'
@@ -3891,7 +3895,7 @@ function renderDetail(t){
       +'▸ Verlauf ('+notizVerlauf.length+' Einträge)'
       +'</div>'
       +'<div id="notizList" style="display:none;">'+renderNotizen(notizVerlauf)+'</div>'
-      +'</div>'
+      +'</div></div>'
     +'</div></div>'
     // ── CHECKLISTE ──
     +'<div class="sect'+oc('Checkliste')+'" data-sect="Checkliste"><div class="sect-head" onclick="toggleMSect(this.parentElement)" id="mCkHead">'+_mCkTitle()+'</div><div class="sect-body">'
@@ -5453,4 +5457,190 @@ if ('serviceWorker' in navigator) {
   <img id="lbImg" alt="">
   <div id="pannellumContainer"></div>
   <canvas id="drawCanvas"></canvas>
- 
+  <!-- Zeichen-Toolbar -->
+  <div class="lb-draw-bar" id="lbDrawBar" onclick="event.stopPropagation()">
+    <div class="lb-draw-row">
+      <input type="color" class="lb-draw-color" id="drawColor" value="#ff0000" autocomplete="off">
+      <input type="range" class="lb-draw-size" id="drawSize" min="2" max="30" value="5" autocomplete="off">
+      <button class="lb-draw-btn on" id="drawModePen"  onclick="event.stopPropagation();lbSetMode('pen',this)" title="Stift">✏️</button>
+      <button class="lb-draw-btn"    id="drawModeLine" onclick="event.stopPropagation();lbSetMode('line',this)" title="Linie">╱</button>
+      <button class="lb-draw-btn"    id="drawModeRect" onclick="event.stopPropagation();lbSetMode('rect',this)" title="Rechteck">▭</button>
+      <button class="lb-draw-btn"    id="drawModeCirc" onclick="event.stopPropagation();lbSetMode('circ',this)" title="Kreis">◯</button>
+      <button class="lb-draw-btn"    id="drawModeArrow" onclick="event.stopPropagation();lbSetMode('arrow',this)" title="Pfeil">➜</button>
+      <button class="lb-draw-btn"    id="drawEraserBtn" onclick="event.stopPropagation();lbSetMode('erase',this)" title="Radierer">⬜</button>
+    </div>
+    <div class="lb-draw-row">
+      <button class="lb-draw-btn save"    onclick="event.stopPropagation();lbSaveDraw()">💾 Speichern</button>
+      <button class="lb-draw-btn discard" onclick="event.stopPropagation();lbDiscardDraw()">✕ Verwerfen</button>
+    </div>
+  </div>
+  <button class="lb-close" onclick="event.stopPropagation();closeLightbox()" aria-label="Schließen">✕</button>
+  <div class="lb-textbar" id="lbTextbar" onclick="event.stopPropagation()">
+    <div class="lb-text-view">
+      <span class="lb-text-view-label" id="lbTextViewLabel"></span>
+      <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbEditCaption()">📝 Text</button>
+      <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbStartDraw()" style="margin-left:4px">✏️ Malen</button>
+    </div>
+    <div class="lb-text-edit-form">
+      <textarea id="lbTextInput" placeholder="Kurze Beschreibung zum Foto…" rows="2" autocomplete="off"></textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="cancel" onclick="event.stopPropagation();lbCancelCaption()">Abbrechen</button>
+        <button onclick="event.stopPropagation();lbSaveCaption()">💾 Speichern</button>
+      </div>
+    </div>
+  </div>
+  <button class="lb-open" id="lbOpenOrig" onclick="event.stopPropagation();lbOpenOriginal()" style="display:none">📂 Original öffnen</button>
+  <button class="lb-open" id="lbShareBtn" onclick="event.stopPropagation();lbShareFoto()" style="display:none;right:auto;left:12px;">📤 Teilen</button>
+</div>
+<script>
+let _lbCurrentUrl='';
+let _lbFotoIdx=-1;
+let _pannellumViewer=null;
+function openLightbox(src,name,externalUrl,opts){
+  if(!src&&!externalUrl)return;
+  opts=opts||{};
+  _lbClosePannellum();lbDiscardDraw();_lbResetZoom();
+  const lb=document.getElementById('lightbox');
+  const img=document.getElementById('lbImg');
+  const cap=document.getElementById('lbCaption');
+  const btnOrig=document.getElementById('lbOpenOrig');
+  img.onerror=()=>{img.style.display='none';cap.textContent=(name||'')+' — Vorschau nicht verfügbar';};
+  img.onload=()=>{
+    cap.textContent=name||'';
+    if(img.naturalWidth&&img.naturalHeight&&(img.naturalWidth/img.naturalHeight)>=1.8){_lbInitPannellum(img.src);}
+    else{img.style.display='';}
+  };
+  img.style.display=src?'':'none';
+  if(src){img.src=src;}else{img.removeAttribute('src');}
+  cap.textContent=src?(name||''):((name||'')+' — lade…');
+  _lbCurrentUrl=externalUrl||'';
+  btnOrig.style.display=_lbCurrentUrl?'':'none';
+  const shareBtn=document.getElementById('lbShareBtn');
+  const bar=document.getElementById('lbTextbar');
+  if(typeof opts.fotoIdx==='number'&&opts.fotoIdx>=0){
+    _lbFotoIdx=opts.fotoIdx;
+    _lbShowCaption(opts.caption||'');
+    bar.classList.add('open');bar.classList.remove('editing');
+    if(shareBtn)shareBtn.style.display='';
+  }else{
+    _lbFotoIdx=-1;
+    bar.classList.remove('open','editing');
+    if(shareBtn)shareBtn.style.display='none';
+  }
+  lb.classList.add('open');
+  document.addEventListener('keydown',_lbOnKey);
+}
+function closeLightbox(){
+  const lb=document.getElementById('lightbox');if(!lb)return;
+  lb.classList.remove('open');
+  lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
+  document.removeEventListener('keydown',_lbOnKey);
+  _lbFotoIdx=-1;
+}
+function _lbHandleTap(e){
+  if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lbImg'))closeLightbox();
+}
+function _lbOnKey(e){if(e.key==='Escape')closeLightbox();}
+function _lbResetZoom(){const img=document.getElementById('lbImg');if(img){img.style.transform='';img.style.transformOrigin='';}}
+function _lbInitPannellum(blobUrl){
+  const container=document.getElementById('pannellumContainer');
+  const img=document.getElementById('lbImg');if(!container)return;
+  img.style.display='none';
+  container.innerHTML='<div style="color:#fff;font-size:13px;padding:20px;text-align:center">⏳ 360°-Viewer lädt…</div>';
+  container.classList.add('active');
+  function _startViewer(){container.innerHTML='';_pannellumViewer=pannellum.viewer(container,{type:'equirectangular',panorama:blobUrl,autoLoad:true,showControls:false,compass:false,mouseZoom:true,draggable:true});}
+  if(window.pannellum){_startViewer();return;}
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js';
+  s.onload=()=>_startViewer();
+  s.onerror=()=>{console.warn('[PTP-Mobile] pannellum error');img.style.display='';container.classList.remove('active');};
+  document.head.appendChild(s);
+}
+function _lbClosePannellum(){
+  if(_pannellumViewer){try{_pannellumViewer.destroy();}catch(e){}_pannellumViewer=null;}
+  const c=document.getElementById('pannellumContainer');if(c){c.classList.remove('active');c.innerHTML='';}
+  const img=document.getElementById('lbImg');if(img)img.style.display='';
+}
+function _lbShowCaption(text){const lbl=document.getElementById('lbTextViewLabel');if(lbl)lbl.textContent=text||'';}
+function lbEditCaption(){
+  const bar=document.getElementById('lbTextbar'),inp=document.getElementById('lbTextInput'),lbl=document.getElementById('lbTextViewLabel');
+  if(!bar||!inp)return;inp.value=lbl?lbl.textContent:'';bar.classList.add('editing');setTimeout(()=>inp.focus(),50);
+}
+function lbSaveCaption(){
+  const inp=document.getElementById('lbTextInput'),bar=document.getElementById('lbTextbar');if(!inp)return;
+  const text=inp.value.trim();_lbShowCaption(text);bar.classList.remove('editing');
+  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){t.fotos[_lbFotoIdx].caption=text;scheduleSave();}}
+}
+function lbCancelCaption(){const bar=document.getElementById('lbTextbar');if(bar)bar.classList.remove('editing');}
+function lbOpenOriginal(){if(_lbCurrentUrl)window.open(_lbCurrentUrl,'_blank');}
+function lbShareFoto(){
+  if(_lbFotoIdx>=0){const t=currentTask();const f=t&&t.fotos&&t.fotos[_lbFotoIdx];
+  const url=f&&(f.url||(f.driveId?'https://drive.google.com/file/d/'+f.driveId+'/view':''));if(url)window.open(url,'_blank');}
+}
+let _drawPointer=null,_drawCtx=null,_drawErasing=false,_drawMode='pen',_drawSnapshot=null;
+function lbSetMode(mode,btn){
+  _drawMode=mode;_drawErasing=(mode==='erase');
+  document.querySelectorAll('#lbDrawBar .lb-draw-btn').forEach(b=>b.classList.remove('on'));
+  if(btn)btn.classList.add('on');
+}
+function lbStartDraw(){
+  const img=document.getElementById('lbImg');if(!img||!img.src||img.style.display==='none')return;
+  const canvas=document.getElementById('drawCanvas');if(!canvas)return;
+  const lb=document.getElementById('lightbox');
+  canvas.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;';
+  canvas.width=lb.offsetWidth||window.innerWidth;canvas.height=lb.offsetHeight||window.innerHeight;
+  _drawCtx=canvas.getContext('2d');_drawErasing=false;
+  canvas.classList.add('active');document.getElementById('lbDrawBar').classList.add('visible');
+  canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);
+  canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);
+  canvas.addEventListener('pointerdown',_onDrawDown);canvas.addEventListener('pointermove',_onDrawMove);
+  canvas.addEventListener('pointerup',_onDrawUp);canvas.addEventListener('pointercancel',_onDrawUp);
+}
+function _onDrawDown(e){
+  e.preventDefault();document.getElementById('drawCanvas').setPointerCapture(e.pointerId);
+  _drawPointer={x:e.offsetX,y:e.offsetY};
+  if(['rect','circ','line','arrow'].includes(_drawMode))_drawSnapshot=_drawCtx.getImageData(0,0,_drawCtx.canvas.width,_drawCtx.canvas.height);
+  else _drawSnapshot=null;
+  if(_drawMode==='pen'||_drawMode==='erase'){
+    const col=document.getElementById('drawColor').value,sz=parseInt(document.getElementById('drawSize').value)||5;
+    _drawCtx.beginPath();_drawCtx.moveTo(e.offsetX,e.offsetY);
+    _drawCtx.strokeStyle=_drawErasing?'rgba(0,0,0,1)':col;_drawCtx.lineWidth=sz;_drawCtx.lineCap='round';
+    _drawCtx.globalCompositeOperation=_drawErasing?'destination-out':'source-over';
+  }
+}
+function _onDrawMove(e){
+  if(!_drawPointer)return;e.preventDefault();
+  const col=document.getElementById('drawColor').value,sz=parseInt(document.getElementById('drawSize').value)||5;
+  if(_drawMode==='pen'||_drawMode==='erase'){_drawCtx.lineTo(e.offsetX,e.offsetY);_drawCtx.stroke();}
+  else if(_drawSnapshot){
+    _drawCtx.putImageData(_drawSnapshot,0,0);_drawCtx.strokeStyle=col;_drawCtx.lineWidth=sz;_drawCtx.globalCompositeOperation='source-over';
+    if(_drawMode==='line'){_drawCtx.beginPath();_drawCtx.moveTo(_drawPointer.x,_drawPointer.y);_drawCtx.lineTo(e.offsetX,e.offsetY);_drawCtx.stroke();}
+    else if(_drawMode==='rect'){_drawCtx.strokeRect(_drawPointer.x,_drawPointer.y,e.offsetX-_drawPointer.x,e.offsetY-_drawPointer.y);}
+    else if(_drawMode==='circ'){const rx=Math.abs(e.offsetX-_drawPointer.x)/2,ry=Math.abs(e.offsetY-_drawPointer.y)/2,cx=(_drawPointer.x+e.offsetX)/2,cy=(_drawPointer.y+e.offsetY)/2;_drawCtx.beginPath();_drawCtx.ellipse(cx,cy,rx,ry,0,0,2*Math.PI);_drawCtx.stroke();}
+    else if(_drawMode==='arrow'){_lbDrawArrow(_drawCtx,_drawPointer.x,_drawPointer.y,e.offsetX,e.offsetY,sz);}
+  }
+}
+function _onDrawUp(e){if(!_drawPointer)return;_onDrawMove(e);_drawPointer=null;_drawCtx.beginPath();}
+function _lbDrawArrow(ctx,x0,y0,x1,y1,sz){
+  const angle=Math.atan2(y1-y0,x1-x0),headLen=Math.max(14,sz*3);
+  ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1-headLen*Math.cos(angle-Math.PI/6),y1-headLen*Math.sin(angle-Math.PI/6));ctx.moveTo(x1,y1);ctx.lineTo(x1-headLen*Math.cos(angle+Math.PI/6),y1-headLen*Math.sin(angle+Math.PI/6));ctx.stroke();
+}
+let _lbDrawSaving=false;
+function lbSaveDraw(){
+  if(_lbDrawSaving)return;_lbDrawSaving=true;
+  const canvas=document.getElementById('drawCanvas'),img=document.getElementById('lbImg');
+  if(!canvas||!img||!_drawCtx){_lbDrawSaving=false;return;}
+  const out=document.createElement('canvas');out.width=img.naturalWidth||canvas.width;out.height=img.naturalHeight||canvas.height;
+  const octx=out.getContext('2d');octx.drawImage(img,0,0,out.width,out.height);octx.drawImage(canvas,0,0,out.width,out.height);
+  const dataUrl=out.toDataURL('image/jpeg',0.92);
+  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){const f=t.fotos[_lbFotoIdx];f.localUrl=dataUrl;f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');if(f.localKey)_mobPhotoSet(f.localKey,dataUrl).catch(()=>{});scheduleSave();toast('Zeichnung gespeichert','success');}}
+  lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
+}
+function lbDiscardDraw(){
+  const canvas=document.getElementById('drawCanvas'),bar=documen
+  if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
+  if(bar)bar.classList.remove('visible');
+  _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
+}
+</script>
