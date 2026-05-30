@@ -548,6 +548,8 @@ let userEmail='';
 let workspaceFolderId=null;  // Synchronisiert mit PC-Version
 let boards={};            // Sichtbare Boards (nach Mobile-Whitelist gefiltert)
 let hiddenBoards={};      // Desktop-only Boards: wir fassen sie nie an, schreiben sie unverändert zurück
+let _remoteSeenIds=new Set();    // Alle Task-IDs die jemals vom Server geladen wurden
+let _remoteSeenBoards=new Set(); // Alle Board-Namen die jemals vom Server geladen wurden
 let mobileWhitelist=[];   // Aus _mobileBoards; leer = keine Einschränkung
 let statuses=[];
 let currentBoard='';
@@ -1198,9 +1200,12 @@ function _applyMobileFilter(data){
   for(const[k,v]of Object.entries(data)){
     if(k.startsWith('_'))continue;
     if(!Array.isArray(v))continue;
+    // Alle Task-IDs und Board-Namen merken die jemals vom Server kamen
+    _remoteSeenBoards.add(k);
+    for(const t of v){if(t&&t.id)_remoteSeenIds.add(t.id);}
     // Whitelist aktiv → nur enthaltene Boards anzeigen, Rest in hiddenBoards (Desktop-Quelle der Wahrheit)
     if(hasWhitelist&&!mobileWhitelist.includes(k)){
-      hiddenBoards[k]=v; // PC hat "nicht mobil anzeigen" → verstecken, aber Daten erhalten
+      hiddenBoards[k]=v;
     } else {
       boards[k]=v;
     }
@@ -1406,16 +1411,18 @@ async function saveFile(){
                 const remoteIds=new Set(remoteArr.map(t=>t&&t.id).filter(Boolean));
                 // Remote-Tasks als Basis (PC-Änderungen bleiben erhalten)
                 const mergedArr=[...remoteArr];
-                // Lokal neue Tasks hinzufügen (nur IDs die Remote noch nicht kennt)
+                // Lokal neue Tasks hinzufügen — NUR wenn die ID noch nie vom Server gesehen wurde.
+                // Dadurch werden auf dem Desktop gelöschte Tasks nicht wieder hinzugefügt.
                 for(const lt of localArr){
                   if(!lt||!lt.id)continue;
-                  if(!remoteIds.has(lt.id))mergedArr.push(lt); // neu auf Mobile, noch nicht auf PC
+                  if(!remoteIds.has(lt.id)&&!_remoteSeenIds.has(lt.id))mergedArr.push(lt);
                 }
                 merged[bn]=mergedArr;
               }
-              // Boards die nur lokal existieren (auf Mobile neu angelegt, noch nicht in Remote)
+              // Boards die nur lokal existieren — NUR wenn noch nie vom Server gesehen (neu auf Mobile)
+              // Boards die früher vom Server kamen und jetzt fehlen, wurden auf dem Desktop gelöscht
               for(const bn of Object.keys(boards||{})){
-                if(!merged[bn])merged[bn]=(boards[bn]||[]).slice();
+                if(!merged[bn]&&!_remoteSeenBoards.has(bn))merged[bn]=(boards[bn]||[]).slice();
               }
               boards=merged;
             } else {
@@ -5638,7 +5645,8 @@ function lbSaveDraw(){
   lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
 }
 function lbDiscardDraw(){
-  const canvas=document.getElementById('drawCanvas'),bar=documen
+  const
+canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDrawBar');
   if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
   if(bar)bar.classList.remove('visible');
   _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
