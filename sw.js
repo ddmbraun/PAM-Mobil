@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v29'; // v27: Baudoku-Redesign (Stoppuhr/Fotos/Notizen), E-Mail als PDF
+const CACHE_NAME = 'pam-mobil-v30'; // v27: Baudoku-Redesign (Stoppuhr/Fotos/Notizen), E-Mail als PDF
 
 const PRECACHE = [
   './',

@@ -211,6 +211,26 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .save-indicator.saving{color:var(--orange)}
 .save-indicator.saved{color:var(--green)}
 .save-indicator.error{color:var(--red)}
+/* ── KST-Chip + Offline-Indikator im Detail-Header ── */
+.hdr-kst-chip{background:rgba(251,146,60,.13);border:1px solid var(--orange);color:var(--orange);border-radius:7px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;display:none;}
+.hdr-kst-chip.visible{display:inline-flex;}
+.hdr-sync-chip{border-radius:7px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;display:none;}
+.hdr-sync-chip.online{display:inline-flex;background:rgba(74,222,128,.12);border:1px solid var(--green);color:var(--green);}
+.hdr-sync-chip.offline{display:inline-flex;background:rgba(248,113,113,.13);border:1px solid var(--red);color:var(--red);}
+/* ── Schnell-Tab Styling ── */
+.detail-tab-btn.schnell-tab{color:var(--orange);}
+.detail-tab-btn.schnell-tab.active{border-bottom-color:var(--orange);color:var(--orange);}
+/* ── Schnell-Tab: 2-spaltiges Foto-Grid ── */
+.bau-foto-grid-fokus{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;}
+.bau-foto-grid-fokus-thumb{aspect-ratio:1;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;position:relative;}
+.bau-foto-grid-fokus-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.bau-foto-grid-fokus-add{aspect-ratio:1;border-radius:10px;border:2px dashed var(--accent);background:rgba(106,138,255,.08);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:28px;color:var(--accent2);cursor:pointer;}
+.bau-foto-grid-fokus-add span{font-size:12px;color:var(--accent2);font-weight:600;}
+/* ── Schnell-Tab: Letzter-Eintrag-Strip ── */
+.schnell-verlauf-strip{border-top:1px solid var(--border);margin-top:10px;padding-top:10px;}
+.schnell-verlauf-entry{display:flex;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--border);}
+.schnell-verlauf-ts{font-size:10px;color:var(--text2);white-space:nowrap;padding-top:2px;min-width:42px;}
+.schnell-verlauf-text{font-size:13px;color:var(--text);line-height:1.4;}
 /* ── TIMER ── */
 .timer-bar{display:flex;flex-direction:column;gap:7px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--accent);border-radius:12px;margin-bottom:10px;width:100%;box-sizing:border-box}
 .timer-bar.running{background:var(--bg2);border-color:var(--orange)}
@@ -367,6 +387,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   <div class="hdr">
     <button class="hdr-btn icon" onclick="closeDetail()">←</button>
     <div class="hdr-title" id="detailTitle">Task</div>
+    <span class="hdr-kst-chip" id="hdrKstChip" title="Kostenstelle"></span>
+    <span class="hdr-sync-chip" id="hdrSyncChip" title="Sync-Status"></span>
     <span class="save-indicator" id="saveInd"></span>
   </div>
   <div class="size-bar" id="mSizeBar">
@@ -378,9 +400,11 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   <div class="detail-tab-bar" id="detailTabBar">
     <button class="detail-tab-btn active" id="tabInfoBtn" onclick="switchDetailTab('info')">📋 Task-Info</button>
     <button class="detail-tab-btn" id="tabBauBtn" onclick="switchDetailTab('bau')">🏗 Baudoku</button>
+    <button class="detail-tab-btn schnell-tab" id="tabSchnellBtn" onclick="switchDetailTab('schnell')">⚡ Schnell</button>
   </div>
   <div class="detail-body" id="detailBody"></div>
   <div class="detail-body" id="detailBodyBau" style="display:none"></div>
+  <div class="detail-body" id="detailBodySchnell" style="display:none"></div>
 </div>
 
 <!-- ══ EINSTELLUNGEN ══ -->
@@ -2920,16 +2944,134 @@ function formatDate(iso){try{const d=new Date(iso);if(isNaN(d))return iso;return
 // ══════════════════════════════════════════════
 //  BAUDOKU-TAB  –  Tab-Switch + Render-Funktionen
 // ══════════════════════════════════════════════
-let _currentDetailTab='info'; // 'info' | 'bau'
+let _currentDetailTab='info'; // 'info' | 'bau' | 'schnell'
 
 function switchDetailTab(tab){
   _currentDetailTab=tab;
   const isBau=tab==='bau';
-  document.getElementById('tabInfoBtn').classList.toggle('active',!isBau);
+  const isSchnell=tab==='schnell';
+  document.getElementById('tabInfoBtn').classList.toggle('active',tab==='info');
   document.getElementById('tabBauBtn').classList.toggle('active',isBau);
-  document.getElementById('detailBody').style.display=isBau?'none':'';
+  document.getElementById('tabSchnellBtn').classList.toggle('active',isSchnell);
+  document.getElementById('detailBody').style.display=(tab==='info')?'':'none';
   document.getElementById('detailBodyBau').style.display=isBau?'':'none';
+  document.getElementById('detailBodySchnell').style.display=isSchnell?'':'none';
+  if(isSchnell){const t=currentTask();if(t)renderSchnellTab(t);}
 }
+
+// ══════════════════════════════════════════════
+//  SCHNELL-TAB  –  Fokus-Modus (Fotos + Notiz)
+// ══════════════════════════════════════════════
+function _fmtTs(iso){try{const d=new Date(iso);return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}catch(e){return'';}}
+function renderSchnellTab(t){
+  const body=document.getElementById('detailBodySchnell');
+  if(!body)return;
+  const fotos=t.fotos||[];
+  const datumStr=new Date().toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
+  const notizVerlauf=t.notizVerlauf||[];
+
+  body.innerHTML=
+    // ── Mini-Statuszeile ──
+    '<div class="bau-tages-header">'
+    +'<span class="bau-tages-date">📅 '+datumStr+'</span>'
+    +(fotos.length?'<span class="bau-tages-stat">📷 '+fotos.length+'</span>':'')
+    +(notizVerlauf.length?'<span class="bau-tages-stat">📝 '+notizVerlauf.length+'</span>':'')
+    +'</div>'
+
+    // ── Fotos: 2-spaltig, große Kacheln ──
+    +'<div class="sect open" data-sect="schnell_Fotos">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</div>'
+    +'<div class="sect-body" style="padding-bottom:12px;">'
+    +'<div id="schnellFotoGrid" class="bau-foto-grid-fokus"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:4px;">'
+    +'<button class="inline-btn" style="flex:1;min-height:50px;font-size:15px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
+    +'<button class="inline-btn" style="flex:1;min-height:50px;font-size:15px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
+    +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-height:50px;font-size:15px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
+    +'</div>'
+    +'</div></div>'
+
+    // ── Notiz & Befund ──
+    +'<div class="sect open" data-sect="schnell_Notizen">'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notiz &amp; Befund'
+    +(notizVerlauf.length?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
+    +'</div>'
+    +'<div class="sect-body">'
+    +'<textarea id="schnellNotizQuick" class="bau-notiz-quick" placeholder="Notiz, Befund oder Beobachtung eintragen…" maxlength="500" rows="2" autocomplete="off" style="width:100%;margin-bottom:8px;" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\';" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();_addSchnellNotiz();}"></textarea>'
+    +'<div style="display:flex;gap:8px;margin-bottom:12px;">'
+    +'<button class="inline-btn bau-diktat-btn" id="schnellDiktatBtn" style="flex:1;min-height:50px;font-size:15px;" onclick="_startSchnellDiktat()">🎤 Diktieren</button>'
+    +'<button class="inline-btn primary" style="flex:1;min-height:50px;font-size:15px;font-weight:700;" onclick="_addSchnellNotiz()">✓ Speichern</button>'
+    +'</div>'
+    // Letzte Einträge
+    +(notizVerlauf.length
+      ?'<div class="schnell-verlauf-strip">'
+        +'<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px;">Letzte Einträge</div>'
+        +notizVerlauf.slice().reverse().slice(0,3).map(n=>{const ts=n.ts?_fmtTs(n.ts):'';return'<div class="schnell-verlauf-entry"><span class="schnell-verlauf-ts">'+ts+'</span><span class="schnell-verlauf-text">'+esc(n.text||'')+'</span></div>';}).join('')
+        +'</div>'
+      :'')
+    +'</div></div>'
+
+    // ── Hinweis ──
+    +'<div style="text-align:center;font-size:11px;color:var(--text2);padding:8px 0 4px;">⏱ Zeiterfassung, 👷 Personal, 📦 Material → <span style="color:var(--accent2);">🏗 Baudoku</span></div>';
+
+  // Foto-Grid befüllen (2-spaltig)
+  _renderSchnellFotoGrid(t);
+}
+
+function _renderSchnellFotoGrid(t){
+  const grid=document.getElementById('schnellFotoGrid');
+  if(!grid)return;
+  const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId));
+  grid.innerHTML='';
+  fotos.forEach((f,fi)=>{
+    const div=document.createElement('div');
+    div.className='bau-foto-grid-fokus-thumb';
+    const img=document.createElement('img');
+    img.src=f.localUrl||f.url||'';
+    img.alt='Foto '+(fi+1);
+    img.onerror=function(){this.style.display='none';};
+    if(!img.src&&f.driveId){
+      img.src='';
+      _mobFetchThumb(f.driveId).then(u=>{if(u&&grid.children[fi])grid.children[fi].querySelector('img').src=u;});
+    }
+    div.appendChild(img);
+    div.onclick=()=>openFotoViewer&&openFotoViewer(t,fi);
+    grid.appendChild(div);
+  });
+  // Plus-Kachel
+  const add=document.createElement('div');
+  add.className='bau-foto-grid-fokus-add';
+  add.innerHTML='<span style="font-size:30px;color:var(--accent2);">＋</span><span>Neues Foto</span>';
+  add.onclick=()=>document.getElementById('fotoInputCamera').click();
+  grid.appendChild(add);
+}
+
+function _addSchnellNotiz(){
+  const inp=document.getElementById('schnellNotizQuick');
+  if(!inp)return;
+  const text=(inp.value||'').trim();
+  if(!text){toast('Bitte zuerst Text eingeben','info');return;}
+  const t=currentTask();
+  if(!t)return;
+  if(!t.notizVerlauf)t.notizVerlauf=[];
+  t.notizVerlauf.push({ts:new Date().toISOString(),text});
+  inp.value='';inp.style.height='auto';
+  scheduleSave();
+  renderSchnellTab(t);
+  toast('✓ Notiz gespeichert','success',1500);
+}
+
+function _startSchnellDiktat(){
+  // Diktat-Ergebnis in schnellNotizQuick eintragen
+  const inp=document.getElementById('schnellNotizQuick');
+  if(!inp)return;
+  if(typeof startBaudokuDiktat==='function'){
+    // Baudoku-Diktat umleiten: schnellNotizQuick als Ziel setzen
+    _schnellDiktatActive=true;
+    startBaudokuDiktat();
+  }
+}
+let _schnellDiktatActive=false;
+
 
 function renderBaudokuTab(t){
   const body=document.getElementById('detailBodyBau');
@@ -3755,6 +3897,14 @@ async function closeDetail(){
 var _qaPanelOpen=false;
 function renderDetail(t){
   document.getElementById('detailTitle').textContent=t.title||'(ohne Titel)';
+  // KST-Chip im Header aktualisieren
+  (function(){
+    const kst=(t.tags||[]).join(', ');
+    const chip=document.getElementById('hdrKstChip');
+    if(!chip)return;
+    if(kst){chip.textContent='KST '+kst;chip.classList.add('visible');}
+    else{chip.textContent='';chip.classList.remove('visible');}
+  })();
   _resetOpenSectionsForTask(t.id);
   const body=document.getElementById('detailBody');
   // Board-Typ ermitteln (baustelle | notiz)
@@ -3822,33 +3972,21 @@ function renderDetail(t){
     })()
     // ── STAMMDATEN ──
     +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'✅ Aufgaben':'🏗 Objektadresse')+'</div><div class="sect-body">'
-      +'<div class="field"><label>Titel</label><input type="text" value="'+escAttr(t.title||'')+'" oninput="updateField(\'title\',this.value);document.getElementById(\'detailTitle\').textContent=this.value||\'(ohne Titel)\'" autocomplete="off"></div>'
+      // Notiz-Board: Kostenstelle + Status + Fälligkeitsdatum
       +(isNotiz?'<div class="field-row"><div class="field"><label>Kostenstelle</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)" autocomplete="off"></div></div>':'')
       +(isNotiz?'<div class="field"><label>Status</label><select onchange="updateField(\'status\',this.value)">'+statusOpts+'</select></div>':'')
-      // Notiz-Board: Fälligkeitsdatum
       +(isNotiz?'<div class="field"><label>📅 Fälligkeitsdatum</label><input type="date" value="'+escAttr(t.due||'')+'" onchange="updateField(\'due\',this.value)" autocomplete="off"></div>':'')
+      +(isNotiz?'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">Beschreibung</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>':'')
+      // Baustellen-Board: nur Adresse + Task-Typ + Kostenstelle
       +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="updateField(\'adresse\',this.value);updateNavBtn()" onblur="_autoFillSbOrdner()" autocomplete="off"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
-      +(!isNotiz?'<div class="field"><label>Auftraggeber / Hausverwaltung</label><input type="text" value="'+escAttr(t.hausverwaltung||'')+'" oninput="updateField(\'hausverwaltung\',this.value)" autocomplete="off"></div>':'')
-      // ── Bearbeitung (nur Baustelle) ──
-      +(!isNotiz?'<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:6px;">'
-        +'<div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:.04em;margin-bottom:8px;">BEARBEITUNG</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px;">'
-          +'<div class="field" style="margin:0"><label>Bearbeiter</label><input type="text" value="'+escAttr(t.owner||'')+'" placeholder="Name" oninput="updateField(\'owner\',this.value)" autocomplete="off"></div>'
-          +'<div class="field" style="margin:0"><label>Task-Typ</label><select onchange="updateField(\'taskTyp\',this.value)">'
-          +'<option value="">– wählen –</option>'
-          +['Eingang','Auftrag','Besichtigung'].map(v=>'<option value="'+v+'"'+(t.taskTyp===v?' selected':'')+'>'+v+'</option>').join('')
-          +'</select></div>'
-        +'</div>'
-        +'<div class="field" style="margin:0 0 7px"><label>Anfrage vom</label><input type="date" value="'+escAttr(t.anfrageEingangDatum||'')+'" onchange="updateField(\'anfrageEingangDatum\',this.value)" autocomplete="off"></div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:7px;align-items:flex-end;">'
-          +'<div class="field" style="margin:0"><label>Kostenstelle</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value)" autocomplete="off"></div>'
-          +'<div class="field" style="margin:0"><label>Rep.-Nr.</label><input type="text" value="'+escAttr(t.repNr||'')+'" placeholder="z.B. 3483" oninput="updateField(\'repNr\',this.value)" autocomplete="off"></div>'
-          +'<div class="field" style="margin:0"><label>Kunden-Nr.</label><input type="text" value="'+escAttr(t.kundenNr||'')+'" placeholder="z.B. 777" oninput="updateField(\'kundenNr\',this.value)" autocomplete="off"></div>'
-          +'<button type="button" onclick="document.getElementById(\'akteNachtragenMobInput\').click()" title="Auftragsakte.txt laden" style="flex-shrink:0;padding:6px 10px;border-radius:8px;font-size:12px;font-weight:600;background:var(--bg2);border:1px solid var(--border);color:var(--text);cursor:pointer;white-space:nowrap;align-self:flex-end;">📂 Akte</button>'
-          +'<input type="file" id="akteNachtragenMobInput" accept=".txt" style="display:none" onchange="loadAkteNachtragen(event)">'
-        +'</div>'
+      +(!isNotiz?'<div class="field-row" style="gap:8px;">'
+        +'<div class="field" style="margin:0"><label>Task-Typ</label><select onchange="updateField(\'taskTyp\',this.value)">'
+        +'<option value="">– wählen –</option>'
+        +['Eingang','Auftrag','Besichtigung'].map(v=>'<option value="'+v+'"'+(t.taskTyp===v?' selected':'')+'>'+v+'</option>').join('')
+        +'</select></div>'
+        +'<div class="field" style="margin:0"><label>Kostenstelle</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value);(function(){const c=document.getElementById(\'hdrKstChip\');if(!c)return;const v=this.value.trim();if(v){c.textContent=\'KST \'+v;c.classList.add(\'visible\');}else{c.textContent=\'\';c.classList.remove(\'visible\');}}).call(this)" autocomplete="off"></div>'
+        +'<input type="file" id="akteNachtragenMobInput" accept=".txt" style="display:none" onchange="loadAkteNachtragen(event)">'
       +'</div>':'')
-      +'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">'+(isNotiz?'Beschreibung':'Schaden / Beschreibung')+'</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>'
     +'</div></div>'
     // ── AUFGABEN MIT TERMIN (beide Board-Typen, read-only auf Mobile) ──
     +((t.aufgaben&&t.aufgaben.length)?(()=>{
@@ -3918,38 +4056,7 @@ function renderDetail(t){
       +'<button class="add-btn" onclick="addZeit()">+ Zeit manuell hinzufügen</button>'
       +'<div id="zeitGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderZeitGesamtText(zeiten)+'</div>'
     +'</div></div>'
-    // ── VERKNÜPFUNGEN ──
-    +'<div class="sect'+oc('Verknuepfungen')+'" data-sect="Verknuepfungen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">🔗 Verknüpfungen</div><div class="sect-body">'
-      // Hauptordner – wird am Desktop unter "Projektordner" gesetzt, auf Mobil nur anzeigen/öffnen
-      +'<div class="field"><label>📁 Google Drive – Projektordner</label>'
-        +(t.gdriveOrdner
-          ? '<a href="'+escAttr(t.gdriveOrdner)+'" target="_blank" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;text-decoration:none;color:var(--accent);font-size:13px;font-weight:500">📁 Projektordner öffnen</a>'
-          : '<div style="padding:8px 10px;background:var(--bg3);border:1px dashed var(--border);border-radius:8px;color:var(--text2);font-size:12px">Noch nicht verknüpft – bitte am Desktop unter Verknüpfungen eintragen.</div>')
-      +'</div>'
-      +'<div class="field"><label>📄 Stammblatt PDF <span style="font-weight:400;color:var(--text2);font-size:10px">Drive-Ordner des Objekts — einmal eintragen, dauerhaft gespeichert</span></label>'
-        +'<div style="display:flex;gap:6px;align-items:center">'
-          +'<input type="url" value="'+escAttr(t.sbPdfOrdner||'')+'" placeholder="https://drive.google.com/drive/folders/…" style="flex:1;font-size:12px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text)" oninput="updateField(\'sbPdfOrdner\',this.value);_saveSbOrdnerForAdr()" autocomplete="off">'
-          +(t.sbPdfOrdner?'<button onclick="_openSbPdfOrdner()" style="padding:8px 12px;border-radius:8px;background:#15803d;color:#fff;font-size:15px;font-weight:600;border:none;cursor:pointer;flex-shrink:0;">📂</button>':'')
-        +'</div>'
-      +'</div>'
-    +'</div></div>'
-    // ── E-MAIL ORIGINALE (Karten-Layout, Inhalt ladbar) ──
-    +(()=>{
-      const origs=(t&&t.emailOriginals)||[];
-      const count=origs.length;
-      const items=count
-        ? origs.map((e,ei)=>`
-          <div style="border:1px solid var(--border);border-radius:10px;background:var(--bg3);margin-bottom:8px;display:flex;align-items:center;gap:10px;padding:10px 12px;">
-            <span style="font-size:20px;flex-shrink:0;">📨</span>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.name||'E-Mail')}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:1px;">${esc(e.uploadedAt||'')}</div>
-            </div>
-            <button onclick="_mobOpenEmailPreview(${ei})" style="flex-shrink:0;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:rgba(106,138,255,.12);color:var(--accent2);font-size:13px;font-weight:600;cursor:pointer;">📄 Ansehen</button>
-          </div>`).join('')
-        : '<div style="color:var(--text2);font-size:12px;padding:8px 4px;">Noch keine E-Mails – auf dem PC eine .eml in den Task hineinziehen.</div>';
-      return '<div class="sect'+oc('EmailOriginals')+'" data-sect="EmailOriginals"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📧 E-Mail Originale'+(count?' ('+count+')':'')+'</span></div><div class="sect-body">'+items+'</div></div>';
-    })()
+    // ── VERKNÜPFUNGEN + E-MAIL ORIGINALE: auf Mobil ausgeblendet ──
     
         // ── FOTOS (nur Baustelle) ──
     +(!isNotiz?'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span></div><div class="sect-body">'
@@ -5087,6 +5194,7 @@ async function uploadFoto(files){
   });
   _mOpenSections['Fotos']=true;
   renderDetail(t); // Foto erscheint sofort mit Spinner
+  if(_currentDetailTab==='schnell'){renderSchnellTab(t);}
 
   // ── Schritt 2: Upload im Hintergrund ──────────────────────────────────────
   let success=0,failed=0,lastErr='';
@@ -5114,6 +5222,7 @@ async function uploadFoto(files){
   // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   forceSave();
   renderDetail(t); // Spinner entfernen, Drive-IDs jetzt bekannt
+  if(_currentDetailTab==='schnell'){renderSchnellTab(t);}
   if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' fehlgeschlagen','error');
   else if(!success)toast('✗ Upload fehlgeschlagen: '+lastErr,'error');
   // Erfolg: kein Toast – Foto ist bereits sichtbar im Grid, kein Extra-Hinweis nötig
@@ -5397,6 +5506,38 @@ window.addEventListener('load',async()=>{
 // Auto-Speichern beim Schließen
 window.addEventListener('beforeunload',(e)=>{if(dirty){saveFile();}});
 window.addEventListener('pagehide',()=>{if(dirty){saveFile();}});
+
+// ══════════════════════════════════════════════
+//  OFFLINE-INDIKATOR
+// ══════════════════════════════════════════════
+function _updateSyncChip(){
+  const chip=document.getElementById('hdrSyncChip');
+  if(!chip)return;
+  if(!navigator.onLine){
+    chip.className='hdr-sync-chip offline';
+    chip.textContent='📴 Offline';
+  } else if(dirty){
+    chip.className='hdr-sync-chip offline';
+    chip.textContent='⏳ Nicht sync\'d';
+  } else {
+    chip.className='hdr-sync-chip online';
+    chip.textContent='✓ Sync';
+    // Nach 3s ausblenden wenn alles gespeichert
+    setTimeout(()=>{
+      if(!dirty&&navigator.onLine){chip.className='hdr-sync-chip';chip.textContent='';}
+    },3000);
+  }
+}
+window.addEventListener('online', _updateSyncChip);
+window.addEventListener('offline', _updateSyncChip);
+// setSaveInd patchen damit Chip mitaktualisiert wird
+(function(){
+  const _origSetSaveInd=setSaveInd;
+  setSaveInd=function(cls,msg){
+    _origSetSaveInd(cls,msg);
+    _updateSyncChip();
+  };
+})();
 </script>
 
 <!-- ══ EXIF HELPER ══ -->
@@ -5652,3 +5793,5 @@ canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDraw
   _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
 }
 </script>
+</body>
+</html>
