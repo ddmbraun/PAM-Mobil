@@ -396,10 +396,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   <div class="detail-tab-bar" id="detailTabBar">
     <button class="detail-tab-btn active" id="tabInfoBtn" onclick="switchDetailTab('info')">📋 Task-Info</button>
     <button class="detail-tab-btn" id="tabBauBtn" onclick="switchDetailTab('bau')">🏗 Baudoku</button>
+    <button class="detail-tab-btn" id="tabSkizzeBtn" onclick="switchDetailTab('skizze')" style="color:var(--text2);">✏️ Skizze</button>
     <button class="detail-tab-btn schnell-tab" id="tabSchnellBtn" onclick="switchDetailTab('schnell')">⚡ Schnell</button>
   </div>
   <div class="detail-body" id="detailBody"></div>
   <div class="detail-body" id="detailBodyBau" style="display:none"></div>
+  <div class="detail-body" id="detailBodySkizze" style="display:none"></div>
   <div class="detail-body" id="detailBodySchnell" style="display:none"></div>
 </div>
 
@@ -415,6 +417,35 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
       <button onclick="_submitQuickAdd()" style="flex:2;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;">✓ Speichern</button>
     </div>
   </div>
+</div>
+
+<!-- ══ SKIZZEN-CANVAS VOLLBILD ══ -->
+<div id="skizzeOverlay" style="display:none;position:fixed;inset:0;z-index:9500;background:#fff;flex-direction:column;">
+  <!-- Toolbar -->
+  <div id="skizzeToolbar" style="display:flex;align-items:center;gap:6px;padding:8px 10px;background:#1a1a2e;flex-shrink:0;flex-wrap:wrap;">
+    <!-- Farben -->
+    <button onclick="_skizzeSetColor('#111111')" id="skizzeColorSchwarz" style="width:30px;height:30px;border-radius:50%;background:#111;border:3px solid #fff;cursor:pointer;" title="Schwarz"></button>
+    <button onclick="_skizzeSetColor('#e74c3c')" id="skizzeColorRot" style="width:30px;height:30px;border-radius:50%;background:#e74c3c;border:3px solid transparent;cursor:pointer;" title="Rot"></button>
+    <button onclick="_skizzeSetColor('#2980b9')" id="skizzeColorBlau" style="width:30px;height:30px;border-radius:50%;background:#2980b9;border:3px solid transparent;cursor:pointer;" title="Blau"></button>
+    <button onclick="_skizzeSetColor('#27ae60')" id="skizzeColorGruen" style="width:30px;height:30px;border-radius:50%;background:#27ae60;border:3px solid transparent;cursor:pointer;" title="Grün"></button>
+    <div style="width:1px;height:28px;background:rgba(255,255,255,0.2);margin:0 2px;"></div>
+    <!-- Strichdicke -->
+    <button onclick="_skizzeSetSize(2)" id="skizzeSizeThin" style="background:rgba(255,255,255,0.15);border:2px solid #fff;border-radius:6px;color:#fff;font-size:11px;padding:4px 8px;cursor:pointer;">S</button>
+    <button onclick="_skizzeSetSize(5)" id="skizzeSizeMid" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#fff;font-size:13px;padding:4px 8px;cursor:pointer;">M</button>
+    <button onclick="_skizzeSetSize(10)" id="skizzeSizeBig" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#fff;font-size:15px;padding:4px 8px;cursor:pointer;">L</button>
+    <div style="width:1px;height:28px;background:rgba(255,255,255,0.2);margin:0 2px;"></div>
+    <!-- Radierer -->
+    <button onclick="_skizzeSetEraser()" id="skizzeEraserBtn" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#fff;font-size:18px;padding:4px 8px;cursor:pointer;" title="Radierer">🧹</button>
+    <!-- Alles löschen -->
+    <button onclick="_skizzeClear()" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#e74c3c;font-size:18px;padding:4px 8px;cursor:pointer;" title="Alles löschen">🗑</button>
+    <!-- Spacer -->
+    <div style="flex:1;min-width:4px;"></div>
+    <!-- Speichern + Schließen -->
+    <button onclick="_skizzeSave()" style="background:#27ae60;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:700;padding:8px 16px;cursor:pointer;">✓ Speichern</button>
+    <button onclick="_skizzeClose()" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.3);border-radius:8px;color:#fff;font-size:14px;padding:8px 14px;cursor:pointer;">✕</button>
+  </div>
+  <!-- Canvas -->
+  <canvas id="skizzeCanvas" style="flex:1;width:100%;touch-action:none;cursor:crosshair;background:#fff;display:block;"></canvas>
 </div>
 
 <!-- ══ EINSTELLUNGEN ══ -->
@@ -440,6 +471,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
             <option value="">– Board wählen –</option>
           </select>
           <div style="font-size:12px;color:var(--text2);margin-top:4px;">Tasks vom + Button landen in diesem Board.</div>
+        </div>
+        <div class="field"><label>📷 Standard-Fotoordner</label>
+          <input type="url" id="defaultFotoFolderInput" placeholder="https://drive.google.com/drive/folders/…" style="width:100%;box-sizing:border-box;padding:10px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;" autocomplete="off" oninput="_saveDefaultFotoFolder()">
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;">Fallback wenn im Task kein Foto-Ordner hinterlegt ist.</div>
         </div>
       </div>
     </div>
@@ -2998,14 +3033,18 @@ function switchDetailTab(tab){
   _currentDetailTab=tab;
   const isBau=tab==='bau';
   const isSchnell=tab==='schnell';
+  const isSkizze=tab==='skizze';
   document.getElementById('tabInfoBtn').classList.toggle('active',tab==='info');
   document.getElementById('tabBauBtn').classList.toggle('active',isBau);
   document.getElementById('tabSchnellBtn').classList.toggle('active',isSchnell);
+  document.getElementById('tabSkizzeBtn').classList.toggle('active',isSkizze);
   document.getElementById('detailBody').style.display=(tab==='info')?'':'none';
   document.getElementById('detailBodyBau').style.display=isBau?'':'none';
   document.getElementById('detailBodySchnell').style.display=isSchnell?'':'none';
+  document.getElementById('detailBodySkizze').style.display=isSkizze?'':'none';
   if(isSchnell){const t=currentTask();if(t)renderSchnellTab(t);}
   if(isBau){const t=currentTask();if(t)renderBaudokuTab(t);}
+  if(isSkizze){const t=currentTask();if(t)renderSkizzeTab(t);}
 }
 
 // ══════════════════════════════════════════════
@@ -4271,11 +4310,14 @@ function renderDetail(t){
     document.getElementById('tabInfoBtn').classList.toggle('active',tab==='info');
     document.getElementById('tabBauBtn').classList.toggle('active',tab==='bau');
     document.getElementById('tabSchnellBtn').classList.toggle('active',tab==='schnell');
+    document.getElementById('tabSkizzeBtn').classList.toggle('active',tab==='skizze');
     document.getElementById('detailBody').style.display=(tab==='info')?'':'none';
     document.getElementById('detailBodyBau').style.display=(tab==='bau')?'':'none';
     document.getElementById('detailBodySchnell').style.display=(tab==='schnell')?'':'none';
+    document.getElementById('detailBodySkizze').style.display=(tab==='skizze')?'':'none';
     if(tab==='bau')renderBaudokuTab(t);
     else if(tab==='schnell')renderSchnellTab(t);
+    else if(tab==='skizze')renderSkizzeTab(t);
   }catch(e){console.warn('[TabRestore]',e);}
 }
 
@@ -5321,11 +5363,15 @@ async function uploadFoto(files){
   const fileArr=Array.from(files);
   const t=currentTask();
   if(!t){toast('Keine Task geöffnet','error');return;}
-  const folderId=extractDriveFolderId(t.gdrive);
+  // Fallback-Kette: 1) Foto-Ordner, 2) Projektordner, 3) Standard-Fotoordner aus Einstellungen
+  const folderId=extractDriveFolderId(t.gdrive)
+    ||extractDriveFolderId(t.gdriveOrdner)
+    ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
   if(!folderId){
-    toast('❗ Foto-Ordner fehlt – bitte am Desktop unter Verknüpfungen eintragen','error');
+    toast('❗ Kein Foto-Ordner – bitte in Einstellungen einen Standard-Fotoordner hinterlegen','error');
     _mOpenSections['Fotos']=true;
     renderDetail(t);
+    openSettings();
     return;
   }
   if(!(await ensureToken())){toast('Nicht angemeldet','error');return;}
@@ -5496,11 +5542,166 @@ async function createAbschlussakteMobile(){
   }
 }
 
+// ══ SKIZZEN ══
+let _skizzeDrawing=false;
+let _skizzeColor='#111111';
+let _skizzeSize=5;
+let _skizzeEraser=false;
+let _skizzeLastX=0,_skizzeLastY=0;
+let _skizzeEditingTaskId=null;
+
+function renderSkizzeTab(t){
+  const body=document.getElementById('detailBodySkizze');
+  if(!body)return;
+  const skizzen=t.skizzen||[];
+  if(skizzen.length===0){
+    body.innerHTML='<div style="padding:24px;text-align:center;color:var(--text2);">'
+      +'<div style="font-size:48px;margin-bottom:12px;">✏️</div>'
+      +'<div style="font-size:15px;margin-bottom:20px;">Noch keine Skizzen vorhanden.</div>'
+      +'<button class="inline-btn primary" style="padding:14px 28px;font-size:15px;" onclick="_skizzeOpen()">+ Neue Skizze</button>'
+      +'</div>';
+  }else{
+    let html='<div style="padding:12px;">'
+      +'<button class="inline-btn primary" style="width:100%;margin-bottom:14px;padding:12px;font-size:15px;" onclick="_skizzeOpen()">+ Neue Skizze</button>';
+    skizzen.forEach((s,i)=>{
+      const ts=s.ts?'<div style="font-size:11px;color:var(--text2);margin-top:4px;">'+s.ts+'</div>':'';
+      html+='<div style="margin-bottom:14px;background:var(--bg3);border-radius:10px;overflow:hidden;">'
+        +'<img src="'+s.dataUrl+'" style="width:100%;display:block;border-radius:10px 10px 0 0;" onclick="_skizzeZoom(\''+i+'\')">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;">'
+        +ts
+        +'<button onclick="_skizzeDelete('+i+')" style="background:transparent;border:none;color:#e74c3c;font-size:20px;cursor:pointer;padding:4px;">🗑</button>'
+        +'</div></div>';
+    });
+    html+='</div>';
+    body.innerHTML=html;
+  }
+}
+
+function _skizzeOpen(){
+  const t=currentTask();if(!t)return;
+  _skizzeEditingTaskId=t.id;
+  const overlay=document.getElementById('skizzeOverlay');
+  overlay.style.display='flex';
+  // Canvas auf Bildschirmgröße setzen
+  requestAnimationFrame(()=>{
+    const canvas=document.getElementById('skizzeCanvas');
+    const toolbar=document.getElementById('skizzeToolbar');
+    canvas.width=window.innerWidth;
+    canvas.height=window.innerHeight-(toolbar.offsetHeight||60);
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    _skizzeBindEvents(canvas);
+  });
+  // Werkzeug-Reset
+  _skizzeEraser=false;
+  _skizzeColor='#111111';
+  _skizzeSize=5;
+  _skizzeUpdateUI();
+}
+
+function _skizzeBindEvents(canvas){
+  // Touch
+  canvas.ontouchstart=e=>{e.preventDefault();const p=e.touches[0];const r=canvas.getBoundingClientRect();_skizzeDrawing=true;_skizzeLastX=p.clientX-r.left;_skizzeLastY=p.clientY-r.top;};
+  canvas.ontouchmove=e=>{e.preventDefault();if(!_skizzeDrawing)return;const p=e.touches[0];const r=canvas.getBoundingClientRect();_skizzeDraw(canvas,p.clientX-r.left,p.clientY-r.top);};
+  canvas.ontouchend=e=>{e.preventDefault();_skizzeDrawing=false;};
+  // Mouse (Desktop-Test)
+  canvas.onmousedown=e=>{_skizzeDrawing=true;const r=canvas.getBoundingClientRect();_skizzeLastX=e.clientX-r.left;_skizzeLastY=e.clientY-r.top;};
+  canvas.onmousemove=e=>{if(!_skizzeDrawing)return;const r=canvas.getBoundingClientRect();_skizzeDraw(canvas,e.clientX-r.left,e.clientY-r.top);};
+  canvas.onmouseup=()=>{_skizzeDrawing=false;};
+}
+
+function _skizzeDraw(canvas,x,y){
+  const ctx=canvas.getContext('2d');
+  ctx.beginPath();
+  ctx.moveTo(_skizzeLastX,_skizzeLastY);
+  ctx.lineTo(x,y);
+  ctx.strokeStyle=_skizzeEraser?'#ffffff':_skizzeColor;
+  ctx.lineWidth=_skizzeEraser?_skizzeSize*3:_skizzeSize;
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  ctx.stroke();
+  _skizzeLastX=x;_skizzeLastY=y;
+}
+
+function _skizzeSetColor(c){_skizzeEraser=false;_skizzeColor=c;_skizzeUpdateUI();}
+function _skizzeSetSize(s){_skizzeSize=s;_skizzeUpdateUI();}
+function _skizzeSetEraser(){_skizzeEraser=!_skizzeEraser;_skizzeUpdateUI();}
+function _skizzeClear(){
+  const canvas=document.getElementById('skizzeCanvas');
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#ffffff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+function _skizzeUpdateUI(){
+  const colors=['Schwarz','Rot','Blau','Gruen'];
+  const vals=['#111111','#e74c3c','#2980b9','#27ae60'];
+  colors.forEach((name,i)=>{
+    const btn=document.getElementById('skizzeColor'+name);
+    if(btn)btn.style.border=(!_skizzeEraser&&_skizzeColor===vals[i])?'3px solid #fff':'3px solid transparent';
+  });
+  const sizes=[2,5,10];
+  const ids=['skizzeSizeThin','skizzeSizeMid','skizzeSizeBig'];
+  ids.forEach((id,i)=>{
+    const btn=document.getElementById(id);
+    if(btn){btn.style.background=(_skizzeSize===sizes[i])&&!_skizzeEraser?'rgba(255,255,255,0.3)':'rgba(255,255,255,0.05)';btn.style.borderColor=(_skizzeSize===sizes[i])&&!_skizzeEraser?'#fff':'transparent';}
+  });
+  const eb=document.getElementById('skizzeEraserBtn');
+  if(eb){eb.style.background=_skizzeEraser?'rgba(255,255,255,0.3)':'rgba(255,255,255,0.05)';eb.style.borderColor=_skizzeEraser?'#fff':'transparent';}
+}
+
+function _skizzeSave(){
+  const canvas=document.getElementById('skizzeCanvas');
+  const dataUrl=canvas.toDataURL('image/png');
+  const bn=findBoardByTaskId(_skizzeEditingTaskId);
+  if(!bn){toast('Task nicht gefunden','error');return;}
+  const t=(boards[bn]||[]).find(x=>x.id===_skizzeEditingTaskId);
+  if(!t){toast('Task nicht gefunden','error');return;}
+  if(!t.skizzen)t.skizzen=[];
+  const now=new Date();
+  const pad=n=>String(n).padStart(2,'0');
+  const ts=pad(now.getDate())+'.'+pad(now.getMonth()+1)+'.'+now.getFullYear()+' '+pad(now.getHours())+':'+pad(now.getMinutes())+' Uhr';
+  t.skizzen.push({id:generateId(),dataUrl,ts});
+  scheduleSave();
+  _skizzeClose();
+  toast('✓ Skizze gespeichert','success');
+  renderSkizzeTab(t);
+}
+
+function _skizzeClose(){
+  document.getElementById('skizzeOverlay').style.display='none';
+  _skizzeDrawing=false;
+}
+
+function _skizzeDelete(idx){
+  if(!confirm('Skizze löschen?'))return;
+  const t=currentTask();if(!t)return;
+  if(!t.skizzen)return;
+  t.skizzen.splice(idx,1);
+  scheduleSave();
+  renderSkizzeTab(t);
+}
+
+function _skizzeZoom(idx){
+  const t=currentTask();if(!t||!t.skizzen)return;
+  const s=t.skizzen[Number(idx)];if(!s)return;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:9800;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;';
+  ov.innerHTML='<img src="'+s.dataUrl+'" style="max-width:100%;max-height:100%;object-fit:contain;">'
+    +'<button onclick="this.parentElement.remove()" style="position:absolute;top:14px;right:14px;background:rgba(255,255,255,0.15);border:none;border-radius:50%;color:#fff;font-size:22px;width:42px;height:42px;cursor:pointer;">✕</button>';
+  document.body.appendChild(ov);
+}
+
 // ══ TASK ANLEGEN / LÖSCHEN ══
 const QUICK_BOARD_KEY='ptpm_quick_board';
+const DEFAULT_FOTO_FOLDER_KEY='ptpm_default_foto_folder';
 function _saveQuickBoard(){
   const v=document.getElementById('quickBoardSelect').value;
   try{localStorage.setItem(QUICK_BOARD_KEY,v);}catch(e){}
+}
+function _saveDefaultFotoFolder(){
+  const v=(document.getElementById('defaultFotoFolderInput').value||'').trim();
+  try{localStorage.setItem(DEFAULT_FOTO_FOLDER_KEY,v);}catch(e){}
 }
 function _loadQuickBoardSelect(){
   const sel=document.getElementById('quickBoardSelect');
@@ -5605,6 +5806,7 @@ function openSettings(){
   document.getElementById('settFileName').textContent=fileName||'(noch nicht verbunden)';
   document.getElementById('settUserEmail').textContent=userEmail||'(unbekannt)';
   _loadQuickBoardSelect();
+  try{const el=document.getElementById('defaultFotoFolderInput');if(el)el.value=localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'';}catch(e){}
   // Versionsnummer aus Service-Worker-Cache-Namen auslesen (z.B. "pam-mobil-v9" → "v9")
   (async()=>{
     try{
@@ -5743,31 +5945,24 @@ async function _embedExifInDrive(driveId,caption){
   if(!driveId||!caption)return;
   if(!window.piexif)await new Promise(r=>_loadPiexif(r));
   if(!window.piexif)return;
-  // Foto aus Drive laden
   const blobUrl=await _fetchFotoBlob(driveId);
   if(!blobUrl)return;
-  // Blob → DataURL
   const blob=await fetch(blobUrl).then(r=>r.blob());
   const dataUrl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(blob);});
   if(!dataUrl.startsWith('data:image/jpeg')&&!dataUrl.startsWith('data:image/jpg'))return;
-  // EXIF einbetten
   const newDataUrl=embedExifCaption(dataUrl,caption);
   if(newDataUrl===dataUrl)return;
-  // DataURL → Blob
   const b64=newDataUrl.split(',')[1];
   const bin=atob(b64);const bytes=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
   const newBlob=new Blob([bytes],{type:'image/jpeg'});
-  // In Drive überschreiben
   await fetch('https://www.googleapis.com/upload/drive/v3/files/'+encodeURIComponent(driveId)+'?uploadType=media',
     {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'image/jpeg'},body:newBlob});
-  // Cache leeren → nächster Load zeigt neues Bild
   _fotoBlobCache.delete(driveId);
 }
 </script>
 
 <script>
-// Service Worker registrieren (schnelleres Laden bei GitHub Pages)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js')
@@ -5783,7 +5978,6 @@ if ('serviceWorker' in navigator) {
   <img id="lbImg" alt="">
   <div id="pannellumContainer"></div>
   <canvas id="drawCanvas"></canvas>
-  <!-- Zeichen-Toolbar -->
   <div class="lb-draw-bar" id="lbDrawBar" onclick="event.stopPropagation()">
     <div class="lb-draw-row">
       <input type="color" class="lb-draw-color" id="drawColor" value="#ff0000" autocomplete="off">
@@ -5964,7 +6158,11 @@ function lbSaveDraw(){
   lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
 }
 function lbDiscardDraw(){
-  const
-canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDrawBar');
+  const canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDrawBar');
   if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
-  if(bar)ba
+  if(bar)bar.classList.remove('visible');
+  _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
+}
+</script>
+</body>
+</html>
