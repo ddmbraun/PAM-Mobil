@@ -4019,6 +4019,11 @@ function renderDetail(t){
   // Board-Typ ermitteln (baustelle | notiz)
   const _tBoard=findBoardByTaskId(t.id)||currentBoard;
   const isNotiz=(boardTypes[_tBoard]||'baustelle')==='notiz';
+  const isEmail=(boardTypes[_tBoard]||'baustelle')==='email';
+  // Baudoku-Tab für E-Mail-Boards ausblenden
+  const _bauBtn=document.getElementById('tabBauBtn');
+  if(_bauBtn)_bauBtn.style.display=isEmail?'none':'';
+  if(isEmail&&_currentDetailTab==='bau'){_currentDetailTab='info';}
   // Board-spezifische Spalten nutzen (analog PC)
   const _tBoardSts=(_remoteBoardStatuses[_tBoard]&&_remoteBoardStatuses[_tBoard].length)?_remoteBoardStatuses[_tBoard]:statuses;
   const statusOpts=_tBoardSts.map(s=>'<option value="'+escAttr(s)+'"'+(s===t.status?' selected':'')+'>'+esc(s)+'</option>').join('');
@@ -4168,7 +4173,7 @@ function renderDetail(t){
     // ── VERKNÜPFUNGEN + E-MAIL ORIGINALE: auf Mobil ausgeblendet ──
     
         // ── FOTOS (nur Baustelle) ──
-    +(!isNotiz?'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span></div><div class="sect-body">'
+    +(!isNotiz&&!isEmail?'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span></div><div class="sect-body">'
       +(fotos.length?'<div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos.</div>')
       +(extractDriveFolderId(t.gdrive)
         ? '<div style="font-size:11px;color:var(--green);margin-top:10px">✓ Foto-Ordner verknüpft</div>'
