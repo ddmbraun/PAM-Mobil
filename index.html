@@ -3254,7 +3254,11 @@ function _showSchnellFotoPreview(fo, t){
   btnKeep.textContent='✓ Behalten';
   btnKeep.style.cssText='padding:12px 24px;border-radius:10px;background:#4CAF50;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
   btnKeep.onclick=function(){prev.remove();};
-  row.appendChild(btnDel);row.appendChild(btnKeep);
+  const btnMore=document.createElement('button');
+  btnMore.textContent='📷 Weiteres Foto';
+  btnMore.style.cssText='padding:12px 24px;border-radius:10px;background:rgba(106,138,255,.85);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
+  btnMore.onclick=function(){prev.remove();var inp=document.getElementById('fotoInputCamera');if(inp)inp.click();};
+  row.appendChild(btnDel);row.appendChild(btnMore);row.appendChild(btnKeep);
   prev.appendChild(img);prev.appendChild(lbl);prev.appendChild(row);
   document.body.appendChild(prev);
 }
@@ -5444,7 +5448,8 @@ async function uploadFoto(files){
   // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   forceSave();
   renderDetail(t);
-  if(_currentDetailTab==='schnell'){renderSchnellTab(t);}
+  if(_currentDetailTab==='bau'){renderBaudokuTab(t);}
+  else if(_currentDetailTab==='schnell'){renderSchnellTab(t);}
   if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' lokal gespeichert','info');
   else if(!success&&failed)toast('⚠ Upload fehlgeschlagen – Foto lokal gespeichert','info');
 }
@@ -5843,7 +5848,7 @@ async function _submitQuickAdd(){
     if(!parentFolderId){
       // Foto lokal im Task speichern, kein Drive-Upload möglich
       const localKey='qa_'+newT.id+'_0';
-      _mobPhotoSet(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
+      _mobPhotoSave(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
       newT.fotos.push({name:fotoFile.name,mimeType:fotoFile.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
       scheduleSave();
       toast('ℹ️ Kein Standardordner – Foto nur lokal gespeichert','info',4000);
@@ -5875,7 +5880,7 @@ async function _submitQuickAdd(){
     }catch(e){
       // Fallback: lokal speichern
       const localKey='qa_'+newT.id+'_0';
-      _mobPhotoSet(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
+      _mobPhotoSave(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
       newT.fotos.push({name:fotoFile.name,mimeType:fotoFile.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
       scheduleSave();
       toast('⚠️ Drive-Fehler – Foto lokal gespeichert','info',4000);
@@ -6228,7 +6233,7 @@ function lbEditCaption(){
 function lbSaveCaption(){
   const inp=document.getElementById('lbTextInput'),bar=document.getElementById('lbTextbar');if(!inp)return;
   const text=inp.value.trim();_lbShowCaption(text);bar.classList.remove('editing');
-  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){t.fotos[_lbFotoIdx].caption=text;scheduleSave();}}
+  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){t.fotos[_lbFotoIdx].caption=text;scheduleSave();if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
 }
 function lbCancelCaption(){const bar=document.getElementById('lbTextbar');if(bar)bar.classList.remove('editing');}
 function lbOpenOriginal(){if(_lbCurrentUrl)window.open(_lbCurrentUrl,'_blank');}
@@ -6293,7 +6298,7 @@ function lbSaveDraw(){
   const out=document.createElement('canvas');out.width=img.naturalWidth||canvas.width;out.height=img.naturalHeight||canvas.height;
   const octx=out.getContext('2d');octx.drawImage(img,0,0,out.width,out.height);octx.drawImage(canvas,0,0,out.width,out.height);
   const dataUrl=out.toDataURL('image/jpeg',0.92);
-  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){const f=t.fotos[_lbFotoIdx];f.localUrl=dataUrl;f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');if(f.localKey)_mobPhotoSet(f.localKey,dataUrl).catch(()=>{});scheduleSave();toast('Zeichnung gespeichert','success');}}
+  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){const f=t.fotos[_lbFotoIdx];f.localUrl=dataUrl;f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');if(f.localKey)_mobPhotoSave(f.localKey,dataUrl).catch(()=>{});scheduleSave();toast('Zeichnung gespeichert','success');if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
   lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
 }
 function lbDiscardDraw(){
