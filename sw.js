@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v40'; // v40: Schnellnotiz Foto + Unterordner pro Notiz
+const CACHE_NAME = 'pam-mobil-v41'; // v41: Kamera/Galerie Buttons, Foto-Fallback, Skizze Pinch-Zoom
 
 const PRECACHE = [
   './',
