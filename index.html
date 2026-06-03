@@ -487,6 +487,7 @@ function _buildMobileSaveObj(){
   if(Object.keys(_remoteBoardStatuses||{}).length)obj._boardStatuses={..._remoteBoardStatuses};
   if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes};
   if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
+  if(Object.keys(mobileStatusFilter||{}).length)obj._mobileStatusFilter={...mobileStatusFilter};
   for(const[k,v]of Object.entries(hiddenBoards||{}))obj[k]=v;
   for(const[k,v]of Object.entries(boards||{}))obj[k]=v;
   return obj;
@@ -571,6 +572,8 @@ let hiddenBoards={};      // Desktop-only Boards: wir fassen sie nie an, schreib
 let _remoteSeenIds=new Set();    // Alle Task-IDs die jemals vom Server geladen wurden
 let _remoteSeenBoards=new Set(); // Alle Board-Namen die jemals vom Server geladen wurden
 let mobileWhitelist=[];   // Aus _mobileBoards; leer = keine Einschränkung
+let mobileStatusFilter={}; // Aus _mobileStatusFilter; leer = alle Spalten
+let _mobileFilteredOut={}; // Tasks die durch Spaltenfilter ausgeblendet wurden — beim Speichern wiederherstellen
 let statuses=[];
 let currentBoard='';
 let currentStatus=''; // leer = alle Spalten
@@ -1205,6 +1208,7 @@ let boardTypes={}; // 'baustelle' | 'notiz' pro Board-Name
 function _applyMobileFilter(data){
   statuses=Array.isArray(data._statuses)?data._statuses:[];
   mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
+  mobileStatusFilter=(data._mobileStatusFilter&&typeof data._mobileStatusFilter==='object')?{...data._mobileStatusFilter}:{};
   _remoteBoardStatuses=(data._boardStatuses&&typeof data._boardStatuses==='object')?{...data._boardStatuses}:{};
   boardTypes=(data._boardTypes&&typeof data._boardTypes==='object'&&Object.keys(data._boardTypes).length)?{...data._boardTypes}:{};
   // ── AUTO-MIGRATION: fehlende boardTypes aus Boardname ergänzen ──
@@ -1215,7 +1219,7 @@ function _applyMobileFilter(data){
     if(!boardTypes[k]){const _ep=/posteingang|e-mail|email|eingang/i;boardTypes[k]=_np.test(k)?'notiz':_ep.test(k)?'email':'baustelle';_m++;}
   }
   if(_m)console.info('[PTPm] boardTypes ergänzt ('+_m+' Boards):',boardTypes);}
-  boards={};hiddenBoards={};
+  boards={};hiddenBoards={};_mobileFilteredOut={};
   const hasWhitelist=mobileWhitelist.length>0;
   for(const[k,v]of Object.entries(data)){
     if(k.startsWith('_'))continue;
@@ -1227,7 +1231,18 @@ function _applyMobileFilter(data){
     if(hasWhitelist&&!mobileWhitelist.includes(k)){
       hiddenBoards[k]=v;
     } else {
-      boards[k]=v;
+      const _allTasks=Array.isArray(v)?v:[];
+      const _sf=mobileStatusFilter[k];
+      if(_sf&&_sf.length){
+        // Sichtbar: nicht-archiviert + passende Spalte
+        boards[k]=_allTasks.filter(function(t){return !t.archiviert&&_sf.includes(t.status);});
+        // Weggefilterte aufbewahren (andere Spalten + archivierte) → beim Speichern wiederherstellen
+        _mobileFilteredOut[k]=_allTasks.filter(function(t){return t.archiviert||!_sf.includes(t.status);});
+      } else {
+        // Kein Spaltenfilter: archivierte ausblenden, aber in _filteredOut merken
+        boards[k]=_allTasks.filter(function(t){return !t.archiviert;});
+        _mobileFilteredOut[k]=_allTasks.filter(function(t){return !!t.archiviert;});
+      }
     }
   }
 }
@@ -1450,9 +1465,12 @@ async function saveFile(){
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
-            // Board-Typen (Baustelle/Aufgaben) aus Remote übernehmen, damit nach PC-Konflikt-Merge korrekt
+            // Board-Typen (Baustelle/Aufgaben) aus Remote übernehmen
             if(remote._boardTypes&&typeof remote._boardTypes==='object'&&Object.keys(remote._boardTypes).length)
               boardTypes={...remote._boardTypes};
+            // Spaltenfilter aus Remote übernehmen (Desktop ist Quelle der Wahrheit)
+            if(remote._mobileStatusFilter&&typeof remote._mobileStatusFilter==='object')
+              mobileStatusFilter={...remote._mobileStatusFilter};
           }
         }
       }
@@ -1463,7 +1481,11 @@ async function saveFile(){
     if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes}; // Board-Typen (baustelle/notiz) nicht verlieren
     if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
     for(const[k,v]of Object.entries(hiddenBoards||{}))obj[k]=v;
-    for(const[k,v]of Object.entries(boards||{}))obj[k]=v;
+    for(const[k,v]of Object.entries(boards||{})){
+      // Weggefilterte Tasks (andere Spalten + archivierte) wieder einmischen
+      const _fo=_mobileFilteredOut[k]||[];
+      obj[k]=_fo.length?[...v,..._fo]:v;
+    }
     // _mobSaveReplacer: entfernt localUrl (data:/blob:) und _uploading aus Foto-Objekten
     // → hält die Drive-JSON klein; Fotos bleiben über IndexedDB (localKey) erhalten
     const content=JSON.stringify(obj,_mobSaveReplacer,2);
@@ -5792,9 +5814,4 @@ function lbDiscardDraw(){
   const
 canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDrawBar');
   if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
-  if(bar)bar.classList.remove('visible');
-  _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
-}
-</script>
-</body>
-</html>
+  if(bar)ba
