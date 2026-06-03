@@ -2819,7 +2819,7 @@ function renderStatusBar(){
   const allCount=tasks.length;
   bar.innerHTML='<button class="status-chip'+(currentStatus===''?' active':'')+'" onclick="switchStatus(\'\')">'
     +'Alle <span style="opacity:.7;font-size:11px">('+allCount+')</span></button>'
-    +boardSts.map(s=>{
+    +boardSts.filter(s=>(counts[s]||0)>0).map(s=>{
       const cnt=counts[s]||0;
       return '<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="switchStatus(\''+escAttr(s)+'\')">'
         +esc(s)+' <span style="opacity:.7;font-size:11px">('+cnt+')</span></button>';
@@ -2975,6 +2975,7 @@ function switchDetailTab(tab){
   document.getElementById('detailBodyBau').style.display=isBau?'':'none';
   document.getElementById('detailBodySchnell').style.display=isSchnell?'':'none';
   if(isSchnell){const t=currentTask();if(t)renderSchnellTab(t);}
+  if(isBau){const t=currentTask();if(t)renderBaudokuTab(t);}
 }
 
 // ══════════════════════════════════════════════
@@ -3113,12 +3114,74 @@ function _addSchnellNotiz(){
   toast('✓ Notiz gespeichert','success',1500);
 }
 
+let _schnellDiktatRec=null;
 function _startSchnellDiktat(){
-  if(typeof startBaudokuDiktat==='function')startBaudokuDiktat();
+  if(_schnellDiktatRec){try{_schnellDiktatRec.stop();}catch(_){}return;}
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    toast('Spracherkennung nicht verfügbar','error');return;
+  }
+  const inp=document.getElementById('schnellNotizQuick');
+  const btn=document.getElementById('schnellDiktatBtn');
+  if(!inp)return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const r=new SR();
+  r.lang='de-DE';r.interimResults=true;r.maxAlternatives=1;r.continuous=true;
+  _schnellDiktatRec=r;
+  let finalText='';
+  if(btn){btn.classList.add('recording');btn.innerHTML='<span class="bau-diktat-dot"></span>Stoppen';}
+  r.onresult=function(e){
+    let final='',interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal)final+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
+    }
+    if(final){finalText+=((finalText?' ':'')+final.trim());}
+    inp.value=finalText+(interim?' …'+interim:'');
+    inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,240)+'px';
+  };
+  r.onerror=function(){_schnellDiktatRec=null;if(btn){btn.classList.remove('recording');btn.innerHTML='🎤 Diktieren';}};
+  r.onend=function(){
+    _schnellDiktatRec=null;
+    inp.value=finalText;
+    inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,240)+'px';
+    if(btn){btn.classList.remove('recording');btn.innerHTML='🎤 Diktieren';}
+  };
+  r.start();
 }
 
 
 
+
+function _showSchnellFotoPreview(fo, t){
+  const body=document.getElementById('detailBodySchnell');
+  if(!body)return;
+  // Overlay-Vorschau über den Schnell-Tab legen
+  let prev=document.getElementById('schnellFotoPreview');
+  if(!prev){
+    prev=document.createElement('div');
+    prev.id='schnellFotoPreview';
+    prev.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
+    document.body.appendChild(prev);
+  }
+  const src=fo.localUrl||fo.url||'';
+  prev.innerHTML=
+    '<img src="'+escAttr(src)+'" style="max-width:90vw;max-height:65vh;border-radius:12px;object-fit:contain;" alt="Vorschau">'+
+    '<div style="font-size:14px;color:#fff;opacity:.8;">'+esc(fo.name||'Foto')+'</div>'+
+    '<div style="display:flex;gap:12px;">'+
+      '<button onclick="_schnellFotoVerwerfen(''+escAttr(fo.localKey||fo.driveId||'')+'',''+escAttr(fo.name||'')+'');" style="padding:12px 24px;border-radius:10px;background:#E24B4A;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">✕ Verwerfen</button>'+
+      '<button onclick="document.getElementById('schnellFotoPreview').remove();" style="padding:12px 24px;border-radius:10px;background:#4CAF50;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">✓ Behalten</button>'+
+    '</div>';
+}
+function _schnellFotoVerwerfen(localKey, name){
+  const t=currentTask();
+  if(t&&t.fotos){
+    t.fotos=t.fotos.filter(f=>!(f.localKey===localKey&&f.name===name));
+    scheduleSave();
+    renderSchnellTab(t);
+  }
+  const prev=document.getElementById('schnellFotoPreview');
+  if(prev)prev.remove();
+}
 function renderBaudokuTab(t){
   const body=document.getElementById('detailBodyBau');
   if(!body)return;
@@ -5245,7 +5308,11 @@ async function uploadFoto(files){
   });
   _mOpenSections['Fotos']=true;
   renderDetail(t); // Foto erscheint sofort mit Spinner
-  if(_currentDetailTab==='schnell'){renderSchnellTab(t);}
+  if(_currentDetailTab==='schnell'){
+    renderSchnellTab(t);
+    // Vorschau des zuletzt hinzugefügten Fotos zeigen
+    if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs[fotoObjs.length-1].fo,t);
+  }
 
   // ── Schritt 2: Upload im Hintergrund ──────────────────────────────────────
   let success=0,failed=0,lastErr='';
