@@ -1212,7 +1212,7 @@ function _applyMobileFilter(data){
   let _m=0;
   for(const k of Object.keys(data)){
     if(k.startsWith('_')||!Array.isArray(data[k]))continue;
-    if(!boardTypes[k]){boardTypes[k]=_np.test(k)?'notiz':'baustelle';_m++;}
+    if(!boardTypes[k]){const _ep=/posteingang|e-mail|email|eingang/i;boardTypes[k]=_np.test(k)?'notiz':_ep.test(k)?'email':'baustelle';_m++;}
   }
   if(_m)console.info('[PTPm] boardTypes ergänzt ('+_m+' Boards):',boardTypes);}
   boards={};hiddenBoards={};
@@ -2772,7 +2772,7 @@ function renderBoardBar(){
   const names=Object.keys(boards);
   bar.innerHTML=names.map(n=>{
     const cnt=(boards[n]||[]).length;
-    const bIcon=(boardTypes[n]||'baustelle')==='notiz'?'✅ ':'🏗 ';
+    const bIcon=(boardTypes[n]||'baustelle')==='notiz'?'✅ ':(boardTypes[n]||'baustelle')==='email'?'📧 ':'🏗 ';
     return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="switchBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
   if(lbl){
