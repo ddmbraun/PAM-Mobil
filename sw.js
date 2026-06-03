@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v39'; // v39: Foto-Upload Fallback-Kette + Standard-Fotoordner
+const CACHE_NAME = 'pam-mobil-v40'; // v40: Schnellnotiz Foto + Unterordner pro Notiz
 
 const PRECACHE = [
   './',
