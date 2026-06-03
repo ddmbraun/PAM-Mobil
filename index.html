@@ -211,12 +211,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .save-indicator.saving{color:var(--orange)}
 .save-indicator.saved{color:var(--green)}
 .save-indicator.error{color:var(--red)}
-/* ── KST-Chip + Offline-Indikator im Detail-Header ── */
-.hdr-kst-chip{background:rgba(251,146,60,.13);border:1px solid var(--orange);color:var(--orange);border-radius:7px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;display:none;}
-.hdr-kst-chip.visible{display:inline-flex;}
-.hdr-sync-chip{border-radius:7px;padding:4px 8px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;display:none;}
-.hdr-sync-chip.online{display:inline-flex;background:rgba(74,222,128,.12);border:1px solid var(--green);color:var(--green);}
-.hdr-sync-chip.offline{display:inline-flex;background:rgba(248,113,113,.13);border:1px solid var(--red);color:var(--red);}
+/* ── KST-Untertitel im Header ── */
 /* ── Schnell-Tab Styling ── */
 .detail-tab-btn.schnell-tab{color:var(--orange);}
 .detail-tab-btn.schnell-tab.active{border-bottom-color:var(--orange);color:var(--orange);}
@@ -386,9 +381,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 <div id="detailScreen" class="screen hidden">
   <div class="hdr">
     <button class="hdr-btn icon" onclick="closeDetail()">←</button>
-    <div class="hdr-title" id="detailTitle">Task</div>
-    <span class="hdr-kst-chip" id="hdrKstChip" title="Kostenstelle"></span>
-    <span class="hdr-sync-chip" id="hdrSyncChip" title="Sync-Status"></span>
+    <div class="hdr-title-block" style="flex:1;min-width:0;overflow:hidden;">
+      <div class="hdr-title" id="detailTitle" style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+      <div id="hdrKstChip" style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;"></div>
+    </div>
     <span class="save-indicator" id="saveInd"></span>
   </div>
   <div class="size-bar" id="mSizeBar">
@@ -2963,86 +2959,122 @@ function switchDetailTab(tab){
 //  SCHNELL-TAB  –  Fokus-Modus (Fotos + Notiz)
 // ══════════════════════════════════════════════
 function _fmtTs(iso){try{const d=new Date(iso);return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}catch(e){return'';}}
+
+// ══════════════════════════════════════════════
+//  SCHNELL-TAB  –  Option A (Toggle Foto/Notiz)
+// ══════════════════════════════════════════════
+let _schnellMode='foto'; // 'foto' | 'notiz'
+
 function renderSchnellTab(t){
   const body=document.getElementById('detailBodySchnell');
   if(!body)return;
-  const fotos=t.fotos||[];
-  const datumStr=new Date().toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
+  const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId));
   const notizVerlauf=t.notizVerlauf||[];
+  const datumStr=new Date().toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
+  const isFoto=_schnellMode==='foto';
 
   body.innerHTML=
     // ── Mini-Statuszeile ──
-    '<div class="bau-tages-header">'
+    '<div class="bau-tages-header" style="margin-bottom:10px;">'
     +'<span class="bau-tages-date">📅 '+datumStr+'</span>'
     +(fotos.length?'<span class="bau-tages-stat">📷 '+fotos.length+'</span>':'')
     +(notizVerlauf.length?'<span class="bau-tages-stat">📝 '+notizVerlauf.length+'</span>':'')
     +'</div>'
 
-    // ── Fotos: 2-spaltig, große Kacheln ──
-    +'<div class="sect open" data-sect="schnell_Fotos">'
-    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</div>'
-    +'<div class="sect-body" style="padding-bottom:12px;">'
-    +'<div id="schnellFotoGrid" class="bau-foto-grid-fokus"></div>'
-    +'<div style="display:flex;gap:8px;margin-top:4px;">'
-    +'<button class="inline-btn" style="flex:1;min-height:50px;font-size:15px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
-    +'<button class="inline-btn" style="flex:1;min-height:50px;font-size:15px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
-    +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-height:50px;font-size:15px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
+    // ── Toggle-Bar ──
+    +'<div style="display:flex;background:var(--bg3);border-radius:10px;padding:3px;gap:3px;margin-bottom:12px;">'
+    +'<button onclick="_schnellSetMode(\'foto\')" style="flex:1;padding:10px 6px;border-radius:8px;font-size:14px;font-weight:700;border:none;cursor:pointer;'+(isFoto?'background:var(--accent);color:#fff;':'background:transparent;color:var(--text2);')+'" >📷 Foto aufnehmen</button>'
+    +'<button onclick="_schnellSetMode(\'notiz\')" style="flex:1;padding:10px 6px;border-radius:8px;font-size:14px;font-weight:700;border:none;cursor:pointer;'+(!isFoto?'background:var(--orange);color:#fff;':'background:transparent;color:var(--text2);')+'">📝 Notiz</button>'
     +'</div>'
-    +'</div></div>'
 
-    // ── Notiz & Befund ──
-    +'<div class="sect open" data-sect="schnell_Notizen">'
-    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notiz &amp; Befund'
-    +(notizVerlauf.length?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
-    +'</div>'
-    +'<div class="sect-body">'
-    +'<textarea id="schnellNotizQuick" class="bau-notiz-quick" placeholder="Notiz, Befund oder Beobachtung eintragen…" maxlength="500" rows="2" autocomplete="off" style="width:100%;margin-bottom:8px;" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\';" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();_addSchnellNotiz();}"></textarea>'
-    +'<div style="display:flex;gap:8px;margin-bottom:12px;">'
-    +'<button class="inline-btn bau-diktat-btn" id="schnellDiktatBtn" style="flex:1;min-height:50px;font-size:15px;" onclick="_startSchnellDiktat()">🎤 Diktieren</button>'
-    +'<button class="inline-btn primary" style="flex:1;min-height:50px;font-size:15px;font-weight:700;" onclick="_addSchnellNotiz()">✓ Speichern</button>'
-    +'</div>'
-    // Letzte Einträge
-    +(notizVerlauf.length
-      ?'<div class="schnell-verlauf-strip">'
-        +'<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px;">Letzte Einträge</div>'
-        +notizVerlauf.slice().reverse().slice(0,3).map(n=>{const ts=n.ts?_fmtTs(n.ts):'';return'<div class="schnell-verlauf-entry"><span class="schnell-verlauf-ts">'+ts+'</span><span class="schnell-verlauf-text">'+esc(n.text||'')+'</span></div>';}).join('')
+    // ── FOTO-MODUS ──
+    +(isFoto
+      ? '<div style="background:var(--bg2);border:1px solid var(--accent);border-radius:12px;padding:14px;">'
+        // Großes Aufnahme-Feld
+        +'<div onclick="document.getElementById(\'fotoInputCamera\').click()" style="background:rgba(106,138,255,.06);border:2px dashed var(--accent);border-radius:10px;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;margin-bottom:10px;">'
+        +'<span style="font-size:44px;">📷</span>'
+        +'<span style="font-size:13px;color:var(--accent2);font-weight:600;">Antippen zum Fotografieren</span>'
         +'</div>'
-      :'')
-    +'</div></div>'
+        +'<div style="display:flex;gap:8px;">'
+        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
+        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputGallerySingle\').click()">🖼 Galerie</button>'
+        +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-height:46px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
+        +'</div>'
+        // Archiv eingeklappt
+        +(fotos.length
+          ?'<div id="schnellArchivToggle" onclick="_toggleSchnellArchiv()" style="margin-top:10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--accent2);padding:4px 0;">▸ Archiv ('+fotos.length+' Fotos)</div>'
+          +'<div id="schnellArchivList" style="display:none;"></div>'
+          :'<div style="margin-top:10px;font-size:12px;color:var(--text2);">Noch keine Fotos.</div>')
+        +'</div>'
+      // ── NOTIZ-MODUS ──
+      : '<div style="background:var(--bg2);border:1px solid var(--orange);border-radius:12px;padding:14px;">'
+        +'<textarea id="schnellNotizQuick" class="bau-notiz-quick" placeholder="Notiz, Befund oder Beobachtung eintragen…" maxlength="500" rows="4" autocomplete="off" style="width:100%;margin-bottom:10px;" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,240)+\'px\';" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();_addSchnellNotiz();}"></textarea>'
+        +'<div style="display:flex;gap:8px;margin-bottom:10px;">'
+        +'<button class="inline-btn bau-diktat-btn" id="schnellDiktatBtn" style="flex:1;min-height:52px;font-size:15px;" onclick="_startSchnellDiktat()">🎤 Diktieren</button>'
+        +'<button class="inline-btn primary" style="flex:1;min-height:52px;font-size:15px;font-weight:700;" onclick="_addSchnellNotiz()">✓ Speichern</button>'
+        +'</div>'
+        +(notizVerlauf.length
+          ?'<div id="schnellNotizArchivToggle" onclick="_toggleSchnellNotizArchiv()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--accent2);padding:4px 0;">▸ Letzte Einträge ('+notizVerlauf.length+')</div>'
+          +'<div id="schnellNotizArchivList" style="display:none;margin-top:6px;">'
+          +notizVerlauf.slice().reverse().slice(0,5).map(n=>{const ts=n.ts?_fmtTs(n.ts):'';return'<div class="schnell-verlauf-entry"><span class="schnell-verlauf-ts">'+ts+'</span><span class="schnell-verlauf-text">'+esc(n.text||'')+'</span></div>';}).join('')
+          +'</div>'
+          :'')
+        +'</div>')
 
     // ── Hinweis ──
-    +'<div style="text-align:center;font-size:11px;color:var(--text2);padding:8px 0 4px;">⏱ Zeiterfassung, 👷 Personal, 📦 Material → <span style="color:var(--accent2);">🏗 Baudoku</span></div>';
+    +'<div style="text-align:center;font-size:11px;color:var(--text2);padding:10px 0 4px;">⏱ Zeiterfassung, 👷 Personal, 📦 Material → <span style="color:var(--accent2);">🏗 Baudoku</span></div>';
 
-  // Foto-Grid befüllen (2-spaltig)
-  _renderSchnellFotoGrid(t);
+  // Archiv-Grid nachladen wenn Foto-Modus und Archiv sichtbar
+  if(isFoto&&fotos.length){_renderSchnellArchiv(t);}
 }
 
-function _renderSchnellFotoGrid(t){
-  const grid=document.getElementById('schnellFotoGrid');
-  if(!grid)return;
+function _schnellSetMode(mode){
+  _schnellMode=mode;
+  const t=currentTask();if(t)renderSchnellTab(t);
+}
+
+function _toggleSchnellArchiv(){
+  const list=document.getElementById('schnellArchivList');
+  const toggle=document.getElementById('schnellArchivToggle');
+  if(!list||!toggle)return;
+  const open=list.style.display==='none';
+  list.style.display=open?'grid':'none';
+  if(open){list.style.gridTemplateColumns='repeat(4,1fr)';list.style.gap='6px';list.style.marginTop='8px';}
+  const t=currentTask();
+  const n=(t&&t.fotos?t.fotos.filter(f=>f&&(f.localUrl||f.url||f.driveId)).length:0);
+  toggle.textContent=(open?'▾ ':'▸ ')+'Archiv ('+n+' Fotos)';
+}
+
+function _toggleSchnellNotizArchiv(){
+  const list=document.getElementById('schnellNotizArchivList');
+  const toggle=document.getElementById('schnellNotizArchivToggle');
+  if(!list||!toggle)return;
+  const open=list.style.display==='none';
+  list.style.display=open?'block':'none';
+  const t=currentTask();
+  const n=(t&&t.notizVerlauf?t.notizVerlauf.length:0);
+  toggle.textContent=(open?'▾ ':'▸ ')+'Letzte Einträge ('+n+')';
+}
+
+function _renderSchnellArchiv(t){
+  const list=document.getElementById('schnellArchivList');
+  if(!list)return;
   const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId));
-  grid.innerHTML='';
+  list.innerHTML='';
   fotos.forEach((f,fi)=>{
     const div=document.createElement('div');
-    div.className='bau-foto-grid-fokus-thumb';
+    div.style.cssText='aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;';
     const img=document.createElement('img');
     img.src=f.localUrl||f.url||'';
-    img.alt='Foto '+(fi+1);
+    img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
     img.onerror=function(){this.style.display='none';};
     if(!img.src&&f.driveId){
-      img.src='';
-      _mobFetchThumb(f.driveId).then(u=>{if(u&&grid.children[fi])grid.children[fi].querySelector('img').src=u;});
+      _mobFetchThumb(f.driveId).then(u=>{if(u)img.src=u;});
     }
     div.appendChild(img);
-    div.onclick=()=>openFotoViewer&&openFotoViewer(t,fi);
-    grid.appendChild(div);
+    div.onclick=()=>{if(typeof openFotoViewer==='function')openFotoViewer(t,fi);};
+    list.appendChild(div);
   });
-  // Plus-Kachel
-  const add=document.createElement('div');
-  add.className='bau-foto-grid-fokus-add';
-  add.innerHTML='<span style="font-size:30px;color:var(--accent2);">＋</span><span>Neues Foto</span>';
-  add.onclick=()=>document.getElementById('fotoInputCamera').click();
-  grid.appendChild(add);
 }
 
 function _addSchnellNotiz(){
@@ -3050,8 +3082,7 @@ function _addSchnellNotiz(){
   if(!inp)return;
   const text=(inp.value||'').trim();
   if(!text){toast('Bitte zuerst Text eingeben','info');return;}
-  const t=currentTask();
-  if(!t)return;
+  const t=currentTask();if(!t)return;
   if(!t.notizVerlauf)t.notizVerlauf=[];
   t.notizVerlauf.push({ts:new Date().toISOString(),text});
   inp.value='';inp.style.height='auto';
@@ -3061,16 +3092,9 @@ function _addSchnellNotiz(){
 }
 
 function _startSchnellDiktat(){
-  // Diktat-Ergebnis in schnellNotizQuick eintragen
-  const inp=document.getElementById('schnellNotizQuick');
-  if(!inp)return;
-  if(typeof startBaudokuDiktat==='function'){
-    // Baudoku-Diktat umleiten: schnellNotizQuick als Ziel setzen
-    _schnellDiktatActive=true;
-    startBaudokuDiktat();
-  }
+  if(typeof startBaudokuDiktat==='function')startBaudokuDiktat();
 }
-let _schnellDiktatActive=false;
+
 
 
 function renderBaudokuTab(t){
@@ -3897,13 +3921,13 @@ async function closeDetail(){
 var _qaPanelOpen=false;
 function renderDetail(t){
   document.getElementById('detailTitle').textContent=t.title||'(ohne Titel)';
-  // KST-Chip im Header aktualisieren
+  // KST-Untertitel im Header aktualisieren
   (function(){
     const kst=(t.tags||[]).join(', ');
     const chip=document.getElementById('hdrKstChip');
     if(!chip)return;
-    if(kst){chip.textContent='KST '+kst;chip.classList.add('visible');}
-    else{chip.textContent='';chip.classList.remove('visible');}
+    if(kst){chip.textContent='KST '+kst;chip.style.display='block';}
+    else{chip.textContent='';chip.style.display='none';}
   })();
   _resetOpenSectionsForTask(t.id);
   const body=document.getElementById('detailBody');
@@ -3984,7 +4008,7 @@ function renderDetail(t){
         +'<option value="">– wählen –</option>'
         +['Eingang','Auftrag','Besichtigung'].map(v=>'<option value="'+v+'"'+(t.taskTyp===v?' selected':'')+'>'+v+'</option>').join('')
         +'</select></div>'
-        +'<div class="field" style="margin:0"><label>Kostenstelle</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value);(function(){const c=document.getElementById(\'hdrKstChip\');if(!c)return;const v=this.value.trim();if(v){c.textContent=\'KST \'+v;c.classList.add(\'visible\');}else{c.textContent=\'\';c.classList.remove(\'visible\');}}).call(this)" autocomplete="off"></div>'
+        +'<div class="field" style="margin:0"><label>Kostenstelle</label><input type="text" value="'+escAttr((t.tags||[]).join(', '))+'" placeholder="z.B. 260036" oninput="updateTags(this.value);(function(v){const c=document.getElementById(\'hdrKstChip\');if(!c)return;if(v){c.textContent=\'KST \'+v;c.style.display=\'block\';}else{c.textContent=\'\';c.style.display=\'none\';}})(this.value.trim())" autocomplete="off"></div>'
         +'<input type="file" id="akteNachtragenMobInput" accept=".txt" style="display:none" onchange="loadAkteNachtragen(event)">'
       +'</div>':'')
     +'</div></div>'
@@ -4070,6 +4094,7 @@ function renderDetail(t){
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte am Desktop unter Verknüpfungen → 📷 Foto-Ordner eintragen.</div>')
       +'<input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files);this.value=\'\'" autocomplete="off">'
       +'<input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="uploadFoto(this.files);this.value=\'\'" autocomplete="off">'
+      +'<input type="file" id="fotoInputGallerySingle" accept="image/*" style="display:none" onchange="uploadFoto(this.files);this.value=\'\'" autocomplete="off">'
     +'</div></div>':'')
     // ── DATEIANHÄNGE (nur Baustelle) ──
     +(!isNotiz?'<div class="sect'+oc('Anhaenge')+'" data-sect="Anhaenge"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📎 Dateianhänge'+(attachments.length?' ('+attachments.length+')':'')+'</span>'+(attachments.length?'<button onclick="event.stopPropagation();_openAttachThumbnailGridMob()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">🖼 Alle ansehen</button>':'')+'</div><div class="sect-body">'
@@ -4114,15 +4139,18 @@ function renderDetail(t){
     if(p)p.classList.add('open');
     if(b)b.classList.add('open');
   }
-  // ── BAUDOKU-TAB: Tab-Zustand beibehalten (Reset erfolgt nur in openDetail) ──
+  // ── TAB-ZUSTAND beibehalten (Reset nur in openDetail) ──
   try{
-    const isBau=_currentDetailTab==='bau';
-    document.getElementById('tabInfoBtn').classList.toggle('active',!isBau);
-    document.getElementById('tabBauBtn').classList.toggle('active',isBau);
-    document.getElementById('detailBody').style.display=isBau?'none':'';
-    document.getElementById('detailBodyBau').style.display=isBau?'':'none';
-    renderBaudokuTab(t);
-  }catch(e){console.warn('[BaudokuTab]',e);}
+    const tab=_currentDetailTab||'info';
+    document.getElementById('tabInfoBtn').classList.toggle('active',tab==='info');
+    document.getElementById('tabBauBtn').classList.toggle('active',tab==='bau');
+    document.getElementById('tabSchnellBtn').classList.toggle('active',tab==='schnell');
+    document.getElementById('detailBody').style.display=(tab==='info')?'':'none';
+    document.getElementById('detailBodyBau').style.display=(tab==='bau')?'':'none';
+    document.getElementById('detailBodySchnell').style.display=(tab==='schnell')?'':'none';
+    if(tab==='bau')renderBaudokuTab(t);
+    else if(tab==='schnell')renderSchnellTab(t);
+  }catch(e){console.warn('[TabRestore]',e);}
 }
 
 // ══ FELD-EDITS ══
@@ -4261,6 +4289,7 @@ function toggleTimerCollapse(){
   _setTimerCollapsed(!_isTimerCollapsed());
   const t=currentTask();if(!t)return;
   if(_currentDetailTab==='bau')renderBaudokuTab(t);
+  else if(_currentDetailTab==='schnell')renderSchnellTab(t);
   else renderDetail(t);
 }
 function _loadTimerState(){try{const r=localStorage.getItem(MOBILE_TIMER_KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
@@ -4483,12 +4512,12 @@ function addZeit(){
   _mOpenSections['Zeiterfassung']=true;
   _mOpenSections['bau_Zeit']=true;
   forceSave();
-  if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);
+  if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);
 }
 function removeZeit(i){
   const t=currentTask();if(!t)return;
   t.zeitEntries.splice(i,1);forceSave();
-  if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);
+  if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);
 }
 function updateZeit(i,f,v){
   const t=currentTask();if(!t)return;
@@ -4574,14 +4603,14 @@ function addNotiz(textParam){
   if(bnl){bnl.innerHTML=renderNotizen(t.notizVerlauf);bnl.style.display='block';}
   const bnvt=document.getElementById('bauNotizVerlaufToggle');
   if(bnvt)bnvt.textContent='▾ Verlauf ('+n+' Einträge)';
-  if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);}
+  if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}
 }
 function removeNotiz(i){
   const t=currentTask();if(!t)return;
   t.notizVerlauf.splice(i,1);forceSave();
   const nl=document.getElementById('notizList');if(nl)nl.innerHTML=renderNotizen(t.notizVerlauf);
   const bnl=document.getElementById('bauNotizList');if(bnl)bnl.innerHTML=renderNotizen(t.notizVerlauf);
-  if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else renderDetail(t);}
+  if(!nl&&!bnl){if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}
 }
 function toggleNotizDone(idx){
   const t=currentTask();if(!t||!t.notizVerlauf)return;
@@ -5508,36 +5537,10 @@ window.addEventListener('beforeunload',(e)=>{if(dirty){saveFile();}});
 window.addEventListener('pagehide',()=>{if(dirty){saveFile();}});
 
 // ══════════════════════════════════════════════
-//  OFFLINE-INDIKATOR
+//  OFFLINE-INDIKATOR (via saveInd)
 // ══════════════════════════════════════════════
-function _updateSyncChip(){
-  const chip=document.getElementById('hdrSyncChip');
-  if(!chip)return;
-  if(!navigator.onLine){
-    chip.className='hdr-sync-chip offline';
-    chip.textContent='📴 Offline';
-  } else if(dirty){
-    chip.className='hdr-sync-chip offline';
-    chip.textContent='⏳ Nicht sync\'d';
-  } else {
-    chip.className='hdr-sync-chip online';
-    chip.textContent='✓ Sync';
-    // Nach 3s ausblenden wenn alles gespeichert
-    setTimeout(()=>{
-      if(!dirty&&navigator.onLine){chip.className='hdr-sync-chip';chip.textContent='';}
-    },3000);
-  }
-}
-window.addEventListener('online', _updateSyncChip);
-window.addEventListener('offline', _updateSyncChip);
-// setSaveInd patchen damit Chip mitaktualisiert wird
-(function(){
-  const _origSetSaveInd=setSaveInd;
-  setSaveInd=function(cls,msg){
-    _origSetSaveInd(cls,msg);
-    _updateSyncChip();
-  };
-})();
+window.addEventListener('offline',()=>setSaveInd('error','📴 Offline'));
+window.addEventListener('online', ()=>{if(!dirty)setSaveInd('saved','✓ Online');});
 </script>
 
 <!-- ══ EXIF HELPER ══ -->
