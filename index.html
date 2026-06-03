@@ -572,7 +572,8 @@ function _getMobileBackup(){
 
 // ── JSON-Replacer: localUrl (data:/blob:) und _uploading aus Fotos heraushalten ──
 // Hält die Drive-JSON klein; Fotos werden über IndexedDB (localKey) wiederhergestellt.
-const _mobSaveReplacer=(k,v)=>{if(k==='localUrl'||k==='_uploading')return undefined;return v;};
+// dataUrl aus Skizzen ebenfalls heraushalten – wird via localKey aus IndexedDB geladen
+const _mobSaveReplacer=(k,v)=>{if(k==='localUrl'||k==='_uploading')return undefined;if(k==='dataUrl'&&typeof v==='string'&&v.startsWith('data:'))return undefined;return v;};
 
 // ── Mob Photo Cache – IndexedDB (mob-photo-cache-v1) ─────────────────────────
 // Fotos werden als base64 data-URL gespeichert und überleben Seiten-Neuladen.
@@ -5388,14 +5389,21 @@ async function uploadFoto(files){
   if(!(await ensureToken())){toast('Nicht angemeldet','error');return;}
   if(!t.fotos)t.fotos=[];
 
-  // ── Schritt 1: Fotos SOFORT anzeigen (Blob-URL) + Upload-Spinner ──────────
-  const fotoObjs=fileArr.map(file=>{
+  // ── Schritt 1: Fotos SOFORT lokal sichern (IndexedDB) + anzeigen ──────────
+  const fotoObjs=await Promise.all(fileArr.map(async file=>{
     const localUrl=URL.createObjectURL(file);
+    const localKey='photo_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+    // Sofort in IndexedDB sichern – bleibt auch bei Upload-Fehler erhalten
+    try{
+      const dataUrl=await _fileToDataUrl(file);
+      await _mobPhotoSave(localKey,dataUrl);
+    }catch(e){console.warn('[uploadFoto] localKey save:',e);}
     const fo={
       name:file.name,
       mimeType:file.type||'image/jpeg',
       size:file.size||0,
       localUrl,
+      localKey,
       driveId:null,
       _uploading:true,
       uploadedAt:new Date().toISOString(),
@@ -5403,12 +5411,11 @@ async function uploadFoto(files){
     };
     t.fotos.push(fo);
     return{file,fo};
-  });
+  }));
   _mOpenSections['Fotos']=true;
-  renderDetail(t); // Foto erscheint sofort mit Spinner
+  renderDetail(t);
   if(_currentDetailTab==='schnell'){
     renderSchnellTab(t);
-    // Vorschau des zuletzt hinzugefügten Fotos zeigen
     if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs[fotoObjs.length-1].fo,t);
   }
 
@@ -5417,9 +5424,7 @@ async function uploadFoto(files){
   await Promise.all(fotoObjs.map(async({file,fo})=>{
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
-      // Blob-URL im Thumbnail-Cache eintragen (für Grid-Vorschau)
       _fotoBlobCache.set(meta.id,fo.localUrl);
-      // Foto-Objekt in-place aktualisieren (Index bleibt gleich)
       fo.driveId=meta.id;
       fo.name=meta.name||fo.name;
       fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
@@ -5428,6 +5433,7 @@ async function uploadFoto(files){
       fo._uploading=false;
       success++;
     }catch(e){
+      // Upload fehlgeschlagen – Foto bleibt lokal via localKey erhalten
       fo._uploading=false;
       fo._uploadError=true;
       failed++;lastErr=e.message||String(e);
@@ -5437,11 +5443,10 @@ async function uploadFoto(files){
 
   // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   forceSave();
-  renderDetail(t); // Spinner entfernen, Drive-IDs jetzt bekannt
+  renderDetail(t);
   if(_currentDetailTab==='schnell'){renderSchnellTab(t);}
-  if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' fehlgeschlagen','error');
-  else if(!success)toast('✗ Upload fehlgeschlagen: '+lastErr,'error');
-  // Erfolg: kein Toast – Foto ist bereits sichtbar im Grid, kein Extra-Hinweis nötig
+  if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' lokal gespeichert','info');
+  else if(!success&&failed)toast('⚠ Upload fehlgeschlagen – Foto lokal gespeichert','info');
 }
 // Tap auf Thumbnail → Lightbox in der App (mit Fallback-Link zum Drive-Viewer)
 // ── Mobile Lightbox ──────────────────────────────────────────────
@@ -5571,21 +5576,32 @@ function renderSkizzeTab(t){
       +'<div style="font-size:15px;margin-bottom:20px;">Noch keine Skizzen vorhanden.</div>'
       +'<button class="inline-btn primary" style="padding:14px 28px;font-size:15px;" onclick="_skizzeOpen()">+ Neue Skizze</button>'
       +'</div>';
-  }else{
-    let html='<div style="padding:12px;">'
-      +'<button class="inline-btn primary" style="width:100%;margin-bottom:14px;padding:12px;font-size:15px;" onclick="_skizzeOpen()">+ Neue Skizze</button>';
-    skizzen.forEach((s,i)=>{
-      const ts=s.ts?'<div style="font-size:11px;color:var(--text2);margin-top:4px;">'+s.ts+'</div>':'';
-      html+='<div style="margin-bottom:14px;background:var(--bg3);border-radius:10px;overflow:hidden;">'
-        +'<img src="'+s.dataUrl+'" style="width:100%;display:block;border-radius:10px 10px 0 0;" onclick="_skizzeZoom(\''+i+'\')">'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;">'
-        +ts
-        +'<button onclick="_skizzeDelete('+i+')" style="background:transparent;border:none;color:#e74c3c;font-size:20px;cursor:pointer;padding:4px;">🗑</button>'
-        +'</div></div>';
-    });
-    html+='</div>';
-    body.innerHTML=html;
+    return;
   }
+  let html='<div style="padding:12px;">'
+    +'<button class="inline-btn primary" style="width:100%;margin-bottom:14px;padding:12px;font-size:15px;" onclick="_skizzeOpen()">+ Neue Skizze</button>';
+  skizzen.forEach((s,i)=>{
+    const ts=s.ts?'<div style="font-size:11px;color:var(--text2);margin-top:4px;">'+s.ts+'</div>':'';
+    const imgId='skizzeImg_'+i;
+    html+='<div style="margin-bottom:14px;background:var(--bg3);border-radius:10px;overflow:hidden;">'
+      +'<img id="'+imgId+'" src="'+(s.dataUrl||'')+'" style="width:100%;display:block;border-radius:10px 10px 0 0;min-height:60px;background:var(--bg2);" onclick="_skizzeZoom(\''+i+'\')">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;">'
+      +ts
+      +'<button onclick="_skizzeDelete('+i+')" style="background:transparent;border:none;color:#e74c3c;font-size:20px;cursor:pointer;padding:4px;">🗑</button>'
+      +'</div></div>';
+  });
+  html+='</div>';
+  body.innerHTML=html;
+  // Bilder aus IndexedDB nachladen falls kein dataUrl im Objekt
+  skizzen.forEach((s,i)=>{
+    if(s.dataUrl)return;
+    if(!s.localKey)return;
+    const imgEl=document.getElementById('skizzeImg_'+i);
+    if(!imgEl)return;
+    _mobPhotoGet(s.localKey).then(dataUrl=>{
+      if(dataUrl){s.dataUrl=dataUrl;if(imgEl)imgEl.src=dataUrl;}
+    });
+  });
 }
 
 function _skizzeOpen(){
@@ -5661,9 +5677,9 @@ function _skizzeUpdateUI(){
   if(eb){eb.style.background=_skizzeEraser?'rgba(255,255,255,0.3)':'rgba(255,255,255,0.05)';eb.style.borderColor=_skizzeEraser?'#fff':'transparent';}
 }
 
-function _skizzeSave(){
+async function _skizzeSave(){
   const canvas=document.getElementById('skizzeCanvas');
-  const dataUrl=canvas.toDataURL('image/png');
+  const dataUrl=canvas.toDataURL('image/jpeg',0.85);
   const bn=findBoardByTaskId(_skizzeEditingTaskId);
   if(!bn){toast('Task nicht gefunden','error');return;}
   const t=(boards[bn]||[]).find(x=>x.id===_skizzeEditingTaskId);
@@ -5672,7 +5688,10 @@ function _skizzeSave(){
   const now=new Date();
   const pad=n=>String(n).padStart(2,'0');
   const ts=pad(now.getDate())+'.'+pad(now.getMonth()+1)+'.'+now.getFullYear()+' '+pad(now.getHours())+':'+pad(now.getMinutes())+' Uhr';
-  t.skizzen.push({id:generateId(),dataUrl,ts});
+  // dataUrl in IndexedDB speichern, nur localKey im JSON (hält JSON klein)
+  const localKey='skizze_'+generateId();
+  try{await _mobPhotoSave(localKey,dataUrl);}catch(e){console.warn('[Skizze] IndexedDB:',e);}
+  t.skizzen.push({id:generateId(),localKey,dataUrl,ts});
   scheduleSave();
   _skizzeClose();
   toast('✓ Skizze gespeichert','success');
@@ -5699,7 +5718,8 @@ function _skizzeZoom(idx){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:9800;background:#000;overflow:hidden;touch-action:none;';
   const img=document.createElement('img');
-  img.src=s.dataUrl;
+  if(s.dataUrl){img.src=s.dataUrl;}
+  else if(s.localKey){_mobPhotoGet(s.localKey).then(d=>{if(d&&img)img.src=d;});};
   img.style.cssText='position:absolute;transform-origin:center;max-width:100%;max-height:100%;top:50%;left:50%;transform:translate(-50%,-50%) scale(1);transition:none;user-select:none;pointer-events:none;';
   const closeBtn=document.createElement('button');
   closeBtn.innerHTML='✕';
