@@ -3152,26 +3152,32 @@ function _startSchnellDiktat(){
 
 
 
+
 function _showSchnellFotoPreview(fo, t){
-  const body=document.getElementById('detailBodySchnell');
-  if(!body)return;
-  // Overlay-Vorschau über den Schnell-Tab legen
   let prev=document.getElementById('schnellFotoPreview');
-  if(!prev){
-    prev=document.createElement('div');
-    prev.id='schnellFotoPreview';
-    prev.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
-    document.body.appendChild(prev);
-  }
+  if(prev)prev.remove();
+  prev=document.createElement('div');
+  prev.id='schnellFotoPreview';
+  prev.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
   const src=fo.localUrl||fo.url||'';
-  prev.innerHTML=
-    '<img src="'+escAttr(src)+'" style="max-width:90vw;max-height:65vh;border-radius:12px;object-fit:contain;" alt="Vorschau">'+
-    '<div style="font-size:14px;color:#fff;opacity:.8;">'+esc(fo.name||'Foto')+'</div>'+
-    '<div style="display:flex;gap:12px;">'+
-      '<button onclick="_schnellFotoVerwerfen(''+escAttr(fo.localKey||fo.driveId||'')+'',''+escAttr(fo.name||'')+'');" style="padding:12px 24px;border-radius:10px;background:#E24B4A;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">✕ Verwerfen</button>'+
-      '<button onclick="document.getElementById('schnellFotoPreview').remove();" style="padding:12px 24px;border-radius:10px;background:#4CAF50;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;">✓ Behalten</button>'+
-    '</div>';
+  const img=document.createElement('img');
+  img.src=src;img.style.cssText='max-width:90vw;max-height:65vh;border-radius:12px;object-fit:contain;';
+  const lbl=document.createElement('div');
+  lbl.style.cssText='font-size:14px;color:#fff;opacity:.8;';lbl.textContent=fo.name||'Foto';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:12px;';
+  const btnDel=document.createElement('button');
+  btnDel.textContent='✕ Verwerfen';
+  btnDel.style.cssText='padding:12px 24px;border-radius:10px;background:#E24B4A;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
+  btnDel.onclick=function(){_schnellFotoVerwerfen(fo.localKey||fo.driveId||'',fo.name||'');};
+  const btnKeep=document.createElement('button');
+  btnKeep.textContent='✓ Behalten';
+  btnKeep.style.cssText='padding:12px 24px;border-radius:10px;background:#4CAF50;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
+  btnKeep.onclick=function(){prev.remove();};
+  row.appendChild(btnDel);row.appendChild(btnKeep);
+  prev.appendChild(img);prev.appendChild(lbl);prev.appendChild(row);
+  document.body.appendChild(prev);
 }
+
 function _schnellFotoVerwerfen(localKey, name){
   const t=currentTask();
   if(t&&t.fotos){
