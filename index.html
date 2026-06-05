@@ -1025,6 +1025,10 @@ function silentRefresh(){
 }
 async function ensureToken(){
   if(tokenValid())return true;
+  // 1) Cloud-Refresh versuchen (nutzt Refresh-Token – funktioniert ohne Nutzereingriff)
+  const cloud=await _renewTokenViaCloud();
+  if(cloud)return true;
+  // 2) Stiller GSI-Refresh (scheitert auf Safari/iOS oft durch ITP)
   const ok=await silentRefresh();
   if(!ok){showLogin('Bitte erneut anmelden');return false;}
   return true;
@@ -5851,7 +5855,15 @@ async function _submitQuickAdd(){
       toast('ℹ️ Kein Standardordner – Foto nur lokal gespeichert','info',4000);
       return;
     }
-    if(!(await ensureToken())){scheduleSave();return;}
+    if(!(await ensureToken())){
+      // Token nicht verfügbar → Foto lokal sichern statt still verwerfen
+      const localKey='qa_'+newT.id+'_0';
+      _mobPhotoSave(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
+      newT.fotos.push({name:fotoFile.name,mimeType:fotoFile.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
+      scheduleSave();
+      toast('⚠️ Nicht angemeldet – Foto lokal gespeichert, wird bei nächster Verbindung hochgeladen','info',5000);
+      return;
+    }
     try{
       // Unterordner anlegen: "YYYY-MM-DD Titel"
       const folderName=dateSlug+' '+title.slice(0,60);
@@ -6308,6 +6320,18 @@ function lbDiscardDraw(){
 </body>
 </html>
 r=null;_drawCtx=null;_drawSnapshot=null;
+}
+</script>
+</body>
+</html>
+'schnell')renderSchnellTab(t);else renderDetail(t);}}
+  lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
+}
+function lbDiscardDraw(){
+  const canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDrawBar');
+  if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
+  if(bar)bar.classList.remove('visible');
+  _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
 }
 </script>
 </body>
