@@ -3169,7 +3169,8 @@ function _toggleSchnellNotizArchiv(){
 function _renderSchnellArchiv(t){
   const list=document.getElementById('schnellArchivList');
   if(!list)return;
-  const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId));
+  // localKey ebenfalls berücksichtigen – nach Reload fehlt localUrl (vom Replacer entfernt)
+  const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId||f.localKey));
   list.innerHTML='';
   fotos.forEach((f,fi)=>{
     const div=document.createElement('div');
@@ -3179,7 +3180,11 @@ function _renderSchnellArchiv(t){
     img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
     img.onerror=function(){this.style.display='none';};
     if(!img.src&&f.driveId){
-      _mobFetchThumb(f.driveId).then(u=>{if(u)img.src=u;});
+      // Drive-Thumbnail versuchen
+      _mobFetchThumb(f.driveId).then(u=>{if(u){f.localUrl=u;img.src=u;}});
+    } else if(!img.src&&f.localKey){
+      // Fallback: Foto aus IndexedDB laden
+      _mobPhotoGet(f.localKey).then(dataUrl=>{if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}else{img.style.display='none';}});
     }
     div.appendChild(img);
     div.onclick=()=>{if(typeof openFotoViewer==='function')openFotoViewer(t,fi);};
@@ -5121,10 +5126,26 @@ function _mobThumbFallback(img){
   if(img.dataset.fbDone==='1')return;
   img.dataset.fbDone='1';
   const id=img.getAttribute('data-foto-id');
+  const localKey=img.getAttribute('data-local-key');
   if(id&&gdriveToken){
+    // Drive-Blob holen
     img.removeAttribute('onerror');
     _fetchFotoBlob(id).then(u=>{
       if(u){img.src=u;img.style.display='';}
+      else if(localKey){
+        // Drive fehlgeschlagen → IndexedDB-Fallback
+        _mobPhotoGet(localKey).then(dataUrl=>{
+          if(dataUrl){img.src=dataUrl;img.style.display='';}
+          else{img.style.display='none';if(img.parentElement)img.parentElement.classList.add('fallback');}
+        });
+      } else {
+        img.style.display='none';if(img.parentElement)img.parentElement.classList.add('fallback');
+      }
+    });
+  } else if(localKey){
+    // Kein driveId → direkt aus IndexedDB laden
+    _mobPhotoGet(localKey).then(dataUrl=>{
+      if(dataUrl){img.src=dataUrl;img.style.display='';}
       else{img.style.display='none';if(img.parentElement)img.parentElement.classList.add('fallback');}
     });
   } else {
@@ -5145,10 +5166,13 @@ function renderFotos(list){
     const thumbSrc=f.thumbnail||f.thumbnailLink||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
     // localUrl als Sofort-Vorschau wenn kein Cache und keine Drive-ID (Upload läuft noch)
     const localFallback=(!cached&&!id&&f.localUrl)?f.localUrl:'';
+    // localKey für IndexedDB-Fallback nach Reload (localUrl wird beim Speichern entfernt)
+    const localKeyAttr=(!id&&!localFallback&&f.localKey)?('data-local-key="'+escAttr(f.localKey)+'" '):'';
     const srcAttr=cached?('src="'+escAttr(cached)+'" ')
                  :(id?'data-foto-id="'+escAttr(id)+'" src="'+escAttr(thumbSrc)+'" '
                      :(localFallback?'src="'+escAttr(localFallback)+'" '
-                     :(thumbSrc?'src="'+escAttr(thumbSrc)+'" ':'')));
+                     :(localKeyAttr?'src="" '+localKeyAttr
+                     :(thumbSrc?'src="'+escAttr(thumbSrc)+'" ':''))));
     const tip=caption?(caption+' — '+name):name;
     const editedBadge=f.editedDriveId?'<span style="position:absolute;top:3px;left:3px;background:var(--accent);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;">✏</span>':'';
     const uploadOverlay=f._uploading?'<div class="foto-upload-overlay"><span class="up-icon">⬆</span><span class="up-lbl">lädt hoch…</span></div>':'';
@@ -6325,6 +6349,21 @@ r=null;_drawCtx=null;_drawSnapshot=null;
 </body>
 </html>
 'schnell')renderSchnellTab(t);else renderDetail(t);}}
+  lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
+}
+function lbDiscardDraw(){
+  const canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDrawBar');
+  if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
+  if(bar)bar.classList.remove('visible');
+  _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
+}
+</script>
+</body>
+</html>
+.height=img.naturalHeight||canvas.height;
+  const octx=out.getContext('2d');octx.drawImage(img,0,0,out.width,out.height);octx.drawImage(canvas,0,0,out.width,out.height);
+  const dataUrl=out.toDataURL('image/jpeg',0.92);
+  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){const f=t.fotos[_lbFotoIdx];f.localUrl=dataUrl;f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');if(f.localKey)_mobPhotoSave(f.localKey,dataUrl).catch(()=>{});scheduleSave();toast('Zeichnung gespeichert','success');if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
   lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
 }
 function lbDiscardDraw(){
