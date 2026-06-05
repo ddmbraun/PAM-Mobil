@@ -4175,6 +4175,11 @@ function renderDetail(t){
         +(gesMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#EAF3DE;"><span style="color:#3B6D11;">∑ Gesamt</span><b style="color:#27500A;padding-left:4px;">'+_fmt(gesMin)+'</b></span>':'')
         +'</div>';
     })()
+    // ── INFO BAUSTELLE (eigene Sektion, nur Baustelle) ──
+    +(!isNotiz?'<div style="background:#FFFBF0;border:0.5px solid #EAB308;border-left:3px solid #CA8A04;border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:10px;">'
+      +'<div style="font-size:10px;font-weight:600;color:#92400E;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">📋 Info Baustelle</div>'
+      +'<textarea rows="2" style="width:100%;resize:none;background:transparent;border:none;border-bottom:0.5px solid #EAB308;padding:4px 0;font-size:14px;color:#78350F;font-family:inherit;outline:none;" placeholder="Dauerhafte Infos zur Baustelle…" oninput="updateField(\'desc\',this.value);this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\';" onfocus="this.style.borderBottomColor=\'#CA8A04\'" onblur="this.style.borderBottomColor=\'#EAB308\'" autocomplete="off">'+esc(t.desc||'')+'</textarea>'
+    +'</div>':'')
     // ── STAMMDATEN ──
     +'<div class="sect'+oc('Stammdaten')+'" data-sect="Stammdaten"><div class="sect-head" onclick="toggleMSect(this.parentElement)">'+(isNotiz?'✅ Aufgaben':'🏗 Objektadresse')+'</div><div class="sect-body">'
       // Notiz-Board: Kostenstelle + Status + Fälligkeitsdatum
@@ -4225,27 +4230,17 @@ function renderDetail(t){
       +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
     +'</div></div>':'')
     // ── NOTIZEN ──
-    +'<div class="sect'+oc('Notizen')+'" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen'
+    +'<div class="sect open" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizprotokoll'
     +(notizVerlauf.length>0?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
     +'</div><div class="sect-body">'
-      // ── Info BST (ehemals "Dauerhafte Notiz") ──
-      +'<div class="field"><label>📋 Info BST</label><textarea rows="3" style="resize:none;transition:height .2s" placeholder="Dauerhafte Infos zur Baustelle…" oninput="updateField(\'desc\',this.value)" onfocus="this.rows=8" onblur="if(!this.value)this.rows=3;else this.rows=4" autocomplete="off">'+esc(t.desc||'')+'</textarea></div>'
-      // ── Notiz-Protokoll (einklappbar) ──
-      +'<div class="sect'+(isSectOpen('NotizProtokoll')?' open':'')+'" data-sect="NotizProtokoll" style="margin-bottom:0;border:none;background:transparent;">'
-      +'<div class="sect-head" onclick="toggleMSect(this.parentElement)" style="padding:8px 0;font-size:13px;">📋 Notiz-Protokoll'
-      +(notizVerlauf.length>0?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
+      // ── Eingabe (groß wie Baudoku) ──
+      +'<textarea id="newNotizInput" class="bau-notiz-quick" placeholder="Notiz, Befund oder Beobachtung eintragen…" maxlength="500" rows="2" autocomplete="off" style="width:100%;margin-bottom:8px;" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\';" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();addNotiz();}"></textarea>'
+      +'<div style="display:flex;gap:8px;margin-bottom:12px;">'
+      +'<button class="inline-btn bau-diktat-btn" id="notizDiktatBtn" style="flex:1;min-height:48px;font-size:15px;" onclick="startDiktatNotiz&&startDiktatNotiz()">🎤 Diktieren</button>'
+      +'<button class="inline-btn primary" style="flex:1;min-height:48px;font-size:15px;font-weight:700;" onclick="addNotiz()">✓ Speichern</button>'
       +'</div>'
-      +'<div class="sect-body" style="padding:0;border:none;">'
-      +'<textarea id="newNotizInput" placeholder="Notiz eingeben…" autocomplete="off" rows="2" style="width:100%;resize:none;margin-bottom:8px;overflow:hidden;" oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,180)+\'px\';" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();addNotiz();}"></textarea>'
-      +'<div style="display:flex;gap:8px;margin-bottom:10px;">'
-      +'<button class="inline-btn" style="flex:1;min-height:46px;font-size:14px;" onclick="startDiktatNotiz&&startDiktatNotiz()||startBaudokuDiktat&&startBaudokuDiktat()">🎤 Diktieren</button>'
-      +'<button class="inline-btn primary" style="flex:1;min-height:46px;font-size:14px;font-weight:700;" onclick="addNotiz()">✓ Speichern</button>'
-      +'</div>'
-      +'<div id="notizVerlaufToggle" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--accent2);padding:4px 0 6px;" onclick="_toggleNotizVerlauf()">'
-      +'▸ Verlauf ('+notizVerlauf.length+' Einträge)'
-      +'</div>'
-      +'<div id="notizList" style="display:none;">'+renderNotizen(notizVerlauf)+'</div>'
-      +'</div></div>'
+      // ── Einträge direkt sichtbar ──
+      +'<div id="notizList">'+renderNotizen(notizVerlauf)+'</div>'
     +'</div></div>'
     // ── CHECKLISTE ──
     +'<div class="sect'+oc('Checkliste')+'" data-sect="Checkliste"><div class="sect-head" onclick="toggleMSect(this.parentElement)" id="mCkHead">'+_mCkTitle()+'</div><div class="sect-body">'
