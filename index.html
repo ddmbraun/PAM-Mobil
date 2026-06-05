@@ -751,13 +751,13 @@ function gdriveLogin(){
   const params=new URLSearchParams({
     client_id:GDRIVE_CLIENT_ID,
     redirect_uri:_getRedirectUri(),
-    response_type:'token',
+    response_type:'code',        // Authorization Code Flow – liefert Refresh-Token
+    access_type:'offline',       // Refresh-Token anfordern
+    prompt:'consent',            // Erzwingt Refresh-Token-Ausgabe
     scope:GDRIVE_SCOPE,
     include_granted_scopes:'true',
   });
   if(hint)params.set('login_hint',hint);
-  // Implicit Flow: Token kommt direkt im Hash zurück – kein Cloud-Server nötig
-  // Funktioniert in Safari, Chrome und iOS PWA
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
 }
 function initTokenClient(){
@@ -938,7 +938,9 @@ function _openOAuthNewTab(){
   const params=new URLSearchParams({
     client_id:GDRIVE_CLIENT_ID,
     redirect_uri:_getRedirectUri(),
-    response_type:'token',
+    response_type:'code',        // Authorization Code Flow – liefert Refresh-Token
+    access_type:'offline',       // Refresh-Token anfordern
+    prompt:'consent',            // Erzwingt Refresh-Token-Ausgabe
     scope:GDRIVE_SCOPE,
     include_granted_scopes:'true',
   });
@@ -6301,6 +6303,11 @@ function lbDiscardDraw(){
   if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
   if(bar)bar.classList.remove('visible');
   _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
+}
+</script>
+</body>
+</html>
+r=null;_drawCtx=null;_drawSnapshot=null;
 }
 </script>
 </body>
