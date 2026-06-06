@@ -5863,12 +5863,12 @@ async function _submitQuickAdd(){
     ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]
   };
   boards[savedBoard].push(newT);
+  // Foto-Referenz VOR _closeQuickAdd() sichern – _closeQuickAdd setzt _quickAddFotoFile=null
+  const fotoFile=_quickAddFotoFile;
   _closeQuickAdd();
   toast('✓ Notiz gespeichert','success');
   // Foto-Upload + Unterordner anlegen (im Hintergrund)
-  if(_quickAddFotoFile){
-    const fotoFile=_quickAddFotoFile;
-    _quickAddFotoFile=null;
+  if(fotoFile){
     const parentFolderId=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'');
     if(!parentFolderId){
       // Foto lokal im Task speichern, kein Drive-Upload möglich
@@ -6371,6 +6371,11 @@ function lbDiscardDraw(){
   if(canvas){canvas.classList.remove('active');const ctx=canvas.getContext('2d');if(ctx)ctx.clearRect(0,0,canvas.width,canvas.height);canvas.removeEventListener('pointerdown',_onDrawDown);canvas.removeEventListener('pointermove',_onDrawMove);canvas.removeEventListener('pointerup',_onDrawUp);canvas.removeEventListener('pointercancel',_onDrawUp);}
   if(bar)bar.classList.remove('visible');
   _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
+}
+</script>
+</body>
+</html>
+Ctx=null;_drawSnapshot=null;
 }
 </script>
 </body>
