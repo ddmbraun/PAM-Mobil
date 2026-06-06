@@ -411,6 +411,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   <div class="detail-body" id="detailBodyBau" style="display:none"></div>
   <div class="detail-body" id="detailBodySkizze" style="display:none"></div>
   <div class="detail-body" id="detailBodySchnell" style="display:none"></div>
+  <!-- Globale Foto-Inputs: immer im DOM, von allen Tabs nutzbar -->
+  <input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
+  <input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
+  <input type="file" id="fotoInputGallerySingle" accept="image/*" style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
 </div>
 
 <!-- ══ SCHNELL-ADD BOTTOM-SHEET ══ -->
@@ -3074,6 +3078,10 @@ function formatDate(iso){try{const d=new Date(iso);if(isNaN(d))return iso;return
 let _currentDetailTab='info'; // 'info' | 'bau' | 'schnell'
 
 function switchDetailTab(tab){
+  // Baudoku für Aufgaben-Boards (notiz) sperren
+  const _sct=currentTask();
+  const _stb=_sct?(findBoardByTaskId(_sct.id)||currentBoard):currentBoard;
+  if(tab==='bau'&&(boardTypes[_stb]||'baustelle')==='notiz')tab='info';
   _currentDetailTab=tab;
   const isBau=tab==='bau';
   const isSchnell=tab==='schnell';
@@ -3086,6 +3094,7 @@ function switchDetailTab(tab){
   document.getElementById('detailBodyBau').style.display=isBau?'':'none';
   document.getElementById('detailBodySchnell').style.display=isSchnell?'':'none';
   document.getElementById('detailBodySkizze').style.display=isSkizze?'':'none';
+  if(tab==='info'){const t=currentTask();if(t)renderDetail(t);}
   if(isSchnell){const t=currentTask();if(t)renderSchnellTab(t);}
   if(isBau){const t=currentTask();if(t)renderBaudokuTab(t);}
   if(isSkizze){const t=currentTask();if(t)renderSkizzeTab(t);}
@@ -3104,7 +3113,7 @@ let _schnellMode='foto'; // 'foto' | 'notiz'
 function renderSchnellTab(t){
   const body=document.getElementById('detailBodySchnell');
   if(!body)return;
-  const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId));
+  const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId||f.localKey));
   const notizVerlauf=t.notizVerlauf||[];
   const datumStr=new Date().toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
   const isFoto=_schnellMode==='foto';
@@ -3177,7 +3186,7 @@ function _toggleSchnellArchiv(){
   list.style.display=open?'grid':'none';
   if(open){list.style.gridTemplateColumns='repeat(4,1fr)';list.style.gap='6px';list.style.marginTop='8px';}
   const t=currentTask();
-  const n=(t&&t.fotos?t.fotos.filter(f=>f&&(f.localUrl||f.url||f.driveId)).length:0);
+  const n=(t&&t.fotos?t.fotos.filter(f=>f&&(f.localUrl||f.url||f.driveId||f.localKey)).length:0);
   toggle.textContent=(open?'▾ ':'▸ ')+'Archiv ('+n+' Fotos)';
 }
 
@@ -4150,8 +4159,8 @@ function renderDetail(t){
   const isEmail=(boardTypes[_tBoard]||'baustelle')==='email';
   // Baudoku-Tab für E-Mail-Boards ausblenden
   const _bauBtn=document.getElementById('tabBauBtn');
-  if(_bauBtn)_bauBtn.style.display=isEmail?'none':'';
-  if(isEmail&&_currentDetailTab==='bau'){_currentDetailTab='info';}
+  if(_bauBtn)_bauBtn.style.display=(isEmail||isNotiz)?'none':'';
+  if((isEmail||isNotiz)&&_currentDetailTab==='bau'){_currentDetailTab='info';}
   // Board-spezifische Spalten nutzen (analog PC)
   const _tBoardSts=(_remoteBoardStatuses[_tBoard]&&_remoteBoardStatuses[_tBoard].length)?_remoteBoardStatuses[_tBoard]:statuses;
   const statusOpts=_tBoardSts.map(s=>'<option value="'+escAttr(s)+'"'+(s===t.status?' selected':'')+'>'+esc(s)+'</option>').join('');
@@ -4267,7 +4276,7 @@ function renderDetail(t){
       +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
     +'</div></div>':'')
     // ── NOTIZEN ──
-    +'<div class="sect open" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizprotokoll'
+    +'<div class="sect'+oc('Notizen')+'" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizprotokoll'
     +(notizVerlauf.length>0?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
     +'</div><div class="sect-body">'
       // ── Eingabe (groß wie Baudoku) ──
@@ -4296,7 +4305,7 @@ function renderDetail(t){
     // ── VERKNÜPFUNGEN + E-MAIL ORIGINALE: auf Mobil ausgeblendet ──
     
         // ── FOTOS (nur Baustelle) ──
-    +(!isNotiz&&!isEmail?'<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span></div><div class="sect-body">'
+    +'<div class="sect'+oc('Fotos')+' open" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span></div><div class="sect-body">'
       +(fotos.length?'<div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos.</div>')
       +((extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)||extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||''))
         ? '<div style="font-size:11px;color:var(--green);margin-top:10px">'+(extractDriveFolderId(t.gdrive)?'✓ Foto-Ordner verknüpft':'📁 Standard-Fotoordner aktiv')+'</div>'
@@ -4305,10 +4314,7 @@ function renderDetail(t){
             +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼️ Aus Galerie</button>'
           +'</div>'
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte in Einstellungen einen Standard-Fotoordner hinterlegen.</div>')
-      +'<input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files);this.value=\'\'" autocomplete="off">'
-      +'<input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="uploadFoto(this.files);this.value=\'\'" autocomplete="off">'
-      +'<input type="file" id="fotoInputGallerySingle" accept="image/*" style="display:none" onchange="uploadFoto(this.files);this.value=\'\'" autocomplete="off">'
-    +'</div></div>':'')
+    +'</div></div>'
     // ── DATEIANHÄNGE (nur Baustelle) ──
     +(!isNotiz?'<div class="sect'+oc('Anhaenge')+'" data-sect="Anhaenge"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📎 Dateianhänge'+(attachments.length?' ('+attachments.length+')':'')+'</span>'+(attachments.length?'<button onclick="event.stopPropagation();_openAttachThumbnailGridMob()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">🖼 Alle ansehen</button>':'')+'</div><div class="sect-body">'
       +(attachments.length?'<div id="attachListMob">'+renderAttachmentsMob(attachments)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Dateianhänge.</div>')

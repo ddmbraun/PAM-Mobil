@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v53'; // v53: Skala alle 4 Tabs, Helligkeits-Slider
+const CACHE_NAME = 'pam-mobil-v55'; // v55: Fotos Task-Info alle Board-Typen + globale Foto-Inputs
 
 const PRECACHE = [
   './',
