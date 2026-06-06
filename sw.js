@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v52'; // v52: Pinch-Zoom fix (kein Namenskonflikt), sauber von Backup aufgebaut
+const CACHE_NAME = 'pam-mobil-v53'; // v53: Skala alle 4 Tabs, Helligkeits-Slider
 
 const PRECACHE = [
   './',

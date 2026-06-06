@@ -387,11 +387,19 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     </div>
     <span class="save-indicator" id="saveInd"></span>
   </div>
-  <div class="size-bar" id="mSizeBar">
+  <div class="size-bar" id="mSizeBar" style="flex-wrap:wrap;">
+    <!-- Zeile 1: Schriftgröße -->
     <button class="size-bar-step" onclick="setMobileScale(Math.max(70,+(document.getElementById('mSizeSlider').value||100)-10))" title="Kleiner">A−</button>
     <input id="mSizeSlider" type="range" min="70" max="200" step="5" value="100" oninput="setMobileScale(this.value)" autocomplete="off">
     <span class="size-bar-val" id="mSizeVal">100%</span>
     <button class="size-bar-step size-bar-step-lg" onclick="setMobileScale(Math.min(200,+(document.getElementById('mSizeSlider').value||100)+10))" title="Größer">A+</button>
+    <!-- Zeile 2: Helligkeit -->
+    <div style="width:100%;display:flex;align-items:center;gap:10px;padding-top:7px;border-top:1px solid var(--border);margin-top:4px;">
+      <span style="font-size:17px;flex-shrink:0;" title="Helligkeit">🔆</span>
+      <input id="mBrightSlider" type="range" min="40" max="150" step="5" value="100" oninput="setAppBrightness(this.value)" style="flex:1;accent-color:var(--accent);margin:0;" autocomplete="off">
+      <span class="size-bar-val" id="mBrightVal">100%</span>
+      <button class="size-bar-step" onclick="setAppBrightness(100)" title="Helligkeit zurücksetzen" style="font-size:11px;min-width:34px;">↺</button>
+    </div>
   </div>
   <div class="detail-tab-bar" id="detailTabBar">
     <button class="detail-tab-btn active" id="tabInfoBtn" onclick="switchDetailTab('info')">📋 Task-Info</button>
@@ -709,13 +717,15 @@ const _SVG_CRANE='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" st
 // ── GRÖSSEN-SLIDER (wie im Desktop-Modal) ──
 const MSCALE_KEY='ptpm_detail_size';
 const MSIZEBAR_KEY='ptpm_sizebar_open';
+const MBRIGHT_KEY='ptpm_brightness';
 function setMobileScale(pct){
   const v=Math.max(70,Math.min(200,parseInt(pct,10)||100));
   const scale=(v/100).toFixed(2);
-  const body=document.getElementById('detailBody');
-  if(body)body.style.setProperty('--m-scale',scale);
-  const bodyBau=document.getElementById('detailBodyBau');
-  if(bodyBau)bodyBau.style.setProperty('--m-scale',scale);
+  // Alle 4 Tab-Bodies bekommen denselben Maßstab
+  ['detailBody','detailBodyBau','detailBodySkizze','detailBodySchnell'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.style.setProperty('--m-scale',scale);
+  });
   const lbl=document.getElementById('mSizeVal');if(lbl)lbl.textContent=v+'%';
   const sl=document.getElementById('mSizeSlider');if(sl&&String(sl.value)!==String(v))sl.value=String(v);
   try{localStorage.setItem(MSCALE_KEY,String(v));}catch(e){console.warn('[PTP-Mobile]',e);}
@@ -739,6 +749,20 @@ function applyStoredSizeBarVisibility(){
     const bar=document.getElementById('mSizeBar');
     if(bar)bar.classList.toggle('open',open);
   }catch(e){console.warn('[PTP-Mobile]',e);}
+}
+
+function setAppBrightness(pct){
+  const v=Math.max(40,Math.min(150,parseInt(pct,10)||100));
+  const f=v===100?'none':'brightness('+(v/100).toFixed(2)+')';
+  document.body.style.filter=f;
+  const lbl=document.getElementById('mBrightVal');if(lbl)lbl.textContent=v+'%';
+  const sl=document.getElementById('mBrightSlider');if(sl&&String(sl.value)!==String(v))sl.value=String(v);
+  try{localStorage.setItem(MBRIGHT_KEY,String(v));}catch(e){}
+}
+function applyStoredBrightness(){
+  let v=100;
+  try{const s=localStorage.getItem(MBRIGHT_KEY);if(s)v=parseInt(s,10)||100;}catch(e){}
+  setAppBrightness(v);
 }
 
 // ══ AUTH ══
@@ -4319,8 +4343,9 @@ function renderDetail(t){
 ;
   // Authentifizierte Thumbnails nachladen (Blob-URL via Drive API)
   try{hydrateFotoThumbs();}catch(e){console.warn('hydrateFotoThumbs:',e);}
-  // Gespeicherte Textgröße anwenden
+  // Gespeicherte Textgröße und Helligkeit anwenden
   try{applyStoredMobileScale();}catch(e){}
+  try{applyStoredBrightness();}catch(e){}
   // Panel-Zustand wiederherstellen
   if(_qaPanelOpen){
     const p=document.getElementById('qaPanel');
