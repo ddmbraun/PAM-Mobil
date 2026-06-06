@@ -5722,10 +5722,36 @@ async function _skizzeSave(){
   const localKey='skizze_'+generateId();
   try{await _mobPhotoSave(localKey,dataUrl);}catch(e){console.warn('[Skizze] IndexedDB:',e);}
   t.skizzen.push({id:generateId(),localKey,dataUrl,ts});
+  // ── Auch in t.fotos[] eintragen – erscheint in Baudoku/Schnell/Desktop ──
+  if(!t.fotos)t.fotos=[];
+  const stamp=now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate())+'_'+pad(now.getHours())+pad(now.getMinutes());
+  const fname='Skizze_'+stamp+'.jpg';
+  const fo={name:fname,mimeType:'image/jpeg',localKey,driveId:null,source:'mobile-skizze',uploadedAt:now.toISOString()};
+  t.fotos.push(fo);
   scheduleSave();
   _skizzeClose();
   toast('✓ Skizze gespeichert','success');
   renderSkizzeTab(t);
+  // ── Hintergrund-Upload zu Google Drive ───────────────────────────────────
+  const folderId=extractDriveFolderId(t.gdrive||'')
+    ||extractDriveFolderId(t.gdriveOrdner||'')
+    ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
+  if(folderId&&(await ensureToken())){
+    try{
+      const blob=_dataUrlToBlob(dataUrl);
+      const file=new File([blob],fname,{type:'image/jpeg'});
+      const meta=await _uploadOneFotoToDrive(file,folderId);
+      fo.driveId=meta.id;fo.name=meta.name||fo.name;
+      fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
+      fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
+      fo.download=meta.webContentLink||'';
+      scheduleSave();
+      toast('☁️ Skizze zu Drive hochgeladen','success',2000);
+    }catch(e){
+      console.warn('[Skizze] Drive-Upload fehlgeschlagen:',e);
+      toast('⚠️ Skizze lokal gespeichert – wird bei nächster Verbindung hochgeladen','info',3500);
+    }
+  }
 }
 
 function _skizzeClose(){
