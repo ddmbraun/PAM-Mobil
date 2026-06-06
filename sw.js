@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v50'; // v50: Skizze→Foto: _skizzeSave() trägt Skizze auch in t.fotos[] ein + Drive-Upload
+const CACHE_NAME = 'pam-mobil-v51'; // v51: Skizze Pinch-to-Zoom + Pan, Zoom-Reset-Button
 
 const PRECACHE = [
   './',

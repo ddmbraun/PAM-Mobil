@@ -449,6 +449,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <button onclick="_skizzeSetEraser()" id="skizzeEraserBtn" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#fff;font-size:18px;padding:4px 8px;cursor:pointer;" title="Radierer">🧹</button>
     <!-- Alles löschen -->
     <button onclick="_skizzeClear()" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#e74c3c;font-size:18px;padding:4px 8px;cursor:pointer;" title="Alles löschen">🗑</button>
+    <!-- Zoom-Reset (nur sichtbar wenn gezoomt) -->
+    <button id="skizzeZoomResetBtn" onclick="_skizzeResetZoom()" style="display:none;background:rgba(255,200,0,0.15);border:1px solid rgba(255,200,0,0.5);border-radius:6px;color:#FFD700;font-size:12px;font-weight:700;padding:4px 9px;cursor:pointer;" title="Zoom zurücksetzen">1× 🔍</button>
     <!-- Spacer -->
     <div style="flex:1;min-width:4px;"></div>
     <!-- Speichern + Schließen -->
@@ -5594,6 +5596,8 @@ let _skizzeColor='#111111';
 let _skizzeSize=5;
 let _skizzeEraser=false;
 let _skizzeLastX=0,_skizzeLastY=0;
+let _skizzeZoom=1,_skizzePanX=0,_skizzePanY=0;
+let _skizzePinching=false,_skizzePinchDist=0,_skizzePinchMidX=0,_skizzePinchMidY=0;
 let _skizzeEditingTaskId=null;
 
 function renderSkizzeTab(t){
@@ -5651,6 +5655,9 @@ function _skizzeOpen(){
     _skizzeBindEvents(canvas);
   });
   // Werkzeug-Reset
+  _skizzeZoom=1;_skizzePanX=0;_skizzePanY=0;
+  canvas.style.transformOrigin='0 0';canvas.style.transform='';
+  const _zrb=document.getElementById('skizzeZoomResetBtn');if(_zrb)_zrb.style.display='none';
   _skizzeEraser=false;
   _skizzeColor='#111111';
   _skizzeSize=5;
@@ -5658,14 +5665,72 @@ function _skizzeOpen(){
 }
 
 function _skizzeBindEvents(canvas){
-  // Touch
-  canvas.ontouchstart=e=>{e.preventDefault();const p=e.touches[0];const r=canvas.getBoundingClientRect();_skizzeDrawing=true;_skizzeLastX=p.clientX-r.left;_skizzeLastY=p.clientY-r.top;};
-  canvas.ontouchmove=e=>{e.preventDefault();if(!_skizzeDrawing)return;const p=e.touches[0];const r=canvas.getBoundingClientRect();_skizzeDraw(canvas,p.clientX-r.left,p.clientY-r.top);};
-  canvas.ontouchend=e=>{e.preventDefault();_skizzeDrawing=false;};
-  // Mouse (Desktop-Test)
-  canvas.onmousedown=e=>{_skizzeDrawing=true;const r=canvas.getBoundingClientRect();_skizzeLastX=e.clientX-r.left;_skizzeLastY=e.clientY-r.top;};
-  canvas.onmousemove=e=>{if(!_skizzeDrawing)return;const r=canvas.getBoundingClientRect();_skizzeDraw(canvas,e.clientX-r.left,e.clientY-r.top);};
+  // Toolbar-Höhe (dynamisch, da flex-wrap möglich)
+  function _tbh(){return(document.getElementById('skizzeToolbar')||{offsetHeight:60}).offsetHeight||60;}
+  // Screen → Canvas-Koordinaten (berücksichtigt Pan + Zoom)
+  function _toCanvas(cx,cy){return{x:(cx-_skizzePanX)/_skizzeZoom,y:(cy-_tbh()-_skizzePanY)/_skizzeZoom};}
+  function _pinchDist(t){return Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);}
+  function _applyTransform(){
+    canvas.style.transformOrigin='0 0';
+    canvas.style.transform='translate('+_skizzePanX+'px,'+_skizzePanY+'px) scale('+_skizzeZoom+')';
+    _skizzeUpdateZoomBtn();
+  }
+  // ── Touch ──────────────────────────────────────────────────────────────
+  canvas.ontouchstart=e=>{
+    e.preventDefault();
+    if(e.touches.length>=2){
+      _skizzeDrawing=false;_skizzePinching=true;
+      _skizzePinchDist=_pinchDist(e.touches);
+      _skizzePinchMidX=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      _skizzePinchMidY=(e.touches[0].clientY+e.touches[1].clientY)/2;
+      return;
+    }
+    _skizzePinching=false;
+    const c=_toCanvas(e.touches[0].clientX,e.touches[0].clientY);
+    _skizzeDrawing=true;_skizzeLastX=c.x;_skizzeLastY=c.y;
+  };
+  canvas.ontouchmove=e=>{
+    e.preventDefault();
+    if(e.touches.length>=2){
+      _skizzePinching=true;_skizzeDrawing=false;
+      const nd=_pinchDist(e.touches);
+      const mx=(e.touches[0].clientX+e.touches[1].clientX)/2;
+      const my=(e.touches[0].clientY+e.touches[1].clientY)/2;
+      const tbOffset=_tbh();
+      // Canvas-Pixel unter Pinch-Mitte festhalten, dann neuen Zoom anwenden
+      const cPx=(mx-_skizzePanX)/_skizzeZoom;
+      const cPy=(my-tbOffset-_skizzePanY)/_skizzeZoom;
+      _skizzeZoom=Math.min(Math.max(_skizzeZoom*(nd/_skizzePinchDist),0.5),6);
+      _skizzePanX=mx-cPx*_skizzeZoom;
+      _skizzePanY=my-tbOffset-cPy*_skizzeZoom;
+      // Pan: Bewegung des Mittelpunkts mitführen
+      _skizzePanX+=(mx-_skizzePinchMidX);
+      _skizzePanY+=(my-_skizzePinchMidY);
+      _skizzePinchDist=nd;_skizzePinchMidX=mx;_skizzePinchMidY=my;
+      _applyTransform();
+      return;
+    }
+    if(!_skizzeDrawing)return;
+    const c=_toCanvas(e.touches[0].clientX,e.touches[0].clientY);
+    _skizzeDraw(canvas,c.x,c.y);
+  };
+  canvas.ontouchend=e=>{e.preventDefault();_skizzeDrawing=false;if(e.touches.length<2)_skizzePinching=false;};
+  // ── Maus (Desktop) ─────────────────────────────────────────────────────
+  canvas.onmousedown=e=>{const c=_toCanvas(e.clientX,e.clientY);_skizzeDrawing=true;_skizzeLastX=c.x;_skizzeLastY=c.y;};
+  canvas.onmousemove=e=>{if(!_skizzeDrawing)return;const c=_toCanvas(e.clientX,e.clientY);_skizzeDraw(canvas,c.x,c.y);};
   canvas.onmouseup=()=>{_skizzeDrawing=false;};
+  // Mausrad-Zoom (Desktop)
+  canvas.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const tbOffset=_tbh();
+    const scale=e.deltaY<0?1.15:0.87;
+    const cPx=(e.clientX-_skizzePanX)/_skizzeZoom;
+    const cPy=(e.clientY-tbOffset-_skizzePanY)/_skizzeZoom;
+    _skizzeZoom=Math.min(Math.max(_skizzeZoom*scale,0.5),6);
+    _skizzePanX=e.clientX-cPx*_skizzeZoom;
+    _skizzePanY=e.clientY-tbOffset-cPy*_skizzeZoom;
+    _applyTransform();
+  },{passive:false});
 }
 
 function _skizzeDraw(canvas,x,y){
@@ -5681,6 +5746,19 @@ function _skizzeDraw(canvas,x,y){
   _skizzeLastX=x;_skizzeLastY=y;
 }
 
+function _skizzeResetZoom(){
+  _skizzeZoom=1;_skizzePanX=0;_skizzePanY=0;
+  const cv=document.getElementById('skizzeCanvas');
+  if(cv){cv.style.transform='';}
+  const btn=document.getElementById('skizzeZoomResetBtn');if(btn)btn.style.display='none';
+}
+function _skizzeUpdateZoomBtn(){
+  const btn=document.getElementById('skizzeZoomResetBtn');if(!btn)return;
+  if(_skizzeZoom>1.05||_skizzeZoom<0.95){
+    btn.style.display='';
+    btn.textContent=_skizzeZoom.toFixed(1)+'× 🔍';
+  }else{btn.style.display='none';}
+}
 function _skizzeSetColor(c){_skizzeEraser=false;_skizzeColor=c;_skizzeUpdateUI();}
 function _skizzeSetSize(s){_skizzeSize=s;_skizzeUpdateUI();}
 function _skizzeSetEraser(){_skizzeEraser=!_skizzeEraser;_skizzeUpdateUI();}
