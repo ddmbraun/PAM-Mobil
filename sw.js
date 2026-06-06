@@ -1,41 +1,67 @@
-const CACHE_NAME = 'pam-desktop-2026-06-06-b338';
+// Service Worker - PAM Mobil
+// Google-APIs werden NIEMALS gecacht.
 
-self.addEventListener('install', event => {
-  // Kein pre-caching – verhindert addAll-Fehler bei Subdirectory-Deployments (z.B. GitHub Pages)
-  // Assets werden on-the-fly beim ersten Abruf gecacht (fetch-Handler unten)
-  event.waitUntil(self.skipWaiting());
-});
+const CACHE_NAME = 'pam-mobil-v52'; // v52: Pinch-Zoom fix (kein Namenskonflikt), sauber von Backup aufgebaut
 
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+const PRECACHE = [
+  './',
+  './index.html',
+  './artikel.json',
+  'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css',
+  'https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js',
+  'https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js',
+  'https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.7/dist/jspdf.plugin.autotable.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+];
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => Promise.allSettled(
+        PRECACHE.map(url =>
+          cache.add(url).catch(err => console.warn('[SW] Precache fehlgeschlagen:', url, err))
+        )
+      ))
+      .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-  // Nur Same-Origin-Requests cachen
-  if (url.origin !== self.location.origin) return;
-  // POST-Requests nicht cachen
-  if (event.request.method !== 'GET') return;
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
+  );
+});
 
-  event.respondWith(
-    caches.match(event.request).then(cached => {
+self.addEventListener('fetch', e => {
+  const url = e.request.url;
+
+  if (url.startsWith('blob:') || url.startsWith('data:')) return;
+
+  if (
+    url.includes('googleapis.com') ||
+    url.includes('accounts.google.com') ||
+    url.includes('drive.google.com') ||
+    url.includes('oauth2.google') ||
+    url.includes('lh3.googleusercontent.com') ||
+    url.includes('api.open-meteo.com')
+  ) {
+    return;
+  }
+
+  e.respondWith(
+    caches.match(e.request).then(cached => {
       if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (!response || response.status !== 200 || response.type !== 'basic') return response;
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        return response;
-      });
+      return fetch(e.request).then(resp => {
+        if (e.request.method === 'GET' && resp.status === 200) {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+        }
+        return resp;
+      }).catch(() => new Response('', {status: 503, statusText: 'Offline'}));
     })
   );
-});
-
-self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
 });
