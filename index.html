@@ -861,6 +861,10 @@ async function afterLogin(){
   try{workspaceFolderId=localStorage.getItem(WORKSPACE_FOLDER_KEY)||null;}catch(e){console.warn('[PTP-Mobile]',e);}
   // HV-Bild-Cache vorladen (schnellere Thumbnails)
   try{ _preloadHvBildCacheMob(); }catch(e){}
+  // Ausstehende lokale Änderungen VOR dem Drive-Reload sichern (z.B. Schnellnotiz bei abgelaufenem Token)
+  if(dirty&&fileId){
+    try{clearTimeout(saveTimer);await saveFile();}catch(e){console.warn('[PTP-Mobile] afterLogin pre-save:',e);}
+  }
   await findOrPickFile();
   // Timer-State prüfen: jetzt sind Boards geladen, Timer kann sicher wiederhergestellt werden
   resumeMobileTimerIfNeeded();
@@ -1093,6 +1097,8 @@ function logout(){
   showLogin('Abgemeldet');
 }
 function showLogin(msg){
+  // Poll-Timer stoppen – verhindert dass showLogin() alle 30s erneut aufgerufen wird
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('listScreen').classList.add('hidden');
   document.getElementById('detailScreen').classList.add('hidden');
