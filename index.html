@@ -425,12 +425,11 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <input id="quickAddTitle" type="text" placeholder="Titel …" autocomplete="off" style="width:100%;box-sizing:border-box;padding:12px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:15px;margin-bottom:10px;" onkeydown="if(event.key==='Enter')_submitQuickAdd()">
     <textarea id="quickAddNote" placeholder="Notiz (optional) …" rows="3" style="width:100%;box-sizing:border-box;padding:12px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:14px;resize:none;margin-bottom:10px;"></textarea>
     <!-- Foto-Bereich -->
-    <div id="quickAddFotoPreview" style="display:none;margin-bottom:10px;position:relative;">
-      <img id="quickAddFotoImg" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;display:block;">
-      <button onclick="_quickAddRemoveFoto()" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:#fff;width:28px;height:28px;font-size:16px;cursor:pointer;line-height:28px;text-align:center;">✕</button>
+    <div id="quickAddFotoPreview" style="display:none;margin-bottom:10px;">
+      <div id="quickAddFotoThumbs" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
     </div>
     <input type="file" id="quickAddFotoInput" accept="image/*" capture="environment" style="display:none;" onchange="_quickAddFotoSelected(this)">
-    <input type="file" id="quickAddGalerieInput" accept="image/*" style="display:none;" onchange="_quickAddFotoSelected(this)">
+    <input type="file" id="quickAddGalerieInput" accept="image/*" multiple style="display:none;" onchange="_quickAddFotoSelected(this)">
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <button onclick="document.getElementById('quickAddFotoInput').click()" style="flex:1;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;">📷 Kamera</button>
       <button onclick="document.getElementById('quickAddGalerieInput').click()" style="flex:1;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;">🖼 Galerie</button>
@@ -6015,22 +6014,42 @@ function _loadQuickBoardSelect(){
   });
 }
 // Schnell-Add Foto-State
-let _quickAddFotoFile=null;
+// Fix v58: Array statt Einzel-Datei – vorher überschrieb eine Galerie-Auswahl das
+// zuvor aufgenommene Kamera-Foto (nur das zuletzt gewählte Bild wurde gespeichert).
+// Jetzt: Kamera + Galerie kombinierbar, Galerie mit Mehrfachauswahl (multiple).
+let _quickAddFotoFiles=[];
 
 function _quickAddFotoSelected(inp){
-  const file=inp.files&&inp.files[0];
-  if(!file)return;
-  _quickAddFotoFile=file;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    document.getElementById('quickAddFotoImg').src=e.target.result;
-    document.getElementById('quickAddFotoPreview').style.display='block';
-  };
-  reader.readAsDataURL(file);
+  const files=Array.from(inp.files||[]);
+  if(!files.length)return;
+  _quickAddFotoFiles.push(...files);
+  inp.value=''; // erlaubt erneute Auswahl (auch derselben Datei) und weitere Kamera-Fotos
+  _quickAddRenderFotoPreview();
 }
-function _quickAddRemoveFoto(){
-  _quickAddFotoFile=null;
-  document.getElementById('quickAddFotoPreview').style.display='none';
+function _quickAddRenderFotoPreview(){
+  const wrap=document.getElementById('quickAddFotoPreview');
+  const list=document.getElementById('quickAddFotoThumbs');
+  if(!wrap||!list)return;
+  list.innerHTML='';
+  if(!_quickAddFotoFiles.length){wrap.style.display='none';return;}
+  wrap.style.display='block';
+  _quickAddFotoFiles.forEach((f,i)=>{
+    const cell=document.createElement('div');
+    cell.style.cssText='position:relative;width:31%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--bg3);';
+    const img=document.createElement('img');
+    img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
+    const fr=new FileReader();fr.onload=e=>{img.src=e.target.result;};fr.readAsDataURL(f);
+    const del=document.createElement('button');
+    del.textContent='✕';
+    del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:#fff;width:24px;height:24px;font-size:13px;cursor:pointer;line-height:24px;text-align:center;padding:0;';
+    del.onclick=()=>{_quickAddFotoFiles.splice(i,1);_quickAddRenderFotoPreview();};
+    cell.append(img,del);
+    list.appendChild(cell);
+  });
+}
+function _quickAddRemoveFoto(){ // entfernt alle Fotos (Kompatibilität)
+  _quickAddFotoFiles=[];
+  _quickAddRenderFotoPreview();
   document.getElementById('quickAddFotoInput').value='';
   document.getElementById('quickAddGalerieInput').value='';
 }
@@ -6043,7 +6062,7 @@ function newTask(){
     return;
   }
   // Bottom-Sheet öffnen + Reset
-  _quickAddFotoFile=null;
+  _quickAddFotoFiles=[];
   document.getElementById('quickAddTitle').value='';
   document.getElementById('quickAddNote').value='';
   document.getElementById('quickAddFotoPreview').style.display='none';
@@ -6054,7 +6073,7 @@ function newTask(){
 }
 function _closeQuickAdd(){
   document.getElementById('quickAddSheet').style.display='none';
-  _quickAddFotoFile=null;
+  _quickAddFotoFiles=[];
 }
 async function _submitQuickAdd(){
   const title=(document.getElementById('quickAddTitle').value||'').trim();
@@ -6077,29 +6096,32 @@ async function _submitQuickAdd(){
     ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]
   };
   boards[savedBoard].push(newT);
-  // Foto-Referenz VOR _closeQuickAdd() sichern – _closeQuickAdd setzt _quickAddFotoFile=null
-  const fotoFile=_quickAddFotoFile;
+  // Foto-Referenzen VOR _closeQuickAdd() sichern – _closeQuickAdd leert _quickAddFotoFiles
+  const fotoFiles=_quickAddFotoFiles.slice();
   _closeQuickAdd();
   toast('✓ Notiz gespeichert','success');
-  // Foto-Upload + Unterordner anlegen (im Hintergrund)
-  if(fotoFile){
+  // Task sofort speichern (forceSave statt Debounce – siehe Schnellnotiz-Fix v57)
+  forceSave();
+  // Foto-Upload + Unterordner anlegen (im Hintergrund) – Fix v58: ALLE Fotos (Kamera + Galerie)
+  if(fotoFiles.length){
+    // Hilfsfunktion: Foto i lokal sichern (IndexedDB) + Task-Referenz anlegen
+    const _saveFotoLocal=async(f,i)=>{
+      const localKey='qa_'+newT.id+'_'+i;
+      try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[PTP-Mobile] Foto lokal:',e);}
+      newT.fotos.push({name:f.name,mimeType:f.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
+    };
+    const _allLocalFallback=async(msg)=>{
+      for(let i=0;i<fotoFiles.length;i++)await _saveFotoLocal(fotoFiles[i],i);
+      forceSave();
+      toast(msg,'info',5000);
+    };
     const parentFolderId=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'');
     if(!parentFolderId){
-      // Foto lokal im Task speichern, kein Drive-Upload möglich
-      const localKey='qa_'+newT.id+'_0';
-      _mobPhotoSave(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
-      newT.fotos.push({name:fotoFile.name,mimeType:fotoFile.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
-      scheduleSave();
-      toast('ℹ️ Kein Standardordner – Foto nur lokal gespeichert','info',4000);
+      await _allLocalFallback('ℹ️ Kein Standardordner – '+fotoFiles.length+' Foto(s) nur lokal gespeichert');
       return;
     }
     if(!(await ensureToken())){
-      // Token nicht verfügbar → Foto lokal sichern statt still verwerfen
-      const localKey='qa_'+newT.id+'_0';
-      _mobPhotoSave(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
-      newT.fotos.push({name:fotoFile.name,mimeType:fotoFile.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
-      scheduleSave();
-      toast('⚠️ Nicht angemeldet – Foto lokal gespeichert, wird bei nächster Verbindung hochgeladen','info',5000);
+      await _allLocalFallback('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung');
       return;
     }
     try{
@@ -6113,27 +6135,34 @@ async function _submitQuickAdd(){
       if(!metaResp.ok)throw new Error('Ordner anlegen: HTTP '+metaResp.status);
       const folder=await metaResp.json();
       newT.gdrive='https://drive.google.com/drive/folders/'+folder.id;
-      // Foto hochladen
-      const uploadMeta=await _uploadOneFotoToDrive(fotoFile,folder.id);
-      newT.fotos.push({
-        driveId:uploadMeta.id,name:uploadMeta.name,
-        thumbnail:uploadMeta.thumbnailLink||('https://drive.google.com/thumbnail?id='+uploadMeta.id+'&sz=w400'),
-        url:uploadMeta.webViewLink||('https://drive.google.com/file/d/'+uploadMeta.id+'/view'),
-        download:uploadMeta.webContentLink||'',
-        uploadedAt:new Date().toISOString(),source:'mobile'
-      });
-      scheduleSave();
-      toast('📁 Unterordner & Foto hochgeladen','success');
+      // Alle Fotos hochladen; einzelne Fehlschläge landen lokal (Retry beim nächsten Start)
+      let _okCount=0,_failCount=0;
+      for(let i=0;i<fotoFiles.length;i++){
+        const f=fotoFiles[i];
+        try{
+          const uploadMeta=await _uploadOneFotoToDrive(f,folder.id);
+          newT.fotos.push({
+            driveId:uploadMeta.id,name:uploadMeta.name,
+            thumbnail:uploadMeta.thumbnailLink||('https://drive.google.com/thumbnail?id='+uploadMeta.id+'&sz=w400'),
+            url:uploadMeta.webViewLink||('https://drive.google.com/file/d/'+uploadMeta.id+'/view'),
+            download:uploadMeta.webContentLink||'',
+            uploadedAt:new Date().toISOString(),source:'mobile'
+          });
+          _okCount++;
+        }catch(upErr){
+          console.warn('[PTP-Mobile] Foto-Upload fehlgeschlagen:',upErr);
+          await _saveFotoLocal(f,i);
+          _failCount++;
+        }
+      }
+      forceSave();
+      if(_failCount)toast('📁 '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
+      else toast('📁 Unterordner & '+_okCount+' Foto(s) hochgeladen','success');
     }catch(e){
-      // Fallback: lokal speichern
-      const localKey='qa_'+newT.id+'_0';
-      _mobPhotoSave(localKey,await _fileToDataUrl(fotoFile)).catch(()=>{});
-      newT.fotos.push({name:fotoFile.name,mimeType:fotoFile.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
-      scheduleSave();
-      toast('⚠️ Drive-Fehler – Foto lokal gespeichert','info',4000);
+      // Ordner-Anlage fehlgeschlagen → alle Fotos lokal sichern
+      console.warn('[PTP-Mobile] Quick-Add Drive:',e);
+      await _allLocalFallback('⚠️ Drive-Fehler – '+fotoFiles.length+' Foto(s) lokal gespeichert');
     }
-  }else{
-    scheduleSave();
   }
 }
 

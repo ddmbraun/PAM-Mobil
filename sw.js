@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v57'; // v57: Schnellnotiz-Datenverlust behoben (forceSave, 401-Pfad, Poll-Schutz, Backup-Restore) + Auto-Login via Refresh-Token
+const CACHE_NAME = 'pam-mobil-v58'; // v58: Quick-Add Mehrfach-Fotos (Kamera + Galerie kombinierbar, multiple-Auswahl)
 
 const PRECACHE = [
   './',
