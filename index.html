@@ -709,6 +709,16 @@ let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
 // ── UTILS ──
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
 function escAttr(s){return String(s==null?'':s).replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+// Notiz-Zeitstempel anzeigen: NUR echte ISO-Strings (2026-06-10T…) per Date formatieren.
+// Alles andere (z.B. „10.06.2026, 14:32" aus Altbestand) unverändert durchreichen –
+// new Date('10.06.2026') würde als Monat.Tag.Jahr fehlinterpretiert!
+function _fmtNotizTs(ts){
+  if(!ts)return'';
+  if(/^\d{4}-\d{2}-\d{2}T/.test(ts)){
+    try{const d=new Date(ts);if(!isNaN(d))return d.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}catch(e){}
+  }
+  return ts;
+}
 // Globale Helper – werden in renderList, renderHeuteMobil etc. verwendet
 function isOverdue(dateStr){if(!dateStr)return false;return dateStr<new Date().toISOString().slice(0,10);}
 function isToday(dateStr){if(!dateStr)return false;return dateStr===new Date().toISOString().slice(0,10);}
@@ -820,10 +830,13 @@ function gdriveLogin(){
     redirect_uri:_getRedirectUri(),
     response_type:'code',        // Authorization Code Flow – liefert Refresh-Token
     access_type:'offline',       // Refresh-Token anfordern
-    prompt:'consent',            // Erzwingt Refresh-Token-Ausgabe
     scope:GDRIVE_SCOPE,
     include_granted_scopes:'true',
   });
+  // Fix v59: prompt=consent nur erzwingen, wenn noch KEIN Refresh-Token vorhanden ist
+  // (Google gibt Refresh-Token nur mit consent aus). Wird der Token ungültig
+  // (invalid_grant), löscht _renewTokenViaCloud() ihn → nächster Login fordert neu an.
+  if(!localStorage.getItem('pam_gdrive_refresh_token'))params.set('prompt','consent');
   if(hint)params.set('login_hint',hint);
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
 }
@@ -1014,10 +1027,11 @@ function _openOAuthNewTab(){
     redirect_uri:_getRedirectUri(),
     response_type:'code',        // Authorization Code Flow – liefert Refresh-Token
     access_type:'offline',       // Refresh-Token anfordern
-    prompt:'consent',            // Erzwingt Refresh-Token-Ausgabe
     scope:GDRIVE_SCOPE,
     include_granted_scopes:'true',
   });
+  // Fix v59: prompt=consent nur ohne vorhandenen Refresh-Token (siehe gdriveLogin)
+  if(!localStorage.getItem('pam_gdrive_refresh_token'))params.set('prompt','consent');
   if(hint)params.set('login_hint',hint);
   const authUrl='https://accounts.google.com/o/oauth2/v2/auth?'+params;
   const w=window.open(authUrl,'_blank');
@@ -1599,18 +1613,13 @@ async function saveFile(){
             statuses=remoteStatuses;
             mobileWhitelist=rWhite;
             hiddenBoards=remoteHidden;
-            // Kein Task offen (_savingTaskId null):
-            // Remote als Basis nehmen (PC-Änderungen an bestehenden Tasks erhalten).
-            // Nur lokal neue Tasks (noch nicht in Remote) hinzufügen.
+            // Remote als Basis nehmen (PC-Änderungen an bestehenden Tasks erhalten),
+            // lokal NEUE Tasks (noch nie vom Server gesehen) hinzufügen.
             // Lokal gelöschte Tasks (nicht mehr in local, aber in Remote) NICHT zurückbringen.
-            if(!_savingTaskId){
-              // Alle lokal noch vorhandenen IDs über alle Boards sammeln (Löschungen fehlen hier)
-              const _allLocalIds=new Set();
-              for(const arr of Object.values(boards||{})){
-                for(const t of (arr||[])){if(t&&t.id)_allLocalIds.add(t.id);}
-              }
-              // Alle lokal bekannten IDs (inkl. gelöschter) aus dem letzten geladenen Remote-Stand
-              // können wir nicht direkt kennen – daher: Remote als Basis, lokal-neue hinzu
+            // Fix v59: läuft jetzt IMMER – vorher galt bei offenem Task `boards=remoteVisible`,
+            // wodurch andere lokal neu angelegte Tasks beim Konflikt verworfen wurden.
+            // (Der offene Task selbst wurde oben bereits in remoteVisible gemerged.)
+            {
               const merged={};
               for(const bn of Object.keys(remoteVisible)){
                 const localArr=boards[bn]||[];
@@ -1632,8 +1641,6 @@ async function saveFile(){
                 if(!merged[bn]&&!_remoteSeenBoards.has(bn))merged[bn]=(boards[bn]||[]).slice();
               }
               boards=merged;
-            } else {
-              boards=remoteVisible;
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
@@ -2701,6 +2708,11 @@ async function _mobRetryPendingUploads(){
           if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:fid});
         }
       }
+      // Fix v60: auch normale Task-Fotos nachladen (z.B. Quick-Add bei Upload-Fehler) –
+      // vorher wurden NUR Prüfbericht-Fotos wiederholt, Task-Fotos blieben dauerhaft lokal
+      for(const foto of task.fotos||[]){
+        if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:fid});
+      }
     }
   }
   if(!pending.length)return;
@@ -2877,9 +2889,11 @@ async function forceReloadFromDrive(){
 }
 // Long-Press auf Refresh-Button = Force-Reload (PC-Stand erzwingen)
 // ── Redirect-Rückkehr: Token aus URL-Hash nach Google-Login lesen ──
-// Funktioniert auch im iOS-PWA-Modus (Homescreen-App):
-// Dort öffnet der Login in Safari → Token wird in localStorage gespeichert
-// → App liest ihn beim nächsten Fokus-/Sichtbarkeits-Wechsel aus.
+// ⚠ Hinweis (korrigiert v59): Safari und Homescreen-PWA haben auf iOS GETRENNTE
+// localStorage-Speicher – der Handoff über _OAUTH_HANDOFF_KEY funktioniert NUR,
+// wenn Login und App im selben Kontext laufen (z.B. Redirect bleibt in der PWA).
+// Primärer Auto-Login-Weg ist seit v57 der Refresh-Token via Cloud Function
+// (tryAutoConnect → _renewTokenViaCloud); der Handoff ist nur noch Fallback.
 const _OAUTH_HANDOFF_KEY='pam_oauth_handoff_v1';
 document.addEventListener('DOMContentLoaded',function(){
   // ── Neuer Code-Flow: ?code= aus URL lesen ──
@@ -2940,9 +2954,17 @@ async function _renewTokenViaCloud(){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'refresh',refresh_token:refreshToken}),
     });
-    if(!response.ok)return false;
-    const data=await response.json();
-    if(!data.access_token)return false;
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.access_token){
+      // Fix v59: ungültigen/widerrufenen Refresh-Token entfernen → nächster Login
+      // fordert via prompt=consent automatisch einen neuen an
+      const errStr=JSON.stringify(data&&(data.error_description||data.error)||'');
+      if(errStr.includes('invalid_grant')){
+        try{localStorage.removeItem('pam_gdrive_refresh_token');}catch(e){}
+        console.warn('[Cloud-Refresh Mobile] Refresh-Token ungültig – entfernt.');
+      }
+      return false;
+    }
     gdriveToken=data.access_token;
     gdriveTokenExpires=Date.now()+(Number(data.expires_in||3600)-60)*1000;
     try{localStorage.setItem(TOKEN_KEY,JSON.stringify({token:gdriveToken,exp:gdriveTokenExpires}));}catch(e){}
@@ -3188,7 +3210,15 @@ function switchDetailTab(tab){
 // ══════════════════════════════════════════════
 //  SCHNELL-TAB  –  Fokus-Modus (Fotos + Notiz)
 // ══════════════════════════════════════════════
-function _fmtTs(iso){try{const d=new Date(iso);return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}catch(e){return'';}}
+function _fmtTs(iso){
+  if(!iso)return'';
+  // Fix v59: ISO-Guard – nicht-ISO-Strings (Altbestand „10.06.2026, …") roh anzeigen
+  // statt „Invalid Date" / falscher Uhrzeit
+  if(/^\d{4}-\d{2}-\d{2}T/.test(iso)){
+    try{const d=new Date(iso);if(!isNaN(d))return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}catch(e){}
+  }
+  return iso;
+}
 
 // ══════════════════════════════════════════════
 //  SCHNELL-TAB  –  Option A (Toggle Foto/Notiz)
@@ -4847,8 +4877,8 @@ function renderNotizen(list){
       +'<div style="overflow:hidden;">'
         +(isDone?'<s style="color:var(--text2);font-size:13px;">'+esc(n.text||'')+'</s>':'<span style="font-size:13px;">'+esc(n.text||'')+'</span>')
         +'<div style="font-size:10px;color:var(--text2);margin-top:3px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
-          +'<span>'+esc(n.ts||'')+'</span>'
-          +(isDone?'<span style="color:var(--green)">· ✓ '+esc(n.doneTs||'')+'</span>':'')
+          +'<span>'+esc(_fmtNotizTs(n.ts||''))+'</span>'
+          +(isDone?'<span style="color:var(--green)">· ✓ '+esc(_fmtNotizTs(n.doneTs||''))+'</span>':'')
           +'<button class="rm-btn" style="height:22px;font-size:11px;padding:0 6px;margin-left:auto;" onclick="removeNotiz('+i+')">✕</button>'
         +'</div>'
       +'</div>'
@@ -4896,7 +4926,9 @@ function addNotiz(textParam){
   }
   if(!finalText)return;
   if(!t.notizVerlauf)t.notizVerlauf=[];
-  const ts=new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  // Fix v59: ISO statt de-DE-String – einheitlich mit Schnellnotiz/Desktop,
+  // Anzeige formatiert _fmtNotizTs(); Altbestand bleibt lesbar (Passthrough)
+  const ts=new Date().toISOString();
   t.notizVerlauf.push({ts,text:finalText});
   if(inp)inp.value='';
   _mOpenSections['Notizen']=true;
@@ -4924,7 +4956,7 @@ function toggleNotizDone(idx){
   const t=currentTask();if(!t||!t.notizVerlauf)return;
   const n=t.notizVerlauf[idx];if(!n)return;
   if(n.done){n.done=false;delete n.doneTs;}
-  else{n.done=true;n.doneTs=new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+  else{n.done=true;n.doneTs=new Date().toISOString();} // Fix v59: ISO, Anzeige via _fmtNotizTs
   scheduleSave();
   const el=document.getElementById('notizList');if(el)el.innerHTML=renderNotizen(t.notizVerlauf);
   const el2=document.getElementById('bauNotizList');if(el2)el2.innerHTML=renderNotizen(t.notizVerlauf);
@@ -6038,7 +6070,8 @@ function _quickAddRenderFotoPreview(){
     cell.style.cssText='position:relative;width:31%;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--bg3);';
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
-    const fr=new FileReader();fr.onload=e=>{img.src=e.target.result;};fr.readAsDataURL(f);
+    // Fix v60: ObjectURL statt FileReader – Vorschau erscheint sofort (auch große HEIC-Fotos)
+    try{img.src=URL.createObjectURL(f);}catch(e){const fr=new FileReader();fr.onload=ev=>{img.src=ev.target.result;};fr.readAsDataURL(f);}
     const del=document.createElement('button');
     del.textContent='✕';
     del.style.cssText='position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);border:none;border-radius:50%;color:#fff;width:24px;height:24px;font-size:13px;cursor:pointer;line-height:24px;text-align:center;padding:0;';
@@ -6102,26 +6135,42 @@ async function _submitQuickAdd(){
   toast('✓ Notiz gespeichert','success');
   // Task sofort speichern (forceSave statt Debounce – siehe Schnellnotiz-Fix v57)
   forceSave();
-  // Foto-Upload + Unterordner anlegen (im Hintergrund) – Fix v58: ALLE Fotos (Kamera + Galerie)
+  // Foto-Upload + Unterordner anlegen – Fix v60: Fotos erscheinen SOFORT im Task
+  // (lokale Vorschau + „⬆ lädt hoch…"-Overlay wie beim normalen Foto-Upload, Z. ~5575),
+  // Upload läuft sichtbar im Hintergrund, Fortschritt im Save-Indikator.
+  // Bei Fehlern bleiben Fotos lokal (IndexedDB) erhalten.
   if(fotoFiles.length){
-    // Hilfsfunktion: Foto i lokal sichern (IndexedDB) + Task-Referenz anlegen
-    const _saveFotoLocal=async(f,i)=>{
+    // 1) SOFORT: Einträge mit lokaler Vorschau anlegen + in IndexedDB sichern
+    const fotoObjs=[];
+    for(let i=0;i<fotoFiles.length;i++){
+      const f=fotoFiles[i];
       const localKey='qa_'+newT.id+'_'+i;
-      try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[PTP-Mobile] Foto lokal:',e);}
-      newT.fotos.push({name:f.name,mimeType:f.type,localKey,driveId:null,uploadedAt:new Date().toISOString(),source:'mobile'});
+      const fo={name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
+        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:true,
+        uploadedAt:new Date().toISOString(),source:'mobile'};
+      newT.fotos.push(fo);
+      fotoObjs.push({f:f,fo:fo});
+      try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
+    }
+    forceSave(); // Task inkl. Foto-Referenzen sofort speichern (localUrl/_uploading filtert der Replacer raus)
+    try{renderList();}catch(e){}
+    // Detail-Ansicht auffrischen falls der Task gerade offen ist
+    const _qaRefresh=()=>{
+      if(currentTaskId!==newT.id)return;
+      try{const t2=findTaskById(newT.id);if(t2){if(_currentDetailTab==='schnell')renderSchnellTab(t2);else if(_currentDetailTab==='bau')renderBaudokuTab(t2);else renderDetail(t2);}}catch(e){}
     };
-    const _allLocalFallback=async(msg)=>{
-      for(let i=0;i<fotoFiles.length;i++)await _saveFotoLocal(fotoFiles[i],i);
-      forceSave();
+    const _qaAllLocal=(msg)=>{
+      fotoObjs.forEach(function(o){o.fo._uploading=false;});
+      forceSave();_qaRefresh();
       toast(msg,'info',5000);
     };
     const parentFolderId=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'');
     if(!parentFolderId){
-      await _allLocalFallback('ℹ️ Kein Standardordner – '+fotoFiles.length+' Foto(s) nur lokal gespeichert');
+      _qaAllLocal('ℹ️ Kein Standardordner – '+fotoFiles.length+' Foto(s) nur lokal gespeichert');
       return;
     }
     if(!(await ensureToken())){
-      await _allLocalFallback('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung');
+      _qaAllLocal('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung');
       return;
     }
     try{
@@ -6135,33 +6184,35 @@ async function _submitQuickAdd(){
       if(!metaResp.ok)throw new Error('Ordner anlegen: HTTP '+metaResp.status);
       const folder=await metaResp.json();
       newT.gdrive='https://drive.google.com/drive/folders/'+folder.id;
-      // Alle Fotos hochladen; einzelne Fehlschläge landen lokal (Retry beim nächsten Start)
-      let _okCount=0,_failCount=0;
-      for(let i=0;i<fotoFiles.length;i++){
-        const f=fotoFiles[i];
+      // 2) Upload nacheinander – Fortschritt sichtbar, Einträge werden IN PLACE aktualisiert
+      let _okCount=0,_failCount=0,_idx=0;
+      for(const o of fotoObjs){
+        _idx++;
+        setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
         try{
-          const uploadMeta=await _uploadOneFotoToDrive(f,folder.id);
-          newT.fotos.push({
-            driveId:uploadMeta.id,name:uploadMeta.name,
-            thumbnail:uploadMeta.thumbnailLink||('https://drive.google.com/thumbnail?id='+uploadMeta.id+'&sz=w400'),
-            url:uploadMeta.webViewLink||('https://drive.google.com/file/d/'+uploadMeta.id+'/view'),
-            download:uploadMeta.webContentLink||'',
-            uploadedAt:new Date().toISOString(),source:'mobile'
-          });
+          const meta=await _uploadOneFotoToDrive(o.f,folder.id);
+          try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,o.fo.localUrl);}catch(e){}
+          o.fo.driveId=meta.id;
+          o.fo.name=meta.name||o.fo.name;
+          o.fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
+          o.fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
+          o.fo.download=meta.webContentLink||'';
+          o.fo._uploading=false;
           _okCount++;
         }catch(upErr){
-          console.warn('[PTP-Mobile] Foto-Upload fehlgeschlagen:',upErr);
-          await _saveFotoLocal(f,i);
+          console.warn('[QuickAdd] Foto-Upload fehlgeschlagen:',upErr);
+          o.fo._uploading=false;o.fo._uploadError=true; // bleibt lokal erhalten (localKey)
           _failCount++;
         }
+        scheduleSave();_qaRefresh(); // Overlay dieses Fotos verschwindet sofort
       }
       forceSave();
       if(_failCount)toast('📁 '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
       else toast('📁 Unterordner & '+_okCount+' Foto(s) hochgeladen','success');
     }catch(e){
-      // Ordner-Anlage fehlgeschlagen → alle Fotos lokal sichern
-      console.warn('[PTP-Mobile] Quick-Add Drive:',e);
-      await _allLocalFallback('⚠️ Drive-Fehler – '+fotoFiles.length+' Foto(s) lokal gespeichert');
+      // Ordner-Anlage fehlgeschlagen → Fotos bleiben lokal
+      console.warn('[QuickAdd] Drive:',e);
+      _qaAllLocal('⚠️ Drive-Fehler – '+fotoFiles.length+' Foto(s) lokal gespeichert');
     }
   }
 }

@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v58'; // v58: Quick-Add Mehrfach-Fotos (Kamera + Galerie kombinierbar, multiple-Auswahl)
+const CACHE_NAME = 'pam-mobil-v60'; // v60: Quick-Add-Fotos sofort sichtbar (lädt-hoch-Overlay), Upload-Fortschritt, Retry für Task-Fotos
 
 const PRECACHE = [
   './',
