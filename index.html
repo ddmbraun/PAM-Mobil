@@ -578,10 +578,46 @@ function _buildMobileSaveObj(){
   return obj;
 }
 function _saveMobileBackup(){
-  try{localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify({ts:new Date().toISOString(),data:_buildMobileSaveObj()},_mobSaveReplacer));}catch(e){}
+  // dirty-Flag mitschreiben: nur Backups mit ungespeicherten Änderungen werden beim
+  // nächsten Start wiederhergestellt (_restoreMobileBackupIfDirty)
+  try{localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify({ts:new Date().toISOString(),dirty:!!dirty,data:_buildMobileSaveObj()},_mobSaveReplacer));}catch(e){}
 }
 function _getMobileBackup(){
   try{const s=localStorage.getItem(MOBILE_BACKUP_KEY);return s?JSON.parse(s):null;}catch(e){return null;}
+}
+// ── Backup-Wiederherstellung beim Start ─────────────────────────────────────
+// Wenn das letzte Backup ungespeicherte Änderungen enthielt (dirty=true), werden
+// additive Listen-Einträge (Notizen, Zeiten, Termine) in die frisch von Drive
+// geladenen Boards gemerged. Idempotent: vorhandene Einträge (gleicher Key) werden
+// nicht dupliziert. Bewusst KEINE ganzen Tasks wiederherstellen – das könnte am
+// Desktop gelöschte Tasks wiederbeleben.
+async function _restoreMobileBackupIfDirty(){
+  const bk=_getMobileBackup();
+  if(!bk||!bk.dirty||!bk.data)return;
+  let mergedCount=0;
+  try{
+    for(const[bn,arr]of Object.entries(bk.data)){
+      if(bn.startsWith('_')||!Array.isArray(arr))continue;
+      for(const bt of arr){
+        if(!bt||!bt.id)continue;
+        const lt=findTaskById(bt.id);
+        if(!lt)continue;
+        const before=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
+        lt.notizVerlauf=_mergeListByKey(lt.notizVerlauf,bt.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
+        lt.zeitEntries=_mergeListByKey(lt.zeitEntries,bt.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+        lt.ausserhausTermine=_mergeListByKey(lt.ausserhausTermine,bt.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+        const after=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
+        mergedCount+=(after-before);
+      }
+    }
+  }catch(e){console.warn('[PTP-Mobile] Backup-Restore:',e);}
+  // Backup als verarbeitet markieren (dirty löschen), Daten als Sicherheitsnetz behalten
+  try{bk.dirty=false;localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify(bk));}catch(e){}
+  if(mergedCount>0){
+    toast('↻ '+mergedCount+' ungespeicherte Einträge wiederhergestellt','success');
+    try{renderList();}catch(e){}
+    forceSave();
+  }
 }
 
 // ── JSON-Replacer: localUrl (data:/blob:) und _uploading aus Fotos heraushalten ──
@@ -667,6 +703,8 @@ let currentTaskId=null;
 let saveTimer=null;
 let dirty=false;
 let _dirtyTs=0; // Zeitstempel wann dirty=true gesetzt wurde (Polling-Block max. 60s)
+let _mobSaving=false;     // Mutex: verhindert parallele saveFile()-Läufe (Race Condition)
+let _mobSaveQueued=false; // Während eines laufenden Saves kam ein weiterer Save-Wunsch → danach erneut speichern
 let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
 
 // ── UTILS ──
@@ -866,6 +904,9 @@ async function afterLogin(){
     try{clearTimeout(saveTimer);await saveFile();}catch(e){console.warn('[PTP-Mobile] afterLogin pre-save:',e);}
   }
   await findOrPickFile();
+  // Ungespeicherte Einträge aus dem letzten lokalen Backup wiederherstellen
+  // (z.B. Schnellnotiz, deren Save durch App-Schließen/Token-Ablauf scheiterte)
+  try{await _restoreMobileBackupIfDirty();}catch(e){console.warn('[PTP-Mobile] Backup-Restore:',e);}
   // Timer-State prüfen: jetzt sind Boards geladen, Timer kann sicher wiederhergestellt werden
   resumeMobileTimerIfNeeded();
   // Ausstehende Foto-Uploads aus vorherigen Sessions nachholen
@@ -1406,9 +1447,15 @@ async function pollForChanges(){
   // Nicht während der User tippt
   const ae=document.activeElement;
   if(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName))return;
-  // Nicht während lokale Änderungen auf Speicherung warten — aber max. 60s blockieren
-  // (verhindert dauerhaften Poll-Stopp wenn Speichern wiederholt scheitert)
-  if(dirty&&(Date.now()-_dirtyTs)<60000)return;
+  // Fix: Bei dirty NIE den Remote-Stand über lokale Änderungen laden (Datenverlust!).
+  // Stattdessen nach 60s einen Save-Versuch anstoßen – saveFile() enthält den
+  // Konflikt-Merge und holt danach den Remote-Stand konsistent nach.
+  if(dirty){
+    if((Date.now()-_dirtyTs)>=60000){
+      try{clearTimeout(saveTimer);await saveFile();}catch(e){console.warn('[PTP-Mobile] Poll-Save:',e);}
+    }
+    return;
+  }
   try{
     if(!(await ensureToken()))return;
     const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime&_='+Date.now(),
@@ -1468,8 +1515,15 @@ function _mergeListByKey(remoteList,localList,keyFn){
   return out;
 }
 async function saveFile(){
-  if(!fileId||!gdriveToken)return;
-  if(!(await ensureToken()))return;
+  if(!fileId||!gdriveToken){
+    // Fix: Indikator blieb sonst auf "Speichere…" hängen; Änderungen lokal sichern
+    if(dirty){_saveMobileBackup();setSaveInd('error','✗ Nicht verbunden – lokal gesichert');}
+    return;
+  }
+  // Mutex: parallele saveFile()-Läufe (forceSave + Retry-Timer + pagehide) verhindern
+  if(_mobSaving){_mobSaveQueued=true;return;}
+  _mobSaving=true;
+  if(!(await ensureToken())){_mobSaving=false;_saveMobileBackup();return;}
   setSaveInd('saving','Speichere…');
   // Snapshot der aktuell offenen Task-ID – currentTaskId kann während des asynchronen
   // Saves durch closeDetail() auf null gesetzt werden; wir brauchen den ursprünglichen
@@ -1611,9 +1665,16 @@ async function saveFile(){
     // Resumable Upload (Two-Step: Session-Init + Byte-Transfer)
     const r=await _driveResumableUpdate(gdriveToken, fileId, content, 'application/json', mobETag);
     if(r.status===412){
+      // Fix: vorher wurden hier nicht existierende Funktionen (saveWorkboard/loadWorkboard,
+      // Desktop-Namen) aufgerufen → ReferenceError, beide Dialog-Buttons taten nichts.
       _showETagConflictDialog(
-        async()=>{mobETag=null;await saveWorkboard(fileId,content);},
-        async()=>{await loadWorkboard(fileId);}
+        async()=>{mobETag=null;clearTimeout(saveTimer);await saveFile();},
+        async()=>{
+          dirty=false;_dirtyTs=0;clearTimeout(saveTimer);
+          await loadFile();
+          if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
+          else renderList();
+        }
       );
       return {ok:false,status:412};
     }
@@ -1622,16 +1683,23 @@ async function saveFile(){
     // 401 → Token still erneuern und einmal sofort Retry
     if(r.status===401){
       setSaveInd('saving','Token erneuern…');
-      const ok=await silentRefresh();
+      // Fix: zuerst Cloud-Refresh (Refresh-Token, funktioniert auf iOS), dann GSI-Fallback
+      const ok=(await _renewTokenViaCloud())||(await silentRefresh());
       if(ok){
         // Einmaliger direkter Retry nach Token-Erneuerung
         const r2=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media&fields=modifiedTime',
           {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:content});
         if(!r2.ok)throw new Error('HTTP '+r2.status+' (nach Token-Refresh)');
+        // Fix: neuen ETag übernehmen – sonst läuft der nächste Save mit altem ETag in ein 412
+        const _retryETag=r2.headers.get('ETag')||r2.headers.get('etag');
+        if(_retryETag)mobETag=_retryETag;
         try{const rm2=await r2.json();if(rm2&&rm2.modifiedTime)fileLastModified=rm2.modifiedTime;}catch(e){}
       } else {
-        showLogin('Bitte erneut anmelden');
-        dirty=false;
+        // Fix: dirty bleibt TRUE und Backup wird gesichert – vorher wurden die
+        // Änderungen hier verworfen (dirty=false) → Schnellnotizen gingen verloren.
+        // Nach Neu-Login speichert afterLogin() die ausstehenden Änderungen nach.
+        _saveMobileBackup();
+        showLogin('Bitte erneut anmelden – ungespeicherte Änderungen bleiben erhalten');
         return;
       }
     } else if(!r.ok){
@@ -1639,10 +1707,10 @@ async function saveFile(){
     } else {
       try{const rm=await r.json();if(rm&&rm.modifiedTime)fileLastModified=rm.modifiedTime;}catch(e){console.warn('[PTP-Mobile]',e);}
     }
-    _saveMobileBackup(); // Lokales Backup nach erfolgreichem Speichern
-    setSaveInd('saved','✓ Gespeichert');
-    dirty=false;
+    dirty=false; // WICHTIG: vor _saveMobileBackup() – das Backup speichert das dirty-Flag mit
     _saveRetryCount=0;
+    _saveMobileBackup(); // Lokales Backup nach erfolgreichem Speichern (dirty=false → kein Restore)
+    setSaveInd('saved','✓ Gespeichert');
     // Board-Bar und Liste aktualisieren falls Konflikt-Check neue Daten vom Desktop geladen hat
     // (Nicht renderDetail – das würde Fokus/Felder zurücksetzen während der Nutzer tippt)
     try{renderBoardBar();}catch(e){}
@@ -1662,9 +1730,21 @@ async function saveFile(){
       dirty=false;
       _saveRetryCount=0;
       setTimeout(async()=>{
-        try{await loadFile();renderList();toast('⚠ Offline-Backup gesichert. Remote-Stand geladen.','error',5000);}
+        try{
+          await loadFile();
+          // Fix: Backup-Einträge sofort zurückmergen (nicht erst beim nächsten App-Start)
+          try{await _restoreMobileBackupIfDirty();}catch(ex2){console.warn('[PTP-Mobile]',ex2);}
+          renderList();toast('⚠ Offline-Backup gesichert. Remote-Stand geladen.','error',5000);
+        }
         catch(ex){console.warn('[PTP-Mobile] Fallback-Load:',ex);}
       },1000);
+    }
+  }finally{
+    // Mutex freigeben; falls während des Saves ein weiterer Save-Wunsch kam → nachholen
+    _mobSaving=false;
+    if(_mobSaveQueued){
+      _mobSaveQueued=false;
+      if(dirty){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{saveFile();},300);}
     }
   }
 }
@@ -3242,7 +3322,7 @@ function _addSchnellNotiz(){
   if(!t.notizVerlauf)t.notizVerlauf=[];
   t.notizVerlauf.push({ts:new Date().toISOString(),text});
   inp.value='';inp.style.height='auto';
-  scheduleSave();
+  forceSave(); // Fix: vorher scheduleSave (1,2s Debounce) – iOS friert Timer beim App-Wechsel ein → Notiz ging verloren
   renderSchnellTab(t);
   toast('✓ Notiz gespeichert','success',1500);
 }
@@ -6195,9 +6275,16 @@ window.addEventListener('load',async()=>{
   // GIS initialisieren, dann silent refresh versuchen
   const tryAutoConnect = async () => {
     initTokenClient();
+    // 1) Refresh-Token via Cloud Function – zuverlässigster Weg auf iOS/Safari,
+    //    wo der GSI-Silent-Refresh (Hidden-Iframe) durch ITP praktisch immer scheitert.
+    //    Fehlte bisher beim Start → Nutzer musste sich ständig neu anmelden.
+    try{
+      document.getElementById('loginStatus').textContent='Verbinde automatisch…';
+      if(await _renewTokenViaCloud()){afterLogin();return;}
+    }catch(e){console.warn('[PTP-Mobile] Cloud-Refresh beim Start:',e);}
+    // 2) Fallback: stiller GSI-Refresh (funktioniert auf Desktop-Browsern)
     const stored=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
     if(stored&&stored.token&&!_mobSilentGaveUp){
-      document.getElementById('loginStatus').textContent='Verbinde automatisch…';
       const ok=await silentRefresh();
       if(ok){afterLogin();return;}
     }
@@ -6221,8 +6308,20 @@ window.addEventListener('load',async()=>{
 });
 
 // Auto-Speichern beim Schließen
-window.addEventListener('beforeunload',(e)=>{if(dirty){saveFile();}});
-window.addEventListener('pagehide',()=>{if(dirty){saveFile();}});
+// Fix: saveFile() ist async (Konflikt-Check + Resumable-Upload = 3+ Requests) und stirbt
+// beim Einfrieren der Seite. Daher IMMER zuerst synchron ins localStorage-Backup schreiben
+// (wird beim nächsten Start per _restoreMobileBackupIfDirty gemerged); saveFile() danach
+// nur noch als Best-Effort. beforeunload feuert in iOS-PWAs gar nicht → visibilitychange
+// 'hidden' ist auf iOS der zuverlässigste Zeitpunkt.
+window.addEventListener('beforeunload',()=>{if(dirty){_saveMobileBackup();saveFile();}});
+window.addEventListener('pagehide',()=>{if(dirty){_saveMobileBackup();saveFile();}});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden'&&dirty){
+    _saveMobileBackup();
+    clearTimeout(saveTimer);
+    saveFile(); // Best-Effort: iOS lässt der Seite meist noch kurz Zeit im Hintergrund
+  }
+});
 
 // ══════════════════════════════════════════════
 //  OFFLINE-INDIKATOR (via saveInd)
