@@ -6562,18 +6562,33 @@ const _geoCache={};
 async function _reverseGeocode(lat,lon){
   const key=lat.toFixed(5)+','+lon.toFixed(5);
   if(_geoCache[key]!==undefined)return _geoCache[key];
+  let addr='';
+  // 1) Photon (Komoot) – CORS-freundlich, OSM-Daten, liefert Straße + Hausnummer
   try{
-    const url='https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+lat+'&lon='+lon+'&zoom=18&addressdetails=1&accept-language=de';
-    const r=await fetch(url,{headers:{'Accept':'application/json'}});
-    if(!r.ok)return '';
-    const d=await r.json();
-    const a=d.address||{};
-    const str=[a.road,a.house_number].filter(Boolean).join(' ');
-    const ort=[a.postcode,(a.city||a.town||a.village||a.municipality||a.county||'')].filter(Boolean).join(' ');
-    const addr=[str,ort].filter(Boolean).join(', ')||d.display_name||'';
-    _geoCache[key]=addr;
-    return addr;
-  }catch(e){console.warn('[Geocode]',e);return '';}
+    const r=await fetch('https://photon.komoot.io/reverse?lat='+lat+'&lon='+lon+'&lang=de');
+    if(r.ok){
+      const d=await r.json();
+      const p=(d.features&&d.features[0]&&d.features[0].properties)||{};
+      const str=[p.street||p.name,p.housenumber].filter(Boolean).join(' ');
+      const ort=[p.postcode,(p.city||p.town||p.village||p.county||'')].filter(Boolean).join(' ');
+      addr=[str,ort].filter(Boolean).join(', ');
+    }
+  }catch(e){console.warn('[Geocode Photon]',e);}
+  // 2) Fallback: Nominatim
+  if(!addr){
+    try{
+      const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+lat+'&lon='+lon+'&zoom=18&addressdetails=1&accept-language=de',{headers:{'Accept':'application/json'}});
+      if(r.ok){
+        const d=await r.json();
+        const a=d.address||{};
+        const str=[a.road,a.house_number].filter(Boolean).join(' ');
+        const ort=[a.postcode,(a.city||a.town||a.village||a.municipality||a.county||'')].filter(Boolean).join(' ');
+        addr=[str,ort].filter(Boolean).join(', ')||d.display_name||'';
+      }
+    }catch(e){console.warn('[Geocode Nominatim]',e);}
+  }
+  _geoCache[key]=addr;
+  return addr;
 }
 // erstes JPEG mit GPS suchen → lat/lon + Adresse am Task setzen
 async function _qaApplyGpsFromFiles(t,files){

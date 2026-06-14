@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v65'; // v65: Adresse als bearbeitbares Feld (📍 füllt vor, anpassbar vor dem Speichern + in der Notiz) · v64: Nominatim vom SW-Caching ausgenommen · v63: Notiz-Ordner direkt im Standard-Fotoordner · v62: zurück zur Liste, Lazy-Ordner, Löschen mit Ordner-Papierkorb, GPS aus Foto + 📍-Button → Adresse (Nominatim)
+const CACHE_NAME = 'pam-mobil-v66'; // v66: Reverse-Geocoding über Photon (Komoot, browser-/CORS-tauglich) als Primär, Nominatim als Fallback – Nominatim lieferte aus dem Browser keine Adresse · v65: Adresse bearbeitbar · v64: Geocoder vom SW-Caching ausgenommen · v63: Notiz-Ordner direkt im Standard-Fotoordner · v62: zurück zur Liste, Lazy-Ordner, Löschen mit Ordner-Papierkorb, GPS aus Foto + 📍-Button
 
 const PRECACHE = [
   './',
@@ -48,7 +48,8 @@ self.addEventListener('fetch', e => {
     url.includes('oauth2.google') ||
     url.includes('lh3.googleusercontent.com') ||
     url.includes('api.open-meteo.com') ||
-    url.includes('nominatim.openstreetmap.org')
+    url.includes('nominatim.openstreetmap.org') ||
+    url.includes('photon.komoot.io')
   ) {
     return;
   }
