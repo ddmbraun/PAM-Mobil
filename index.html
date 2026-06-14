@@ -434,8 +434,9 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
       <button onclick="document.getElementById('quickAddFotoInput').click()" style="flex:1;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;">📷 Kamera</button>
       <button onclick="document.getElementById('quickAddGalerieInput').click()" style="flex:1;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;">🖼 Galerie</button>
     </div>
-    <button onclick="_captureStandortQuickAdd()" style="width:100%;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;margin-bottom:14px;">📍 Standort erfassen</button>
-    <div id="quickAddStandortInfo" style="display:none;font-size:12px;color:var(--green);background:var(--bg3);border-radius:8px;padding:8px 10px;margin-bottom:14px;"></div>
+    <button onclick="_captureStandortQuickAdd()" style="width:100%;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;margin-bottom:8px;">📍 Standort erfassen</button>
+    <input id="quickAddAdresse" type="text" placeholder="Adresse (per 📍 gefüllt – anpassbar) …" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:14px;margin-bottom:6px;">
+    <div id="quickAddStandortInfo" style="display:none;font-size:11px;color:var(--text2);margin-bottom:14px;"></div>
     <div style="display:flex;gap:10px;">
       <button onclick="_closeQuickAdd()" style="flex:1;padding:13px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:10px;font-size:15px;cursor:pointer;">Abbrechen</button>
       <button onclick="_submitQuickAdd()" style="flex:2;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;">✓ Speichern</button>
@@ -4328,11 +4329,16 @@ function renderDetail(t){
     +(()=>{
       const hasCoords=t.lat&&t.lon;
       const mapHref=hasCoords?('https://www.google.com/maps/search/?api=1&query='+t.lat+','+t.lon):'';
-      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
-        +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">📍 Standort</button>'
-        +(t.adresse?'<span style="font-size:13px;color:var(--text);">'+esc(t.adresse)+'</span>':'')
-        +(hasCoords?'<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>':'')
-        +'</div>';
+      let h='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
+        +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">📍 Standort</button>';
+      if(isNotiz){
+        h+='<input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (anpassbar)" oninput="updateField(\'adresse\',this.value)" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">';
+      }else if(t.adresse){
+        h+='<span style="font-size:13px;color:var(--text);">'+esc(t.adresse)+'</span>';
+      }
+      if(hasCoords)h+='<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>';
+      h+='</div>';
+      return h;
     })()
     // ── ZEIT/TERMIN BADGE ──
     +(()=>{
@@ -6050,21 +6056,10 @@ const DEFAULT_FOTO_FOLDER_KEY='ptpm_default_foto_folder';
 const QUICK_PARENT_KEY='ptpm_quicknote_folder';
 // v62: temporär per 📍-Button erfasster Standort (vor dem Anlegen der Notiz)
 let _qaStandort=null;
-// v62: eigener "Schnellnotizen"-Elternordner – einmalig anlegen, ID merken
+// v63: Per-Notiz-Ordner DIREKT im Standard-Fotoordner ablegen (Wunsch Frank) – kein Zwischenordner
 async function _ensureQuickNoteParent(){
-  let pid=extractDriveFolderId(localStorage.getItem(QUICK_PARENT_KEY)||'');
-  if(pid)return pid;
-  if(!(await ensureToken()))return '';
-  const base=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'')||'root';
-  const resp=await fetch('https://www.googleapis.com/drive/v3/files',{
-    method:'POST',
-    headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
-    body:JSON.stringify({name:'Schnellnotizen',mimeType:'application/vnd.google-apps.folder',parents:[base]})
-  });
-  if(!resp.ok)throw new Error('Schnellnotizen-Ordner: HTTP '+resp.status);
-  const f=await resp.json();
-  try{localStorage.setItem(QUICK_PARENT_KEY,'https://drive.google.com/drive/folders/'+f.id);}catch(e){}
-  return f.id;
+  return extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'')
+    ||'1ogSJx78N3hqxzQPauAM7TwR_HmwMjsjA';
 }
 // v62: pro Notiz einen Unterordner – nur bei Bedarf (erstes Foto)
 async function _ensureQuickNoteFolder(t,title,dateSlug){
@@ -6094,8 +6089,10 @@ async function _captureStandortQuickAdd(){
     let addr='';
     try{addr=await _reverseGeocode(lat,lon);}catch(e){}
     _qaStandort={lat,lon,adresse:addr};
+    const inp=document.getElementById('quickAddAdresse');
+    if(inp&&addr)inp.value=addr;
     const info=document.getElementById('quickAddStandortInfo');
-    if(info){info.style.display='block';info.textContent='📍 '+(addr||(lat.toFixed(5)+', '+lon.toFixed(5)));}
+    if(info){info.style.display='block';info.textContent='📍 '+lat.toFixed(5)+', '+lon.toFixed(5)+(addr?'':' – keine Adresse gefunden, bitte manuell eintragen');}
     toast('✅ '+(addr||'Standort erfasst'),'success');
   },err=>{
     const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
@@ -6200,6 +6197,7 @@ function newTask(){
   document.getElementById('quickAddGalerieInput').value='';
   var _qaInfo=document.getElementById('quickAddStandortInfo');
   if(_qaInfo){_qaInfo.style.display='none';_qaInfo.textContent='';}
+  var _qaAdrEl=document.getElementById('quickAddAdresse');if(_qaAdrEl)_qaAdrEl.value='';
   document.getElementById('quickAddSheet').style.display='block';
   setTimeout(()=>document.getElementById('quickAddTitle').focus(),150);
 }
@@ -6228,8 +6226,11 @@ async function _submitQuickAdd(){
     ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]
   };
   boards[savedBoard].push(newT);
-  // v62: per 📍-Button erfassten Standort übernehmen
-  if(_qaStandort){newT.lat=_qaStandort.lat;newT.lon=_qaStandort.lon;if(_qaStandort.adresse)newT.adresse=_qaStandort.adresse;}
+  // v62/v65: Standort (📍) + bearbeitbares Adressfeld übernehmen
+  if(_qaStandort){newT.lat=_qaStandort.lat;newT.lon=_qaStandort.lon;}
+  const _qaAdr=(document.getElementById('quickAddAdresse')?.value||'').trim();
+  if(_qaAdr)newT.adresse=_qaAdr;
+  else if(_qaStandort&&_qaStandort.adresse)newT.adresse=_qaStandort.adresse;
   // Foto-Referenzen VOR _closeQuickAdd() sichern – _closeQuickAdd leert _quickAddFotoFiles
   const fotoFiles=_quickAddFotoFiles.slice();
   _closeQuickAdd();

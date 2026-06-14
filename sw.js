@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v62'; // v62: Quick-Add zurück zur Liste; Drive-Ordner lazy (nur bei Foto) im eigenen "Schnellnotizen"-Ordner; Löschen mit Ordner-Papierkorb; GPS aus Foto-EXIF + 📍-Standort-Button → Adresse via Nominatim
+const CACHE_NAME = 'pam-mobil-v65'; // v65: Adresse als bearbeitbares Feld (📍 füllt vor, anpassbar vor dem Speichern + in der Notiz) · v64: Nominatim vom SW-Caching ausgenommen · v63: Notiz-Ordner direkt im Standard-Fotoordner · v62: zurück zur Liste, Lazy-Ordner, Löschen mit Ordner-Papierkorb, GPS aus Foto + 📍-Button → Adresse (Nominatim)
 
 const PRECACHE = [
   './',
@@ -47,7 +47,8 @@ self.addEventListener('fetch', e => {
     url.includes('drive.google.com') ||
     url.includes('oauth2.google') ||
     url.includes('lh3.googleusercontent.com') ||
-    url.includes('api.open-meteo.com')
+    url.includes('api.open-meteo.com') ||
+    url.includes('nominatim.openstreetmap.org')
   ) {
     return;
   }
