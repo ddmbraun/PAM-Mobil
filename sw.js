@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v66'; // v66: Reverse-Geocoding über Photon (Komoot, browser-/CORS-tauglich) als Primär, Nominatim als Fallback – Nominatim lieferte aus dem Browser keine Adresse · v65: Adresse bearbeitbar · v64: Geocoder vom SW-Caching ausgenommen · v63: Notiz-Ordner direkt im Standard-Fotoordner · v62: zurück zur Liste, Lazy-Ordner, Löschen mit Ordner-Papierkorb, GPS aus Foto + 📍-Button
+const CACHE_NAME = 'pam-mobil-v67'; // v67: FIX Regression – Liste wurde beim Foto-Upload pro Foto neu gerendert (Scroll sprang zurück, Vorschauen blinkten); Render jetzt nur 1x vor/nach dem Upload · v66: Reverse-Geocoding über Photon (Komoot) als Primär, Nominatim Fallback · v65: Adresse bearbeitbar · v64: Geocoder vom SW-Caching ausgenommen · v63: Notiz-Ordner direkt im Standard-Fotoordner · v62: zurück zur Liste, Lazy-Ordner, Löschen mit Ordner-Papierkorb, GPS aus Foto + 📍-Button
 
 const PRECACHE = [
   './',

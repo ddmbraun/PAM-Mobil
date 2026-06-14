@@ -6299,7 +6299,7 @@ async function _submitQuickAdd(){
       console.warn('[QuickAdd] Foto-Upload fehlgeschlagen:',upErr);
       o.fo._uploading=false;o.fo._uploadError=true;_failCount++;
     }
-    scheduleSave();_qaRefresh();
+    scheduleSave();
   }
   forceSave();_qaRefresh();
   if(_failCount)toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
