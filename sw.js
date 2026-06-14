@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v61'; // v61: Quick-Add legt Drive-Ordner immer an (auch ohne Fotos) + öffnet Task zur Bearbeitung
+const CACHE_NAME = 'pam-mobil-v62'; // v62: Quick-Add zurück zur Liste; Drive-Ordner lazy (nur bei Foto) im eigenen "Schnellnotizen"-Ordner; Löschen mit Ordner-Papierkorb; GPS aus Foto-EXIF + 📍-Standort-Button → Adresse via Nominatim
 
 const PRECACHE = [
   './',

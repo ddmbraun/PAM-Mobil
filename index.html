@@ -430,10 +430,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     </div>
     <input type="file" id="quickAddFotoInput" accept="image/*" capture="environment" style="display:none;" onchange="_quickAddFotoSelected(this)">
     <input type="file" id="quickAddGalerieInput" accept="image/*" multiple style="display:none;" onchange="_quickAddFotoSelected(this)">
-    <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
       <button onclick="document.getElementById('quickAddFotoInput').click()" style="flex:1;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;">📷 Kamera</button>
       <button onclick="document.getElementById('quickAddGalerieInput').click()" style="flex:1;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;">🖼 Galerie</button>
     </div>
+    <button onclick="_captureStandortQuickAdd()" style="width:100%;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;margin-bottom:14px;">📍 Standort erfassen</button>
+    <div id="quickAddStandortInfo" style="display:none;font-size:12px;color:var(--green);background:var(--bg3);border-radius:8px;padding:8px 10px;margin-bottom:14px;"></div>
     <div style="display:flex;gap:10px;">
       <button onclick="_closeQuickAdd()" style="flex:1;padding:13px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:10px;font-size:15px;cursor:pointer;">Abbrechen</button>
       <button onclick="_submitQuickAdd()" style="flex:2;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;">✓ Speichern</button>
@@ -4322,6 +4324,16 @@ function renderDetail(t){
         +(t.gdriveOrdner?'<a href="'+escAttr(t.gdriveOrdner)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📎 Anhänge in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📎 kein Anhang-Ordner</span>')
         +'</div>';
     })()
+    // ── v62: STANDORT (GPS / Adresse) ──
+    +(()=>{
+      const hasCoords=t.lat&&t.lon;
+      const mapHref=hasCoords?('https://www.google.com/maps/search/?api=1&query='+t.lat+','+t.lon):'';
+      return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
+        +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">📍 Standort</button>'
+        +(t.adresse?'<span style="font-size:13px;color:var(--text);">'+esc(t.adresse)+'</span>':'')
+        +(hasCoords?'<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>':'')
+        +'</div>';
+    })()
     // ── ZEIT/TERMIN BADGE ──
     +(()=>{
       const _pm=(von,bis)=>{try{if(!von||!bis)return 0;const[vh,vm]=von.split(':').map(Number);const[bh,bm]=bis.split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
@@ -5555,9 +5567,17 @@ async function uploadFoto(files){
   const t=currentTask();
   if(!t){toast('Keine Task geöffnet','error');return;}
   // Fallback-Kette: 1) Foto-Ordner, 2) Projektordner, 3) Standard-Fotoordner aus Einstellungen
-  const folderId=extractDriveFolderId(t.gdrive)
+  let folderId=extractDriveFolderId(t.gdrive)
     ||extractDriveFolderId(t.gdriveOrdner)
     ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
+  // v62: Notiz-Board ohne eigenen Ordner → Schnellnotizen-Unterordner lazy anlegen
+  if(!folderId){
+    const _bn=findBoardByTaskId(t.id);
+    if((boardTypes[_bn]||'baustelle')==='notiz'){
+      try{ if(await ensureToken()) folderId=await _ensureQuickNoteFolder(t,t.title,null); }
+      catch(e){console.warn('[uploadFoto] Notiz-Ordner:',e);}
+    }
+  }
   if(!folderId){
     toast('❗ Kein Foto-Ordner – bitte in Einstellungen einen Standard-Fotoordner hinterlegen','error');
     _mOpenSections['Fotos']=true;
@@ -5566,6 +5586,8 @@ async function uploadFoto(files){
     return;
   }
   if(!(await ensureToken())){toast('Nicht angemeldet','error');return;}
+  // v62: GPS aus Foto übernehmen (nur Notizen, nur wenn noch keine Koordinaten)
+  try{ if((boardTypes[findBoardByTaskId(t.id)]||'baustelle')==='notiz') await _qaApplyGpsFromFiles(t,fileArr); }catch(e){}
   if(!t.fotos)t.fotos=[];
 
   // ── Schritt 1: Fotos SOFORT lokal sichern (IndexedDB) + anzeigen ──────────
@@ -5578,6 +5600,7 @@ async function uploadFoto(files){
       await _mobPhotoSave(localKey,dataUrl);
     }catch(e){console.warn('[uploadFoto] localKey save:',e);}
     const fo={
+      id:localKey,
       name:file.name,
       mimeType:file.type||'image/jpeg',
       size:file.size||0,
@@ -6024,6 +6047,79 @@ function _skizzeZoom(idx){
 // ══ TASK ANLEGEN / LÖSCHEN ══
 const QUICK_BOARD_KEY='ptpm_quick_board';
 const DEFAULT_FOTO_FOLDER_KEY='ptpm_default_foto_folder';
+const QUICK_PARENT_KEY='ptpm_quicknote_folder';
+// v62: temporär per 📍-Button erfasster Standort (vor dem Anlegen der Notiz)
+let _qaStandort=null;
+// v62: eigener "Schnellnotizen"-Elternordner – einmalig anlegen, ID merken
+async function _ensureQuickNoteParent(){
+  let pid=extractDriveFolderId(localStorage.getItem(QUICK_PARENT_KEY)||'');
+  if(pid)return pid;
+  if(!(await ensureToken()))return '';
+  const base=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'')||'root';
+  const resp=await fetch('https://www.googleapis.com/drive/v3/files',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
+    body:JSON.stringify({name:'Schnellnotizen',mimeType:'application/vnd.google-apps.folder',parents:[base]})
+  });
+  if(!resp.ok)throw new Error('Schnellnotizen-Ordner: HTTP '+resp.status);
+  const f=await resp.json();
+  try{localStorage.setItem(QUICK_PARENT_KEY,'https://drive.google.com/drive/folders/'+f.id);}catch(e){}
+  return f.id;
+}
+// v62: pro Notiz einen Unterordner – nur bei Bedarf (erstes Foto)
+async function _ensureQuickNoteFolder(t,title,dateSlug){
+  const existing=extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner);
+  if(existing)return existing;
+  const parent=await _ensureQuickNoteParent();
+  if(!parent)return '';
+  const slug=dateSlug||(new Date().toISOString().slice(0,10));
+  const folderName=slug+' '+String(title||t.title||'Notiz').slice(0,60);
+  const resp=await fetch('https://www.googleapis.com/drive/v3/files',{
+    method:'POST',
+    headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
+    body:JSON.stringify({name:folderName,mimeType:'application/vnd.google-apps.folder',parents:[parent]})
+  });
+  if(!resp.ok)throw new Error('Notiz-Ordner: HTTP '+resp.status);
+  const f=await resp.json();
+  const url='https://drive.google.com/drive/folders/'+f.id;
+  t.gdrive=url;t.gdriveOrdner=url;t._qaFolderOwned=true;t._qaFolderId=f.id;
+  return f.id;
+}
+// v62: 📍-Button im Schnell-Erfassen-Fenster (Notiz existiert noch nicht)
+async function _captureStandortQuickAdd(){
+  if(!navigator.geolocation){toast('GPS nicht verfügbar','error');return;}
+  toast('📍 Standort wird ermittelt…','info');
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const lat=pos.coords.latitude,lon=pos.coords.longitude;
+    let addr='';
+    try{addr=await _reverseGeocode(lat,lon);}catch(e){}
+    _qaStandort={lat,lon,adresse:addr};
+    const info=document.getElementById('quickAddStandortInfo');
+    if(info){info.style.display='block';info.textContent='📍 '+(addr||(lat.toFixed(5)+', '+lon.toFixed(5)));}
+    toast('✅ '+(addr||'Standort erfasst'),'success');
+  },err=>{
+    const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
+    toast('📍 '+(m[err.code]||'GPS-Fehler'),'error',5000);
+  },{timeout:15000,maximumAge:120000,enableHighAccuracy:true});
+}
+// v62: 📍-Button in der Detailansicht (Task existiert)
+async function _captureStandort(){
+  const t=currentTask();if(!t){toast('Keine Notiz geöffnet','error');return;}
+  if(!navigator.geolocation){toast('GPS nicht verfügbar','error');return;}
+  toast('📍 Standort wird ermittelt…','info');
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const lat=pos.coords.latitude,lon=pos.coords.longitude;
+    let addr='';
+    try{addr=await _reverseGeocode(lat,lon);}catch(e){}
+    t.lat=lat;t.lon=lon;if(addr)t.adresse=addr;
+    scheduleSave();
+    try{renderDetail(t);}catch(e){}
+    toast('✅ '+(addr||'Standort erfasst'),'success');
+  },err=>{
+    const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
+    toast('📍 '+(m[err.code]||'GPS-Fehler'),'error',5000);
+  },{timeout:15000,maximumAge:120000,enableHighAccuracy:true});
+}
 function _saveQuickBoard(){
   const v=document.getElementById('quickBoardSelect').value;
   try{localStorage.setItem(QUICK_BOARD_KEY,v);}catch(e){}
@@ -6096,11 +6192,14 @@ function newTask(){
   }
   // Bottom-Sheet öffnen + Reset
   _quickAddFotoFiles=[];
+  _qaStandort=null;
   document.getElementById('quickAddTitle').value='';
   document.getElementById('quickAddNote').value='';
   document.getElementById('quickAddFotoPreview').style.display='none';
   document.getElementById('quickAddFotoInput').value='';
   document.getElementById('quickAddGalerieInput').value='';
+  var _qaInfo=document.getElementById('quickAddStandortInfo');
+  if(_qaInfo){_qaInfo.style.display='none';_qaInfo.textContent='';}
   document.getElementById('quickAddSheet').style.display='block';
   setTimeout(()=>document.getElementById('quickAddTitle').focus(),150);
 }
@@ -6129,96 +6228,81 @@ async function _submitQuickAdd(){
     ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]
   };
   boards[savedBoard].push(newT);
+  // v62: per 📍-Button erfassten Standort übernehmen
+  if(_qaStandort){newT.lat=_qaStandort.lat;newT.lon=_qaStandort.lon;if(_qaStandort.adresse)newT.adresse=_qaStandort.adresse;}
   // Foto-Referenzen VOR _closeQuickAdd() sichern – _closeQuickAdd leert _quickAddFotoFiles
   const fotoFiles=_quickAddFotoFiles.slice();
   _closeQuickAdd();
   toast('✓ Notiz gespeichert','success');
-  // Task sofort speichern + zur Bearbeitung öffnen (Fix v61)
+  // v62: sofort speichern + zurück zur Liste (kein Auto-Öffnen mehr)
   forceSave();
-  setTimeout(()=>openDetail(newT.id),150);
-  // ── Drive: Ordner anlegen (immer, Fix v61) + Fotos hochladen ──────────────
+  renderList();
+  const _qaRefresh=()=>{ try{renderList();}catch(e){} };
   // Hilfsfunktion: Fotos lokal sichern wenn Drive nicht verfügbar
-  const _savePhotosLocally=async()=>{
+  const _savePhotosLocally=async(uploading)=>{
     for(let i=0;i<fotoFiles.length;i++){
       const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
-      const fo={name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
-        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:false,
+      const fo={id:'f_'+newT.id+'_'+i,name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
+        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:!!uploading,
         uploadedAt:new Date().toISOString(),source:'mobile'};
       newT.fotos.push(fo);
       try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
     }
     if(fotoFiles.length)forceSave();
   };
-  const parentFolderId=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'');
-  if(!parentFolderId){
-    if(fotoFiles.length){await _savePhotosLocally();toast('ℹ️ Kein Standardordner – '+fotoFiles.length+' Foto(s) nur lokal gespeichert','info',5000);}
-    return;
-  }
+  // v62: GPS aus dem ersten Foto übernehmen (sofern nicht schon per 📍-Button gesetzt)
+  await _qaApplyGpsFromFiles(newT,fotoFiles);
+  _qaRefresh();
+  // ── Reine Textnotiz → KEIN Drive-Ordner (v62: lazy, erst beim ersten Foto) ──
+  if(!fotoFiles.length){ forceSave(); _qaRefresh(); return; }
+  // ── Fotos vorhanden → Schnellnotizen-Unterordner anlegen + hochladen ──
   if(!(await ensureToken())){
-    if(fotoFiles.length){await _savePhotosLocally();toast('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung','info',5000);}
-    return;
+    await _savePhotosLocally(false);
+    toast('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung','info',5000);
+    _qaRefresh();return;
   }
+  let _qaFolderId='';
   try{
-    // Unterordner anlegen: "YYYY-MM-DD Titel" – immer, unabhängig von Fotos
-    const folderName=dateSlug+' '+title.slice(0,60);
     setSaveInd('saving','📁 Ordner wird angelegt…');
-    const metaResp=await fetch('https://www.googleapis.com/drive/v3/files',{
-      method:'POST',
-      headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
-      body:JSON.stringify({name:folderName,mimeType:'application/vnd.google-apps.folder',parents:[parentFolderId]})
-    });
-    if(!metaResp.ok)throw new Error('Ordner anlegen: HTTP '+metaResp.status);
-    const folder=await metaResp.json();
-    const folderUrl='https://drive.google.com/drive/folders/'+folder.id;
-    newT.gdrive=folderUrl;
-    newT.gdriveOrdner=folderUrl; // Fix v61: Projektordner-Link für Desktop sichtbar
-    forceSave();
-    // Detail-Ansicht auffrischen damit Drive-Link sofort erscheint
-    const _qaRefresh=()=>{
-      if(currentTaskId!==newT.id)return;
-      try{const t2=findTaskById(newT.id);if(t2){if(_currentDetailTab==='schnell')renderSchnellTab(t2);else if(_currentDetailTab==='bau')renderBaudokuTab(t2);else renderDetail(t2);}}catch(e){}
-    };
-    if(!fotoFiles.length){
-      toast('📁 Drive-Ordner angelegt','success',3000);
-      _qaRefresh();
-      return;
-    }
-    // Fotos hochladen in den bereits angelegten Unterordner
-    const fotoObjs=[];
-    for(let i=0;i<fotoFiles.length;i++){
-      const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
-      const fo={name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
-        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:true,
-        uploadedAt:new Date().toISOString(),source:'mobile'};
-      newT.fotos.push(fo);fotoObjs.push({f:f,fo:fo});
-      try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
-    }
-    forceSave();
-    try{renderList();}catch(e){}
-    let _okCount=0,_failCount=0,_idx=0;
-    for(const o of fotoObjs){
-      _idx++;setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
-      try{
-        const meta=await _uploadOneFotoToDrive(o.f,folder.id);
-        try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,o.fo.localUrl);}catch(e){}
-        o.fo.driveId=meta.id;o.fo.name=meta.name||o.fo.name;
-        o.fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
-        o.fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
-        o.fo.download=meta.webContentLink||'';o.fo._uploading=false;_okCount++;
-      }catch(upErr){
-        console.warn('[QuickAdd] Foto-Upload fehlgeschlagen:',upErr);
-        o.fo._uploading=false;o.fo._uploadError=true;_failCount++;
-      }
-      scheduleSave();_qaRefresh();
-    }
-    forceSave();
-    if(_failCount)toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
-    else toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen','success');
+    _qaFolderId=await _ensureQuickNoteFolder(newT,title,dateSlug);
+    if(!_qaFolderId)throw new Error('Kein Schnellnotizen-Ordner');
+    forceSave();_qaRefresh();
   }catch(e){
-    console.warn('[QuickAdd] Drive:',e);
-    await _savePhotosLocally();
-    toast('⚠️ Drive-Ordner konnte nicht angelegt werden'+(fotoFiles.length?', '+fotoFiles.length+' Foto(s) lokal gespeichert':''),'warning',5000);
+    console.warn('[QuickAdd] Ordner:',e);
+    await _savePhotosLocally(false);
+    toast('⚠️ Drive-Ordner konnte nicht angelegt werden – '+fotoFiles.length+' Foto(s) lokal gespeichert','warning',5000);
+    _qaRefresh();return;
   }
+  // Fotos lokal sichern + hochladen
+  const fotoObjs=[];
+  for(let i=0;i<fotoFiles.length;i++){
+    const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
+    const fo={id:'f_'+newT.id+'_'+i,name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
+      localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:true,
+      uploadedAt:new Date().toISOString(),source:'mobile'};
+    newT.fotos.push(fo);fotoObjs.push({f:f,fo:fo});
+    try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
+  }
+  forceSave();_qaRefresh();
+  let _okCount=0,_failCount=0,_idx=0;
+  for(const o of fotoObjs){
+    _idx++;setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
+    try{
+      const meta=await _uploadOneFotoToDrive(o.f,_qaFolderId);
+      try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,o.fo.localUrl);}catch(e){}
+      o.fo.driveId=meta.id;o.fo.name=meta.name||o.fo.name;
+      o.fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
+      o.fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
+      o.fo.download=meta.webContentLink||'';o.fo._uploading=false;_okCount++;
+    }catch(upErr){
+      console.warn('[QuickAdd] Foto-Upload fehlgeschlagen:',upErr);
+      o.fo._uploading=false;o.fo._uploadError=true;_failCount++;
+    }
+    scheduleSave();_qaRefresh();
+  }
+  forceSave();_qaRefresh();
+  if(_failCount)toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
+  else toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen','success');
 }
 
 function _fileToDataUrl(file){
@@ -6228,6 +6312,22 @@ async function deleteTask(){
   const t=currentTask();if(!t)return;
   if(!confirm('Task „'+(t.title||'')+'" wirklich löschen?'))return;
   const bn=findBoardByTaskId(t.id);
+  // v62: zugehörigen Schnellnotiz-Ordner anbieten zu löschen (nur selbst angelegte, nicht zu Auftrag konvertierte)
+  const _qaFid=t._qaFolderId||extractDriveFolderId(t.gdrive||'')||extractDriveFolderId(t.gdriveOrdner||'');
+  const _isNotizBoard=(boardTypes[bn]||'baustelle')==='notiz';
+  if(t._qaFolderOwned&&_qaFid&&_isNotizBoard){
+    if(confirm('Auch den Drive-Ordner dieser Notiz in den Papierkorb verschieben?')){
+      try{
+        if(await ensureToken()){
+          await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(_qaFid),{
+            method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
+            body:JSON.stringify({trashed:true})
+          });
+          toast('🗑 Drive-Ordner in den Papierkorb verschoben','info');
+        }
+      }catch(e){console.warn('[deleteTask] Ordner-Papierkorb:',e);toast('Ordner konnte nicht gelöscht werden','warning');}
+    }
+  }
   if(bn){boards[bn]=boards[bn].filter(x=>x.id!==t.id);}
   // currentTaskId bleibt gesetzt bis nach dem Save, damit _savingTaskId im Konflikt-Merge
   // den richtigen Task referenziert und PC-Änderungen an anderen Tasks erhalten bleiben.
@@ -6434,6 +6534,66 @@ function embedExifCaption(dataUrl,caption){
     const exifBytes=piexif.dump(exifObj);
     return piexif.insert(exifBytes,dataUrl);
   }catch(e){console.warn('[PTP-Mobile] EXIF:',e);return dataUrl;}
+}
+// ── v62: GPS aus Foto-EXIF lesen + Reverse-Geocoding (Nominatim) ──
+function _gpsToDecimal(dms,ref){
+  try{
+    const d=dms[0][0]/dms[0][1],m=dms[1][0]/dms[1][1],s=dms[2][0]/dms[2][1];
+    let dec=d+m/60+s/3600;
+    if(ref==='S'||ref==='W')dec=-dec;
+    return dec;
+  }catch(e){return null;}
+}
+function _readGpsFromDataUrl(dataUrl){
+  try{
+    if(!window.piexif)return null;
+    const ex=piexif.load(dataUrl);
+    const g=ex&&ex['GPS'];if(!g)return null;
+    const lat=g[piexif.GPSIFD.GPSLatitude],latRef=g[piexif.GPSIFD.GPSLatitudeRef];
+    const lon=g[piexif.GPSIFD.GPSLongitude],lonRef=g[piexif.GPSIFD.GPSLongitudeRef];
+    if(!lat||!lon)return null;
+    const la=_gpsToDecimal(lat,latRef),lo=_gpsToDecimal(lon,lonRef);
+    if(la==null||lo==null||(la===0&&lo===0))return null;
+    return {lat:la,lon:lo};
+  }catch(e){return null;}
+}
+const _geoCache={};
+async function _reverseGeocode(lat,lon){
+  const key=lat.toFixed(5)+','+lon.toFixed(5);
+  if(_geoCache[key]!==undefined)return _geoCache[key];
+  try{
+    const url='https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+lat+'&lon='+lon+'&zoom=18&addressdetails=1&accept-language=de';
+    const r=await fetch(url,{headers:{'Accept':'application/json'}});
+    if(!r.ok)return '';
+    const d=await r.json();
+    const a=d.address||{};
+    const str=[a.road,a.house_number].filter(Boolean).join(' ');
+    const ort=[a.postcode,(a.city||a.town||a.village||a.municipality||a.county||'')].filter(Boolean).join(' ');
+    const addr=[str,ort].filter(Boolean).join(', ')||d.display_name||'';
+    _geoCache[key]=addr;
+    return addr;
+  }catch(e){console.warn('[Geocode]',e);return '';}
+}
+// erstes JPEG mit GPS suchen → lat/lon + Adresse am Task setzen
+async function _qaApplyGpsFromFiles(t,files){
+  try{
+    if(!files||!files.length)return;
+    if(t.lat&&t.lon)return; // bereits gesetzt (z.B. via 📍-Button)
+    if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+    if(!window.piexif)return;
+    for(const f of files){
+      if(!/jpe?g/i.test(f.type||'')&&!/\.jpe?g$/i.test(f.name||''))continue;
+      const dataUrl=await _fileToDataUrl(f);
+      const gps=_readGpsFromDataUrl(dataUrl);
+      if(gps){
+        t.lat=gps.lat;t.lon=gps.lon;
+        const addr=await _reverseGeocode(gps.lat,gps.lon);
+        if(addr&&!t.adresse)t.adresse=addr;
+        scheduleSave();
+        return;
+      }
+    }
+  }catch(e){console.warn('[QuickAdd GPS]',e);}
 }
 async function _embedExifInDrive(driveId,caption){
   if(!driveId||!caption)return;
