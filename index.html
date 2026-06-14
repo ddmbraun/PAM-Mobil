@@ -6133,87 +6133,91 @@ async function _submitQuickAdd(){
   const fotoFiles=_quickAddFotoFiles.slice();
   _closeQuickAdd();
   toast('✓ Notiz gespeichert','success');
-  // Task sofort speichern (forceSave statt Debounce – siehe Schnellnotiz-Fix v57)
+  // Task sofort speichern + zur Bearbeitung öffnen (Fix v61)
   forceSave();
-  // Foto-Upload + Unterordner anlegen – Fix v60: Fotos erscheinen SOFORT im Task
-  // (lokale Vorschau + „⬆ lädt hoch…"-Overlay wie beim normalen Foto-Upload, Z. ~5575),
-  // Upload läuft sichtbar im Hintergrund, Fortschritt im Save-Indikator.
-  // Bei Fehlern bleiben Fotos lokal (IndexedDB) erhalten.
-  if(fotoFiles.length){
-    // 1) SOFORT: Einträge mit lokaler Vorschau anlegen + in IndexedDB sichern
-    const fotoObjs=[];
+  setTimeout(()=>openDetail(newT.id),150);
+  // ── Drive: Ordner anlegen (immer, Fix v61) + Fotos hochladen ──────────────
+  // Hilfsfunktion: Fotos lokal sichern wenn Drive nicht verfügbar
+  const _savePhotosLocally=async()=>{
     for(let i=0;i<fotoFiles.length;i++){
-      const f=fotoFiles[i];
-      const localKey='qa_'+newT.id+'_'+i;
+      const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
       const fo={name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
-        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:true,
+        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:false,
         uploadedAt:new Date().toISOString(),source:'mobile'};
       newT.fotos.push(fo);
-      fotoObjs.push({f:f,fo:fo});
       try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
     }
-    forceSave(); // Task inkl. Foto-Referenzen sofort speichern (localUrl/_uploading filtert der Replacer raus)
-    try{renderList();}catch(e){}
-    // Detail-Ansicht auffrischen falls der Task gerade offen ist
+    if(fotoFiles.length)forceSave();
+  };
+  const parentFolderId=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'');
+  if(!parentFolderId){
+    if(fotoFiles.length){await _savePhotosLocally();toast('ℹ️ Kein Standardordner – '+fotoFiles.length+' Foto(s) nur lokal gespeichert','info',5000);}
+    return;
+  }
+  if(!(await ensureToken())){
+    if(fotoFiles.length){await _savePhotosLocally();toast('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung','info',5000);}
+    return;
+  }
+  try{
+    // Unterordner anlegen: "YYYY-MM-DD Titel" – immer, unabhängig von Fotos
+    const folderName=dateSlug+' '+title.slice(0,60);
+    setSaveInd('saving','📁 Ordner wird angelegt…');
+    const metaResp=await fetch('https://www.googleapis.com/drive/v3/files',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
+      body:JSON.stringify({name:folderName,mimeType:'application/vnd.google-apps.folder',parents:[parentFolderId]})
+    });
+    if(!metaResp.ok)throw new Error('Ordner anlegen: HTTP '+metaResp.status);
+    const folder=await metaResp.json();
+    const folderUrl='https://drive.google.com/drive/folders/'+folder.id;
+    newT.gdrive=folderUrl;
+    newT.gdriveOrdner=folderUrl; // Fix v61: Projektordner-Link für Desktop sichtbar
+    forceSave();
+    // Detail-Ansicht auffrischen damit Drive-Link sofort erscheint
     const _qaRefresh=()=>{
       if(currentTaskId!==newT.id)return;
       try{const t2=findTaskById(newT.id);if(t2){if(_currentDetailTab==='schnell')renderSchnellTab(t2);else if(_currentDetailTab==='bau')renderBaudokuTab(t2);else renderDetail(t2);}}catch(e){}
     };
-    const _qaAllLocal=(msg)=>{
-      fotoObjs.forEach(function(o){o.fo._uploading=false;});
-      forceSave();_qaRefresh();
-      toast(msg,'info',5000);
-    };
-    const parentFolderId=extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'');
-    if(!parentFolderId){
-      _qaAllLocal('ℹ️ Kein Standardordner – '+fotoFiles.length+' Foto(s) nur lokal gespeichert');
+    if(!fotoFiles.length){
+      toast('📁 Drive-Ordner angelegt','success',3000);
+      _qaRefresh();
       return;
     }
-    if(!(await ensureToken())){
-      _qaAllLocal('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung');
-      return;
+    // Fotos hochladen in den bereits angelegten Unterordner
+    const fotoObjs=[];
+    for(let i=0;i<fotoFiles.length;i++){
+      const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
+      const fo={name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
+        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:true,
+        uploadedAt:new Date().toISOString(),source:'mobile'};
+      newT.fotos.push(fo);fotoObjs.push({f:f,fo:fo});
+      try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
     }
-    try{
-      // Unterordner anlegen: "YYYY-MM-DD Titel"
-      const folderName=dateSlug+' '+title.slice(0,60);
-      const metaResp=await fetch('https://www.googleapis.com/drive/v3/files',{
-        method:'POST',
-        headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
-        body:JSON.stringify({name:folderName,mimeType:'application/vnd.google-apps.folder',parents:[parentFolderId]})
-      });
-      if(!metaResp.ok)throw new Error('Ordner anlegen: HTTP '+metaResp.status);
-      const folder=await metaResp.json();
-      newT.gdrive='https://drive.google.com/drive/folders/'+folder.id;
-      // 2) Upload nacheinander – Fortschritt sichtbar, Einträge werden IN PLACE aktualisiert
-      let _okCount=0,_failCount=0,_idx=0;
-      for(const o of fotoObjs){
-        _idx++;
-        setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
-        try{
-          const meta=await _uploadOneFotoToDrive(o.f,folder.id);
-          try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,o.fo.localUrl);}catch(e){}
-          o.fo.driveId=meta.id;
-          o.fo.name=meta.name||o.fo.name;
-          o.fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
-          o.fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
-          o.fo.download=meta.webContentLink||'';
-          o.fo._uploading=false;
-          _okCount++;
-        }catch(upErr){
-          console.warn('[QuickAdd] Foto-Upload fehlgeschlagen:',upErr);
-          o.fo._uploading=false;o.fo._uploadError=true; // bleibt lokal erhalten (localKey)
-          _failCount++;
-        }
-        scheduleSave();_qaRefresh(); // Overlay dieses Fotos verschwindet sofort
+    forceSave();
+    try{renderList();}catch(e){}
+    let _okCount=0,_failCount=0,_idx=0;
+    for(const o of fotoObjs){
+      _idx++;setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
+      try{
+        const meta=await _uploadOneFotoToDrive(o.f,folder.id);
+        try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,o.fo.localUrl);}catch(e){}
+        o.fo.driveId=meta.id;o.fo.name=meta.name||o.fo.name;
+        o.fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
+        o.fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
+        o.fo.download=meta.webContentLink||'';o.fo._uploading=false;_okCount++;
+      }catch(upErr){
+        console.warn('[QuickAdd] Foto-Upload fehlgeschlagen:',upErr);
+        o.fo._uploading=false;o.fo._uploadError=true;_failCount++;
       }
-      forceSave();
-      if(_failCount)toast('📁 '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
-      else toast('📁 Unterordner & '+_okCount+' Foto(s) hochgeladen','success');
-    }catch(e){
-      // Ordner-Anlage fehlgeschlagen → Fotos bleiben lokal
-      console.warn('[QuickAdd] Drive:',e);
-      _qaAllLocal('⚠️ Drive-Fehler – '+fotoFiles.length+' Foto(s) lokal gespeichert');
+      scheduleSave();_qaRefresh();
     }
+    forceSave();
+    if(_failCount)toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
+    else toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen','success');
+  }catch(e){
+    console.warn('[QuickAdd] Drive:',e);
+    await _savePhotosLocally();
+    toast('⚠️ Drive-Ordner konnte nicht angelegt werden'+(fotoFiles.length?', '+fotoFiles.length+' Foto(s) lokal gespeichert':''),'warning',5000);
   }
 }
 
