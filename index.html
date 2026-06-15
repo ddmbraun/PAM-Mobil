@@ -5581,17 +5581,23 @@ async function uploadFoto(files){
   const fileArr=Array.from(files);
   const t=currentTask();
   if(!t){toast('Keine Task geöffnet','error');return;}
-  // Fallback-Kette: 1) Foto-Ordner, 2) Projektordner, 3) Standard-Fotoordner aus Einstellungen
+  // v72: Reihenfolge wichtig – zuerst der eigene Ordner des Tasks, dann je nach Board-Typ.
+  // 1) Eigener Foto-/Projektordner des Tasks (falls vorhanden)
   let folderId=extractDriveFolderId(t.gdrive)
-    ||extractDriveFolderId(t.gdriveOrdner)
-    ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
-  // v62: Notiz-Board ohne eigenen Ordner → Schnellnotizen-Unterordner lazy anlegen
+    ||extractDriveFolderId(t.gdriveOrdner);
+  // 2) Notiz-Board ohne eigenen Ordner → IMMER Schnellnotizen-Unterordner anlegen.
+  //    Muss VOR dem Standard-Fotoordner-Fallback stehen, sonst landen nachträglich
+  //    hinzugefügte Fotos im Standard-Fotoordner statt im Projektordner „Schnellnotizen".
   if(!folderId){
     const _bn=findBoardByTaskId(t.id);
     if((boardTypes[_bn]||'baustelle')==='notiz'){
       try{ if(await ensureToken()) folderId=await _ensureQuickNoteFolder(t,t.title,null); }
       catch(e){console.warn('[uploadFoto] Notiz-Ordner:',e);}
     }
+  }
+  // 3) Aufträge/Aufgaben ohne eigenen Foto-Ordner → Standard-Fotoordner aus Einstellungen
+  if(!folderId){
+    folderId=extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
   }
   if(!folderId){
     toast('❗ Kein Foto-Ordner – bitte in Einstellungen einen Standard-Fotoordner hinterlegen','error');
