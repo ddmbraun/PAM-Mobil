@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v71'; // v71: Erfassungszeitpunkt (standortErfasst) wird beim 📍-Standort/Foto-GPS gespeichert → auf Desktop in der Objekt-Sektion sichtbar · v70: FIX Adresse wurde nie gefunden (CSP connect-src erlaubte photon/nominatim nicht) + FIX Karten-Thumbnails blinkten (Timer-Badge ohne Klasse → renderList jede Sekunde) · v69: Adresse aus EINER Quelle, 📍 nur nach Rückfrage, maximumAge 0, Geocoder 8s-Timeout · v68: Foto-„springt zurück/blinkt" behoben
+const CACHE_NAME = 'pam-mobil-v72'; // v72: Foto-Schnellnotizen-Unterordner werden IMMER im Projektordner „Schnellnotizen" angelegt (nicht mehr im Standard-Fotoordner) · v71: Erfassungszeitpunkt (standortErfasst) wird beim 📍-Standort/Foto-GPS gespeichert → auf Desktop in der Objekt-Sektion sichtbar · v70: FIX Adresse wurde nie gefunden (CSP connect-src erlaubte photon/nominatim nicht) + FIX Karten-Thumbnails blinkten (Timer-Badge ohne Klasse → renderList jede Sekunde) · v69: Adresse aus EINER Quelle, 📍 nur nach Rückfrage, maximumAge 0, Geocoder 8s-Timeout · v68: Foto-„springt zurück/blinkt" behoben
 
 const PRECACHE = [
   './',
