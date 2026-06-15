@@ -4334,9 +4334,9 @@ function renderDetail(t){
       const mapHref=hasCoords?('https://www.google.com/maps/search/?api=1&query='+t.lat+','+t.lon):'';
       let h='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
         +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">📍 Standort</button>';
-      // v68: ermittelte/erfasste Adresse immer als editierbares Feld (auch Baustelle),
-      // damit sie direkt korrigierbar ist. onblur re-rendert, damit das Stammdaten-Adressfeld synchron bleibt.
-      h+='<input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="updateField(\'adresse\',this.value)" onblur="try{renderDetail(currentTask())}catch(e){}" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">';
+      // v69: ein einziges Adress-Datenfeld, live über alle Eingabefelder synchronisiert
+      // (kein voller Re-Render mehr beim Verlassen → kein Fokus-/Cursor-Verlust).
+      h+='<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">';
       if(hasCoords)h+='<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>';
       h+='</div>';
       return h;
@@ -4368,7 +4368,7 @@ function renderDetail(t){
       +(isNotiz?'<div class="field"><label>📅 Fälligkeitsdatum</label><input type="date" value="'+escAttr(t.due||'')+'" onchange="updateField(\'due\',this.value)" autocomplete="off"></div>':'')
       +(isNotiz?'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">Beschreibung</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>':'')
       // Baustellen-Board: nur Adresse + Task-Typ + Kostenstelle
-      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="updateField(\'adresse\',this.value);updateNavBtn()" onblur="_autoFillSbOrdner()" autocomplete="off"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
+      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="_syncAddrField(this)" onblur="_autoFillSbOrdner()" autocomplete="off"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
       +(!isNotiz?'<div class="field-row" style="gap:8px;">'
         +'<div class="field" style="margin:0"><label>Task-Typ</label><select onchange="updateField(\'taskTyp\',this.value)">'
         +'<option value="">– wählen –</option>'
@@ -4515,6 +4515,14 @@ function currentTask(){return currentTaskId?findTaskById(currentTaskId):null;}
 function updateField(field,value){
   const t=currentTask();if(!t)return;
   t[field]=value;scheduleSave();
+}
+// v69: Adresse an EINER Datenquelle halten und alle sichtbaren Adressfelder live spiegeln
+// (Standort-Zeile + Objektadresse), ohne die Detailansicht neu zu rendern.
+function _syncAddrField(el){
+  const v=el.value;
+  const t=currentTask();if(t){t.adresse=v;scheduleSave();}
+  document.querySelectorAll('input.addr-field').forEach(inp=>{ if(inp!==el && inp.value!==v) inp.value=v; });
+  try{updateNavBtn();}catch(e){}
 }
 
 // ── Stammblatt-Ordner: adressbasierter localStorage-Cache ─────────────────
@@ -6091,14 +6099,18 @@ async function _captureStandortQuickAdd(){
     try{addr=await _reverseGeocode(lat,lon);}catch(e){}
     _qaStandort={lat,lon,adresse:addr};
     const inp=document.getElementById('quickAddAdresse');
-    if(inp&&addr)inp.value=addr;
+    // v69: bereits getippte Adresse nicht ungefragt überschreiben
+    if(inp&&addr){
+      const cur=(inp.value||'').trim();
+      if(!cur||cur===addr.trim()||confirm('Eingetragene Adresse:\n„'+cur+'"\n\ndurch ermittelte ersetzen?\n„'+addr+'"'))inp.value=addr;
+    }
     const info=document.getElementById('quickAddStandortInfo');
     if(info){info.style.display='block';info.textContent='📍 '+lat.toFixed(5)+', '+lon.toFixed(5)+(addr?'':' – keine Adresse gefunden, bitte manuell eintragen');}
     toast('✅ '+(addr||'Standort erfasst'),'success');
   },err=>{
     const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
     toast('📍 '+(m[err.code]||'GPS-Fehler'),'error',5000);
-  },{timeout:15000,maximumAge:120000,enableHighAccuracy:true});
+  },{timeout:15000,maximumAge:0,enableHighAccuracy:true}); // v69: maximumAge 0 → keine veraltete (bis 2 Min alte) Position mehr
 }
 // v62: 📍-Button in der Detailansicht (Task existiert)
 async function _captureStandort(){
@@ -6123,7 +6135,7 @@ async function _captureStandort(){
   },err=>{
     const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
     toast('📍 '+(m[err.code]||'GPS-Fehler'),'error',5000);
-  },{timeout:15000,maximumAge:120000,enableHighAccuracy:true});
+  },{timeout:15000,maximumAge:0,enableHighAccuracy:true}); // v69: maximumAge 0 → keine veraltete (bis 2 Min alte) Position mehr
 }
 function _saveQuickBoard(){
   const v=document.getElementById('quickBoardSelect').value;
@@ -6567,17 +6579,26 @@ function _readGpsFromDataUrl(dataUrl){
   }catch(e){return null;}
 }
 const _geoCache={};
+// v69: fetch mit Zeitlimit – verhindert endloses Hängen auf schwachem Mobilnetz
+async function _fetchTimeout(url,opts,ms){
+  const ctrl=new AbortController();
+  const id=setTimeout(()=>ctrl.abort(),ms||8000);
+  try{ return await fetch(url,Object.assign({},opts,{signal:ctrl.signal})); }
+  finally{ clearTimeout(id); }
+}
 async function _reverseGeocode(lat,lon){
   const key=lat.toFixed(5)+','+lon.toFixed(5);
   if(_geoCache[key]!==undefined)return _geoCache[key];
   let addr='';
   // 1) Photon (Komoot) – CORS-freundlich, OSM-Daten, liefert Straße + Hausnummer
   try{
-    const r=await fetch('https://photon.komoot.io/reverse?lat='+lat+'&lon='+lon+'&lang=de');
+    const r=await _fetchTimeout('https://photon.komoot.io/reverse?lat='+lat+'&lon='+lon+'&lang=de',null,8000);
     if(r.ok){
       const d=await r.json();
       const p=(d.features&&d.features[0]&&d.features[0].properties)||{};
-      const str=[p.street||p.name,p.housenumber].filter(Boolean).join(' ');
+      // v69: Straße bevorzugen; p.name nur nutzen, wenn eine Hausnummer existiert
+      // (adressiertes Gebäude) – sonst bleibt die Straßenzeile leer statt POI-Name.
+      const str=[p.street||(p.housenumber?(p.name||''):''),p.housenumber].filter(Boolean).join(' ');
       const ort=[p.postcode,(p.city||p.town||p.village||p.county||'')].filter(Boolean).join(' ');
       addr=[str,ort].filter(Boolean).join(', ');
     }
@@ -6585,7 +6606,7 @@ async function _reverseGeocode(lat,lon){
   // 2) Fallback: Nominatim
   if(!addr){
     try{
-      const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+lat+'&lon='+lon+'&zoom=18&addressdetails=1&accept-language=de',{headers:{'Accept':'application/json'}});
+      const r=await _fetchTimeout('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+lat+'&lon='+lon+'&zoom=18&addressdetails=1&accept-language=de',{headers:{'Accept':'application/json'}},8000);
       if(r.ok){
         const d=await r.json();
         const a=d.address||{};
