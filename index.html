@@ -3025,8 +3025,8 @@ function renderBoardBar(){
     else{lbl.textContent='Aktuelles Board: '+currentBoard+'  ·  '+names.length+' verfügbar';}
   }
 }
-function switchBoard(n){currentBoard=n;currentStatus='';renderList();}
-function switchStatus(s){currentStatus=(currentStatus===s?'':s);renderList();}
+function switchBoard(n){currentBoard=n;currentStatus='';renderList(true);}
+function switchStatus(s){currentStatus=(currentStatus===s?'':s);renderList(true);}
 function renderStatusBar(){
   const sec=document.getElementById('statusSection');
   const bar=document.getElementById('statusBar');
@@ -3048,7 +3048,7 @@ function renderStatusBar(){
         +esc(s)+' <span style="opacity:.7;font-size:11px">('+cnt+')</span></button>';
     }).join('');
 }
-function renderList(){
+function renderList(resetScroll){
   // Sicherstellen dass taskList sichtbar ist (z.B. nach Heute-View)
   const _tl=document.getElementById('taskList');
   if(_tl&&_tl.style.display==='none')_tl.style.display='';
@@ -3078,7 +3078,10 @@ function renderList(){
   const timerState=_loadTimerState();
   const runningTaskId=timerState?timerState.taskId:null;
   const isNotizBoard=(boardTypes[currentBoard]||'baustelle')==='notiz';
-  if(_tl)_tl.scrollTop=0;
+  // v68: Scroll-Position nur bei echtem Board-/Status-Wechsel zurücksetzen, sonst erhalten
+  // (verhindert „springt nach oben" bei jedem Refresh, z.B. während Foto-Upload).
+  const _listPrevScroll=_tl?_tl.scrollTop:0;
+  if(_tl)requestAnimationFrame(()=>{try{_tl.scrollTop=resetScroll?0:_listPrevScroll;}catch(e){}});
   list.innerHTML=filtered.map(t=>{ try {
     const status=t.status||'';
     const isRunning=t.id===runningTaskId;
@@ -4331,11 +4334,9 @@ function renderDetail(t){
       const mapHref=hasCoords?('https://www.google.com/maps/search/?api=1&query='+t.lat+','+t.lon):'';
       let h='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
         +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">📍 Standort</button>';
-      if(isNotiz){
-        h+='<input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (anpassbar)" oninput="updateField(\'adresse\',this.value)" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">';
-      }else if(t.adresse){
-        h+='<span style="font-size:13px;color:var(--text);">'+esc(t.adresse)+'</span>';
-      }
+      // v68: ermittelte/erfasste Adresse immer als editierbares Feld (auch Baustelle),
+      // damit sie direkt korrigierbar ist. onblur re-rendert, damit das Stammdaten-Adressfeld synchron bleibt.
+      h+='<input type="text" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="updateField(\'adresse\',this.value)" onblur="try{renderDetail(currentTask())}catch(e){}" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">';
       if(hasCoords)h+='<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>';
       h+='</div>';
       return h;
@@ -6108,10 +6109,17 @@ async function _captureStandort(){
     const lat=pos.coords.latitude,lon=pos.coords.longitude;
     let addr='';
     try{addr=await _reverseGeocode(lat,lon);}catch(e){}
-    t.lat=lat;t.lon=lon;if(addr)t.adresse=addr;
+    t.lat=lat;t.lon=lon;
+    // v68: vorhandene Adresse NICHT versehentlich überschreiben.
+    // Leeres Feld → automatisch füllen; sonst nur nach ausdrücklicher Rückfrage.
+    if(addr){
+      const cur=(t.adresse||'').trim();
+      if(!cur){t.adresse=addr;}
+      else if(cur!==addr.trim()&&confirm('Gespeicherte Adresse:\n„'+cur+'"\n\ndurch ermittelte ersetzen?\n„'+addr+'"')){t.adresse=addr;}
+    }
     scheduleSave();
     try{renderDetail(t);}catch(e){}
-    toast('✅ '+(addr||'Standort erfasst'),'success');
+    toast(addr?('✅ '+addr):'📍 Standort erfasst – keine Adresse gefunden, bitte manuell eintragen','success',addr?3000:5000);
   },err=>{
     const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
     toast('📍 '+(m[err.code]||'GPS-Fehler'),'error',5000);
@@ -6253,7 +6261,7 @@ async function _submitQuickAdd(){
   };
   // v62: GPS aus dem ersten Foto übernehmen (sofern nicht schon per 📍-Button gesetzt)
   await _qaApplyGpsFromFiles(newT,fotoFiles);
-  _qaRefresh();
+  // v68: kein Zwischen-Render hier (verhindert Blinken/Sprung); finaler Render unten
   // ── Reine Textnotiz → KEIN Drive-Ordner (v62: lazy, erst beim ersten Foto) ──
   if(!fotoFiles.length){ forceSave(); _qaRefresh(); return; }
   // ── Fotos vorhanden → Schnellnotizen-Unterordner anlegen + hochladen ──
@@ -6267,7 +6275,7 @@ async function _submitQuickAdd(){
     setSaveInd('saving','📁 Ordner wird angelegt…');
     _qaFolderId=await _ensureQuickNoteFolder(newT,title,dateSlug);
     if(!_qaFolderId)throw new Error('Kein Schnellnotizen-Ordner');
-    forceSave();_qaRefresh();
+    forceSave(); // v68: Zwischen-Render entfernt – finaler Render nach Upload
   }catch(e){
     console.warn('[QuickAdd] Ordner:',e);
     await _savePhotosLocally(false);
@@ -6284,7 +6292,7 @@ async function _submitQuickAdd(){
     newT.fotos.push(fo);fotoObjs.push({f:f,fo:fo});
     try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
   }
-  forceSave();_qaRefresh();
+  forceSave(); // v68: Zwischen-Render entfernt – finaler Render nach Upload
   let _okCount=0,_failCount=0,_idx=0;
   for(const o of fotoObjs){
     _idx++;setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
