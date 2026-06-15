@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v69'; // v69: Adresse aus EINER Quelle – Standort- & Objektadressfeld live synchron, kein voller Re-Render mehr beim Verlassen (kein Fokus-/Cursorverlust) · 📍 im Schnellfenster überschreibt getippte Adresse nicht ohne Rückfrage · GPS maximumAge 0 (keine veraltete Position) · Geocoder mit 8s-Timeout (AbortController) · Photon: Straße bevorzugt, POI-Name nur mit Hausnummer · v68: Foto-„springt zurück/blinkt" wirklich behoben
+const CACHE_NAME = 'pam-mobil-v70'; // v70: FIX Adresse wurde nie gefunden – CSP connect-src erlaubte photon.komoot.io/nominatim nicht (Reverse-Geocoding vom Browser geblockt, GPS-Koordinaten kamen trotzdem) · FIX Karten-Thumbnails blinkten im Sekundentakt – Laufzeit-Timer-Badge fehlte Klasse 'task-timer-badge' → Update-Funktion rief jede Sekunde renderList() statt nur Textupdate · v69: Adresse aus EINER Quelle (Standort+Objektadresse live synchron, kein Re-Render beim Verlassen), 📍 überschreibt Eingabe nur nach Rückfrage, GPS maximumAge 0, Geocoder 8s-Timeout, Photon Straße bevorzugt · v68: Foto-„springt zurück/blinkt" wirklich behoben
 
 const PRECACHE = [
   './',
