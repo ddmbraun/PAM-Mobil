@@ -6097,7 +6097,7 @@ async function _captureStandortQuickAdd(){
     const lat=pos.coords.latitude,lon=pos.coords.longitude;
     let addr='';
     try{addr=await _reverseGeocode(lat,lon);}catch(e){}
-    _qaStandort={lat,lon,adresse:addr};
+    _qaStandort={lat,lon,adresse:addr,erfasst:new Date().toISOString()}; // v71: Erfassungszeitpunkt
     const inp=document.getElementById('quickAddAdresse');
     // v69: bereits getippte Adresse nicht ungefragt überschreiben
     if(inp&&addr){
@@ -6121,7 +6121,7 @@ async function _captureStandort(){
     const lat=pos.coords.latitude,lon=pos.coords.longitude;
     let addr='';
     try{addr=await _reverseGeocode(lat,lon);}catch(e){}
-    t.lat=lat;t.lon=lon;
+    t.lat=lat;t.lon=lon;t.standortErfasst=new Date().toISOString(); // v71: Erfassungszeitpunkt
     // v68: vorhandene Adresse NICHT versehentlich überschreiben.
     // Leeres Feld → automatisch füllen; sonst nur nach ausdrücklicher Rückfrage.
     if(addr){
@@ -6247,7 +6247,7 @@ async function _submitQuickAdd(){
   };
   boards[savedBoard].push(newT);
   // v62/v65: Standort (📍) + bearbeitbares Adressfeld übernehmen
-  if(_qaStandort){newT.lat=_qaStandort.lat;newT.lon=_qaStandort.lon;}
+  if(_qaStandort){newT.lat=_qaStandort.lat;newT.lon=_qaStandort.lon;newT.standortErfasst=_qaStandort.erfasst||new Date().toISOString();} // v71: Erfassungszeitpunkt
   const _qaAdr=(document.getElementById('quickAddAdresse')?.value||'').trim();
   if(_qaAdr)newT.adresse=_qaAdr;
   else if(_qaStandort&&_qaStandort.adresse)newT.adresse=_qaStandort.adresse;
@@ -6631,7 +6631,7 @@ async function _qaApplyGpsFromFiles(t,files){
       const dataUrl=await _fileToDataUrl(f);
       const gps=_readGpsFromDataUrl(dataUrl);
       if(gps){
-        t.lat=gps.lat;t.lon=gps.lon;
+        t.lat=gps.lat;t.lon=gps.lon;t.standortErfasst=new Date().toISOString(); // v71: Erfassungszeitpunkt (aus Foto-EXIF)
         const addr=await _reverseGeocode(gps.lat,gps.lon);
         if(addr&&!t.adresse)t.adresse=addr;
         scheduleSave();
