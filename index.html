@@ -5590,7 +5590,12 @@ async function uploadFoto(files){
   //    hinzugefügte Fotos im Standard-Fotoordner statt im Projektordner „Schnellnotizen".
   if(!folderId){
     const _bn=findBoardByTaskId(t.id);
-    if((boardTypes[_bn]||'baustelle')==='notiz'){
+    // v73: Als Notiz behandeln, wenn Board-Typ 'notiz' ODER es das konfigurierte Schnell-Board ist.
+    // (Manche Schnell-Boards sind auf dem Desktop nicht als 'notiz' typisiert → sonst fiel der
+    //  nachträgliche Foto-Upload fälschlich auf den Standard-Fotoordner zurück.)
+    const _quickBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
+    const _isQuickNote=(boardTypes[_bn]||'baustelle')==='notiz'||(!!_quickBoard&&_bn===_quickBoard);
+    if(_isQuickNote){
       try{ if(await ensureToken()) folderId=await _ensureQuickNoteFolder(t,t.title,null); }
       catch(e){console.warn('[uploadFoto] Notiz-Ordner:',e);}
     }
