@@ -1634,7 +1634,19 @@ async function saveFile(){
                 // Dadurch werden auf dem Desktop gelöschte Tasks nicht wieder hinzugefügt.
                 for(const lt of localArr){
                   if(!lt||!lt.id)continue;
-                  if(!remoteIds.has(lt.id)&&!_remoteSeenIds.has(lt.id))mergedArr.push(lt);
+                  if(!remoteIds.has(lt.id)&&!_remoteSeenIds.has(lt.id)){
+                    mergedArr.push(lt);
+                  } else if(remoteIds.has(lt.id)&&_qaInFlightIds.has(lt.id)){
+                    // v74: gerade angelegte Foto-Schnellnotiz – frische Foto-/Ordner-Daten bewahren,
+                    // sonst überschreibt die fotolose Remote-Version (aus dem 1. Save) die Fotos.
+                    const _ix=mergedArr.findIndex(t=>t&&t.id===lt.id);
+                    if(_ix>=0&&mergedArr[_ix]){
+                      const _rt=mergedArr[_ix];
+                      _rt.fotos=_mergeListByKey(_rt.fotos,lt.fotos,f=>(f.id||f.driveId||f.path||f.name||''));
+                      if(lt.gdrive)_rt.gdrive=lt.gdrive;
+                      if(lt.gdriveOrdner)_rt.gdriveOrdner=lt.gdriveOrdner;
+                    }
+                  }
                 }
                 merged[bn]=mergedArr;
               }
@@ -6076,6 +6088,9 @@ const DEFAULT_FOTO_FOLDER_KEY='ptpm_default_foto_folder';
 const QUICK_PARENT_KEY='ptpm_quicknote_folder';
 // v62: temporär per 📍-Button erfasster Standort (vor dem Anlegen der Notiz)
 let _qaStandort=null;
+// v74: IDs gerade angelegter Foto-Schnellnotizen – werden im Konflikt-Merge geschützt,
+// damit der zweite Speichervorgang (mit Fotos) nicht durch eine fotolose Remote-Version ersetzt wird.
+let _qaInFlightIds=new Set();
 // Projektordner „Schnellnotizen" (fester Drive-Ordner) – hier landen die Per-Notiz-Unterordner
 const SCHNELLNOTIZEN_FOLDER_ID='1ogSJx78N3hqxzQPauAM7TwR_HmwMjsjA';
 // v72: Per-Notiz-Ordner IMMER im Projektordner „Schnellnotizen" anlegen – unabhängig vom
@@ -6290,6 +6305,9 @@ async function _submitQuickAdd(){
   // v68: kein Zwischen-Render hier (verhindert Blinken/Sprung); finaler Render unten
   // ── Reine Textnotiz → KEIN Drive-Ordner (v62: lazy, erst beim ersten Foto) ──
   if(!fotoFiles.length){ forceSave(); _qaRefresh(); return; }
+  // v74: Diese Notiz im Konflikt-Merge schützen, bis Fotos hochgeladen + synchronisiert sind.
+  _qaInFlightIds.add(newT.id);
+  setTimeout(()=>{try{_qaInFlightIds.delete(newT.id);}catch(_e){}},120000);
   // ── Fotos vorhanden → Schnellnotizen-Unterordner anlegen + hochladen ──
   if(!(await ensureToken())){
     await _savePhotosLocally(false);

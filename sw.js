@@ -1,7 +1,7 @@
 // Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v73'; // v73: Nachträglicher Foto-Upload erkennt das konfigurierte Schnell-Board auch ohne Board-Typ 'notiz' → landet jetzt zuverlässig in „Schnellnotizen" statt im Standard-Fotoordner · v72: Foto-Schnellnotizen-Unterordner immer im Projektordner „Schnellnotizen" · v71: Erfassungszeitpunkt (standortErfasst) wird beim 📍-Standort/Foto-GPS gespeichert → auf Desktop in der Objekt-Sektion sichtbar · v70: FIX Adresse wurde nie gefunden (CSP connect-src erlaubte photon/nominatim nicht) + FIX Karten-Thumbnails blinkten (Timer-Badge ohne Klasse → renderList jede Sekunde) · v69: Adresse aus EINER Quelle, 📍 nur nach Rückfrage, maximumAge 0, Geocoder 8s-Timeout · v68: Foto-„springt zurück/blinkt" behoben
+const CACHE_NAME = 'pam-mobil-v74'; // v74: Sync-Race behoben – gerade angelegte Foto-Schnellnotiz wird im Konflikt-Merge geschützt (Fotos gingen verloren, wenn der Desktop während des Uploads auf Drive schrieb) · v73: Nachträglicher Foto-Upload erkennt das konfigurierte Schnell-Board auch ohne Board-Typ 'notiz' → landet jetzt zuverlässig in „Schnellnotizen" statt im Standard-Fotoordner · v72: Foto-Schnellnotizen-Unterordner immer im Projektordner „Schnellnotizen" · v71: Erfassungszeitpunkt (standortErfasst) wird beim 📍-Standort/Foto-GPS gespeichert → auf Desktop in der Objekt-Sektion sichtbar · v70: FIX Adresse wurde nie gefunden (CSP connect-src erlaubte photon/nominatim nicht) + FIX Karten-Thumbnails blinkten (Timer-Badge ohne Klasse → renderList jede Sekunde) · v69: Adresse aus EINER Quelle, 📍 nur nach Rückfrage, maximumAge 0, Geocoder 8s-Timeout · v68: Foto-„springt zurück/blinkt" behoben
 
 const PRECACHE = [
   './',
