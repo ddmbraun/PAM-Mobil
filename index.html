@@ -1147,6 +1147,8 @@ function logout(){
     localStorage.removeItem(MOBILE_BACKUP_KEY);
     // Stammblatt-Ordner-Cache leeren
     Object.keys(localStorage).filter(k=>k.startsWith('ptpm_sb_')).forEach(k=>localStorage.removeItem(k));
+    // Fix v76: gecachte Schnellnotiz-Ordner-ID löschen → nach Konto-Wechsel kein alter Cache
+    localStorage.removeItem(QUICK_PARENT_KEY);
   }catch(e){console.warn('[PTP-Mobile] localStorage löschen:',e);}
   const tokenToRevoke=gdriveToken;
   gdriveToken=null;gdriveTokenExpires=0;fileId=null;boards={};statuses=[];
@@ -1601,7 +1603,7 @@ async function saveFile(){
                     mergedTask.attachments=_mergeListByKey(rt.attachments,localTask.attachments,f=>((f.name||'')+'|'+(f.size||0)));
                     mergedTask.timeEntries=_mergeListByKey(rt.timeEntries,localTask.timeEntries,e=>String(e.start||''));
                     // Fix: checkliste und kontakte mergen statt überschreiben
-                    mergedTask.checkliste=_mergeListByKey(rt.checkliste,localTask.checkliste,c=>((c.text||'')+'|'+(c.done?'1':'0')));
+                    mergedTask.checkliste=_mergeListByKey(rt.checkliste,localTask.checkliste,c=>(c.text||'')); // Fix v76: done-Status nicht im Schlüssel → kein Duplikat bei gleichzeitiger Bearbeitung
                     mergedTask.kontakte=_mergeListByKey(rt.kontakte,localTask.kontakte,k=>((k.rolle||'')+'|'+(k.name||'')+'|'+(k.tel||'')));
                     remoteVisible[bn][idx]=mergedTask;
                     placed=true;break;
@@ -6113,7 +6115,7 @@ async function _ensureQuickNoteParent(){
   // 1) gecachte ID, dann feste Seed-ID validieren
   let cached='';
   try{cached=localStorage.getItem(QUICK_PARENT_KEY)||'';}catch(e){}
-  for(const cand of [cached, SCHNELLNOTIZEN_FOLDER_ID]){
+  for(const cand of (cached&&cached!==SCHNELLNOTIZEN_FOLDER_ID?[cached,SCHNELLNOTIZEN_FOLDER_ID]:[SCHNELLNOTIZEN_FOLDER_ID])){
     if(cand && await _quickNoteFolderUsable(cand)){
       try{localStorage.setItem(QUICK_PARENT_KEY,cand);}catch(e){}
       return cand;
