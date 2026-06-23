@@ -1597,7 +1597,7 @@ async function saveFile(){
                     mergedTask.notizVerlauf=_mergeListByKey(rt.notizVerlauf,localTask.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
                     mergedTask.zeitEntries=_mergeListByKey(rt.zeitEntries,localTask.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
                     mergedTask.ausserhausTermine=_mergeListByKey(rt.ausserhausTermine,localTask.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
-                    mergedTask.fotos=_mergeListByKey(rt.fotos,localTask.fotos,f=>(f.id||f.driveId||f.path||f.name||''));
+                    mergedTask.fotos=_mergeListByKey(rt.fotos,localTask.fotos,f=>(f.id||f.driveId||f.path||((f.name&&f.size)?('ns:'+f.name+'|'+f.size):'')));
                     mergedTask.attachments=_mergeListByKey(rt.attachments,localTask.attachments,f=>((f.name||'')+'|'+(f.size||0)));
                     mergedTask.timeEntries=_mergeListByKey(rt.timeEntries,localTask.timeEntries,e=>String(e.start||''));
                     // Fix: checkliste und kontakte mergen statt überschreiben
@@ -1642,7 +1642,7 @@ async function saveFile(){
                     const _ix=mergedArr.findIndex(t=>t&&t.id===lt.id);
                     if(_ix>=0&&mergedArr[_ix]){
                       const _rt=mergedArr[_ix];
-                      _rt.fotos=_mergeListByKey(_rt.fotos,lt.fotos,f=>(f.id||f.driveId||f.path||f.name||''));
+                      _rt.fotos=_mergeListByKey(_rt.fotos,lt.fotos,f=>(f.id||f.driveId||f.path||((f.name&&f.size)?('ns:'+f.name+'|'+f.size):'')));
                       if(lt.gdrive)_rt.gdrive=lt.gdrive;
                       if(lt.gdriveOrdner)_rt.gdriveOrdner=lt.gdriveOrdner;
                     }
@@ -6091,13 +6091,68 @@ let _qaStandort=null;
 // v74: IDs gerade angelegter Foto-Schnellnotizen – werden im Konflikt-Merge geschützt,
 // damit der zweite Speichervorgang (mit Fotos) nicht durch eine fotolose Remote-Version ersetzt wird.
 let _qaInFlightIds=new Set();
-// Projektordner „Schnellnotizen" (fester Drive-Ordner) – hier landen die Per-Notiz-Unterordner
+// Projektordner für Schnellnotizen – hier landen die Per-Notiz-Unterordner.
+// Seed-ID (Eigentümer frank.braun@sv-fb.de) + Name als robuster Fallback.
 const SCHNELLNOTIZEN_FOLDER_ID='1ogSJx78N3hqxzQPauAM7TwR_HmwMjsjA';
-// v72: Per-Notiz-Ordner IMMER im Projektordner „Schnellnotizen" anlegen – unabhängig vom
-// in den Einstellungen gewählten Standard-Fotoordner (der gilt nur noch für Aufträge/Aufgaben).
-// (v63 hatte hier den Standard-Fotoordner verwendet → Foto-Schnellnotizen landeten im falschen Ordner.)
+const SCHNELLNOTIZEN_FOLDER_NAME='Projektordner_Schnellnotiz';
+// v75 Fix: Parent-Ordner robust auflösen statt blind die feste ID zu verwenden.
+// Vorher schlug das Anlegen still fehl, wenn die feste ID im aktuellen Google-Konto nicht
+// erreichbar war (anderes Konto, verschoben, Papierkorb) → Fotos landeten nur lokal.
+// Ablauf: 1) gecachte/feste ID validieren  2) per Namen im Workspace suchen  3) neu anlegen.
+async function _quickNoteFolderUsable(id){
+  if(!id)return false;
+  try{
+    const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?fields=id,trashed,capabilities(canAddChildren)',
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    if(!r.ok)return false;
+    const d=await r.json();
+    return !!d.id && !d.trashed && (!d.capabilities || d.capabilities.canAddChildren!==false);
+  }catch(e){return false;}
+}
 async function _ensureQuickNoteParent(){
-  return SCHNELLNOTIZEN_FOLDER_ID;
+  // 1) gecachte ID, dann feste Seed-ID validieren
+  let cached='';
+  try{cached=localStorage.getItem(QUICK_PARENT_KEY)||'';}catch(e){}
+  for(const cand of [cached, SCHNELLNOTIZEN_FOLDER_ID]){
+    if(cand && await _quickNoteFolderUsable(cand)){
+      try{localStorage.setItem(QUICK_PARENT_KEY,cand);}catch(e){}
+      return cand;
+    }
+  }
+  // 2) per Namen suchen (bevorzugt im Workspace-Ordner, dann global)
+  try{
+    let q="name='"+SCHNELLNOTIZEN_FOLDER_NAME+"' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+    if(workspaceFolderId) q+=" and '"+workspaceFolderId+"' in parents";
+    let r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id,name)&orderBy=createdTime',
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    let d=r.ok?await r.json():{};
+    if((!d.files||!d.files.length)&&workspaceFolderId){
+      const q2="name='"+SCHNELLNOTIZEN_FOLDER_NAME+"' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+      r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q2)+'&fields=files(id,name)&orderBy=createdTime',
+        {headers:{Authorization:'Bearer '+gdriveToken}});
+      d=r.ok?await r.json():{};
+    }
+    if(d.files&&d.files.length){
+      const id=d.files[0].id;
+      try{localStorage.setItem(QUICK_PARENT_KEY,id);}catch(e){}
+      return id;
+    }
+  }catch(e){console.warn('[QuickNote] Ordnersuche:',e);}
+  // 3) neu anlegen (im Workspace-Ordner, sonst Drive-Root)
+  try{
+    const body={name:SCHNELLNOTIZEN_FOLDER_NAME,mimeType:'application/vnd.google-apps.folder'};
+    if(workspaceFolderId) body.parents=[workspaceFolderId];
+    const r=await fetch('https://www.googleapis.com/drive/v3/files',{
+      method:'POST',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    if(r.ok){
+      const f=await r.json();
+      try{localStorage.setItem(QUICK_PARENT_KEY,f.id);}catch(e){}
+      console.info('[QuickNote] Schnellnotiz-Ordner neu angelegt:',f.id);
+      return f.id;
+    }
+  }catch(e){console.warn('[QuickNote] Ordner anlegen:',e);}
+  return '';
 }
 // v62: pro Notiz einen Unterordner – nur bei Bedarf (erstes Foto)
 async function _ensureQuickNoteFolder(t,title,dateSlug){
@@ -6323,7 +6378,12 @@ async function _submitQuickAdd(){
   }catch(e){
     console.warn('[QuickAdd] Ordner:',e);
     await _savePhotosLocally(false);
-    toast('⚠️ Drive-Ordner konnte nicht angelegt werden – '+fotoFiles.length+' Foto(s) lokal gespeichert','warning',5000);
+    // v75: aussagekräftigere Meldung – offline vs. Konto-/Zugriffsproblem.
+    const _off=(typeof navigator!=='undefined'&&navigator.onLine===false);
+    const _msg=_off
+      ? '⚠️ Offline – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung'
+      : '⚠️ Schnellnotiz-Ordner nicht erreichbar (Drive-Konto/Zugriff prüfen) – '+fotoFiles.length+' Foto(s) lokal gespeichert';
+    toast(_msg,'warning',6000);
     _qaRefresh();return;
   }
   // Fotos lokal sichern + hochladen
