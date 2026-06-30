@@ -4213,6 +4213,41 @@ function startBaudokuDiktat(){
   r.start();
 }
 
+let _notizDiktatRec=null;
+function startDiktatNotiz(){
+  if(_notizDiktatRec){try{_notizDiktatRec.stop();}catch(_){}return;}
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    toast('Spracherkennung nicht verfügbar (Chrome/Android empfohlen)','error');return;
+  }
+  const inp=document.getElementById('newNotizInput');
+  const btn=document.getElementById('notizDiktatBtn');
+  if(!inp)return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const r=new SR();
+  r.lang='de-DE';r.interimResults=true;r.maxAlternatives=1;r.continuous=true;
+  _notizDiktatRec=r;
+  let finalText='';
+  if(btn){btn.classList.add('recording');btn.innerHTML='<span class="bau-diktat-dot"></span>Stoppen';}
+  r.onresult=function(e){
+    let final='',interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal)final+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
+    }
+    if(final){finalText+=((finalText?' ':'')+final.trim());}
+    inp.value=finalText+(interim?' …'+interim:'');
+    inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,200)+'px';
+  };
+  r.onerror=function(){_notizDiktatRec=null;if(btn){btn.classList.remove('recording');btn.innerHTML='🎤 Diktieren';}};
+  r.onend=function(){
+    _notizDiktatRec=null;
+    inp.value=finalText;
+    inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,200)+'px';
+    if(btn){btn.classList.remove('recording');btn.innerHTML='🎤 Diktieren';}
+  };
+  r.start();
+}
+
 // ── Akte nachtragen (Mobile) ──
 function loadAkteNachtragen(e){
   const file=e.target.files[0];if(!file)return;
@@ -6420,9 +6455,6 @@ async function _submitQuickAdd(){
   else toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen','success');
 }
 
-function _fileToDataUrl(file){
-  return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(file);});
-}
 async function deleteTask(){
   const t=currentTask();if(!t)return;
   if(!confirm('Task „'+(t.title||'')+'" wirklich löschen?'))return;
