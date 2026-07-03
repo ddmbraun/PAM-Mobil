@@ -418,6 +418,15 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 </div>
 
 <!-- ══ SCHNELL-ADD BOTTOM-SHEET ══ -->
+<!-- v79: Globale Timer-Leiste – in JEDER Ansicht sichtbar, solange die Stoppuhr läuft -->
+<div id="globalTimerBar" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:8500;background:var(--accent);color:#fff;padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -2px 12px rgba(0,0,0,.4);align-items:center;gap:10px;">
+  <div onclick="_gtbOpenTask()" style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;cursor:pointer;">
+    <span style="font-size:16px;flex-shrink:0;">⏱</span>
+    <span id="gtbTime" style="font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;">00:00:00</span>
+    <span id="gtbTitle" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;opacity:.92;"></span>
+  </div>
+  <button onclick="_gtbStop()" style="flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.55);color:#fff;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;">⏹ Stopp</button>
+</div>
 <div id="quickAddSheet" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.55);" onclick="if(event.target===this)_closeQuickAdd()">
   <div style="position:absolute;bottom:0;left:0;right:0;background:var(--bg2);border-radius:18px 18px 0 0;padding:20px 16px 32px;box-shadow:0 -4px 24px rgba(0,0,0,0.4);">
     <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px;"></div>
@@ -435,7 +444,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
       <button onclick="document.getElementById('quickAddGalerieInput').click()" style="flex:1;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;">🖼 Galerie</button>
     </div>
     <button onclick="_captureStandortQuickAdd()" style="width:100%;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;margin-bottom:8px;">📍 Standort erfassen</button>
-    <input id="quickAddAdresse" type="text" placeholder="Adresse (per 📍 gefüllt – anpassbar) …" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:14px;margin-bottom:6px;">
+    <div style="display:flex;gap:6px;margin-bottom:6px;">
+      <input id="quickAddAdresse" type="text" placeholder="Adresse (per 📍 gefüllt – anpassbar) …" autocomplete="off" style="flex:1;min-width:0;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:14px;">
+      <button onclick="_openAdrPopup('quickadd')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;cursor:pointer;">✏️</button>
+    </div>
     <div id="quickAddStandortInfo" style="display:none;font-size:11px;color:var(--text2);margin-bottom:14px;"></div>
     <div style="display:flex;gap:10px;">
       <button onclick="_closeQuickAdd()" style="flex:1;padding:13px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:10px;font-size:15px;cursor:pointer;">Abbrechen</button>
@@ -3295,6 +3307,7 @@ function renderSchnellTab(t){
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
     +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">📍 Standort</button>'
     +'<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">'
+    +'<button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button>' // v79
     +'</div>'
 
     // ── Toggle-Bar ──
@@ -4435,7 +4448,8 @@ function renderDetail(t){
         +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">📍 Standort</button>';
       // v69: ein einziges Adress-Datenfeld, live über alle Eingabefelder synchronisiert
       // (kein voller Re-Render mehr beim Verlassen → kein Fokus-/Cursor-Verlust).
-      h+='<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">';
+      h+='<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">'
+        +'<button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button>'; // v79
       if(hasCoords)h+='<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>';
       h+='</div>';
       return h;
@@ -4467,7 +4481,7 @@ function renderDetail(t){
       +(isNotiz?'<div class="field"><label>📅 Fälligkeitsdatum</label><input type="date" value="'+escAttr(t.due||'')+'" onchange="updateField(\'due\',this.value)" autocomplete="off"></div>':'')
       +(isNotiz?'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">Beschreibung</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>':'')
       // Baustellen-Board: nur Adresse + Task-Typ + Kostenstelle
-      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="_syncAddrField(this)" onblur="_autoFillSbOrdner()" autocomplete="off"><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
+      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="_syncAddrField(this)" onblur="_autoFillSbOrdner()" autocomplete="off"><button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
       +(!isNotiz?'<div class="field-row" style="gap:8px;">'
         +'<div class="field" style="margin:0"><label>Task-Typ</label><select onchange="updateField(\'taskTyp\',this.value)">'
         +'<option value="">– wählen –</option>'
@@ -4623,6 +4637,42 @@ function _syncAddrField(el){
   document.querySelectorAll('input.addr-field').forEach(inp=>{ if(inp!==el && inp.value!==v) inp.value=v; });
   try{updateNavBtn();}catch(e){}
 }
+// v79: Adress-Popup – großes, mehrzeiliges Bearbeitungsfeld (Wunsch: einzeiliges Feld zu klein)
+let _adrPopupMode='task';
+function _openAdrPopup(mode){
+  _adrPopupMode=mode||'task';
+  let cur='';
+  if(_adrPopupMode==='quickadd'){const qi=document.getElementById('quickAddAdresse');cur=(qi&&qi.value)||'';}
+  else{const t=currentTask();cur=(t&&t.adresse)||'';}
+  const ov=document.createElement('div');
+  ov.id='adrPopupOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px 14px 0 0;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));width:100%;max-width:520px;box-sizing:border-box;">'
+    +'<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;">📍 Adresse bearbeiten</div>'
+    +'<textarea id="adrPopupTA" rows="3" autocomplete="off" placeholder="Straße Hausnummer, PLZ Ort" style="width:100%;box-sizing:border-box;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:16px;font-family:inherit;resize:none;margin-bottom:12px;">'+esc(cur)+'</textarea>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="document.getElementById(\'adrPopupOverlay\').remove()" style="flex:1;padding:13px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:14px;cursor:pointer;">Abbrechen</button>'
+    +'<button onclick="_adrPopupApply()" style="flex:2;padding:13px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">✓ Übernehmen</button>'
+    +'</div></div>';
+  document.body.appendChild(ov);
+  setTimeout(()=>{const ta=document.getElementById('adrPopupTA');if(ta)ta.focus();},120);
+}
+function _adrPopupApply(){
+  const ta=document.getElementById('adrPopupTA');
+  // Zeilenumbrüche zu ", " – Adresse wird überall einzeilig gespeichert/angezeigt
+  const v=(ta?ta.value:'').replace(/\s*\n+\s*/g,', ').replace(/,\s*,/g,',').trim();
+  const ov=document.getElementById('adrPopupOverlay');if(ov)ov.remove();
+  if(_adrPopupMode==='quickadd'){
+    const inp=document.getElementById('quickAddAdresse');if(inp)inp.value=v;
+    return;
+  }
+  const t=currentTask();if(!t)return;
+  t.adresse=v;scheduleSave();
+  document.querySelectorAll('input.addr-field').forEach(i=>{i.value=v;});
+  try{updateNavBtn();}catch(e){}
+  toast('✓ Adresse übernommen','success');
+}
 
 // ── Stammblatt-Ordner: adressbasierter localStorage-Cache ─────────────────
 function _sbOrdnerKey(adr){ return 'sbOrdner::'+((adr||'').trim().toLowerCase()); }
@@ -4757,7 +4807,11 @@ function toggleTimerCollapse(){
   else renderDetail(t);
 }
 function _loadTimerState(){try{const r=localStorage.getItem(MOBILE_TIMER_KEY);return r?JSON.parse(r):null;}catch(e){return null;}}
-function _saveTimerState(s){try{s?localStorage.setItem(MOBILE_TIMER_KEY,JSON.stringify(s)):localStorage.removeItem(MOBILE_TIMER_KEY);}catch(e){}}
+function _saveTimerState(s){
+  try{s?localStorage.setItem(MOBILE_TIMER_KEY,JSON.stringify(s)):localStorage.removeItem(MOBILE_TIMER_KEY);}catch(e){}
+  // v79: globale Timer-Leiste bei JEDER Zustandsänderung (Start/Stopp/Beschreibung) aktualisieren
+  try{_updateGlobalTimerBar();}catch(e){}
+}
 function isTimerRunningForTask(taskId){
   const s=_loadTimerState();
   return !!(s&&s.taskId&&s.taskId===taskId);
@@ -4844,7 +4898,11 @@ let _listTickTimer=null;
 function _updateListTimerBadge(){
   const s=_loadTimerState();if(!s||!s.taskId){_stopListTickLoop();return;}
   const badges=document.querySelectorAll('.task-timer-badge');
-  if(!badges.length){_stopListTickLoop();renderList();return;}
+  // v79 FIX: Ist die Timer-Task nicht in der aktuellen Ansicht (anderes Board/Filter),
+  // wurde hier jede Sekunde renderList() aufgerufen → komplette Liste inkl. asynchroner
+  // Foto-/Karten-Vorschauen wurde sekündlich neu aufgebaut (sichtbares Blinken).
+  // Jetzt: nur den Tick beenden – die globale Timer-Leiste zeigt den Timer ohnehin überall.
+  if(!badges.length){_stopListTickLoop();return;}
   badges.forEach(el=>{el.textContent='⏱ '+formatTimerFor(s.taskId);});
 }
 function _startListTickLoop(){
@@ -4854,6 +4912,143 @@ function _startListTickLoop(){
 function _stopListTickLoop(){
   if(_listTickTimer){clearInterval(_listTickTimer);_listTickTimer=null;}
 }
+
+// ══ v79: GLOBALE TIMER-LEISTE + ERINNERUNGEN (vergessene Stoppuhr) ══
+let _gtbInterval=null;
+let _longRunAsked=false;                 // Punkt 3: nur einmal pro App-Sitzung fragen
+const TIMER_REMIND_MS=30*60*1000;        // Punkt 2: alle 30 Minuten erinnern
+const TIMER_LONGRUN_MS=2*60*60*1000;     // Punkt 3: Nachfrage beim App-Start ab 2 Std.
+function _fmtDauer(ms){const m=Math.floor(ms/60000);const h=Math.floor(m/60);return h>0?h+' Std. '+(m%60)+' Min.':m+' Min.';}
+// Stoppuhr mit (ggf. korrigierter) Endzeit beenden – gleiche Logik wie toggleMobileTimer/STOPPEN
+function _stopTimerWithEnd(endMs){
+  const s=_loadTimerState();if(!s||!s.taskId)return false;
+  const t=findTaskById(s.taskId);
+  if(!t){_saveTimerState(null);_stopTickLoop();return false;}
+  const startMs=s.startMs||Date.now();
+  endMs=Math.min(Math.max(startMs,endMs||Date.now()),Date.now());
+  const beschreibung=(s.beschreibung||'').trim()||'Stoppuhr';
+  if(!t.timeEntries)t.timeEntries=[];
+  const open=t.timeEntries.find(e=>!e.end);
+  if(open){open.end=endMs;}else{t.timeEntries.push({start:startMs,end:endMs});}
+  const d1=new Date(startMs),d2=new Date(endMs);
+  const pad=n=>String(n).padStart(2,'0');
+  const entry={date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung};
+  if(!t.zeitEntries)t.zeitEntries=[];
+  t.zeitEntries.push(entry);
+  _saveTimerState(null);_stopTickLoop();
+  try{clearTimeout(_bauTimerInterval);_bauTimerInterval=null;}catch(e){}
+  forceSave();
+  try{if(currentTaskId===t.id)renderDetail(t);else renderList();}catch(e){}
+  toast('⏹ '+entry.von+' – '+entry.bis+' | '+beschreibung,'success');
+  return true;
+}
+// Punkt 1: Leiste am unteren Rand – sichtbar in jeder Ansicht, solange die Uhr läuft
+function _updateGlobalTimerBar(){
+  const bar=document.getElementById('globalTimerBar');if(!bar)return;
+  const s=_loadTimerState();
+  if(!s||!s.taskId){
+    bar.style.display='none';
+    if(_gtbInterval){clearInterval(_gtbInterval);_gtbInterval=null;}
+    return;
+  }
+  const t=findTaskById(s.taskId);
+  const te=document.getElementById('gtbTime');if(te)te.textContent=formatTimerFor(s.taskId);
+  const ti=document.getElementById('gtbTitle');if(ti)ti.textContent=(s.beschreibung?s.beschreibung+' · ':'')+((t&&t.title)||'');
+  bar.style.display='flex';
+  if(!_gtbInterval)_gtbInterval=setInterval(_gtbTick,1000);
+}
+function _gtbTick(){
+  const s=_loadTimerState();
+  if(!s||!s.taskId){_updateGlobalTimerBar();return;}
+  const el=document.getElementById('gtbTime');if(el)el.textContent=formatTimerFor(s.taskId);
+  _timerReminderCheck(s); // Punkt 2
+}
+function _gtbOpenTask(){
+  const s=_loadTimerState();if(!s||!s.taskId)return;
+  if(!findTaskById(s.taskId)){toast('Task nicht gefunden','error');return;}
+  openDetail(s.taskId);
+}
+function _gtbStop(){
+  const s=_loadTimerState();if(!s||!s.taskId)return;
+  const t=findTaskById(s.taskId);
+  if(confirm('Stoppuhr für „'+((t&&t.title)||'')+'" jetzt stoppen?'))_stopTimerWithEnd(Date.now());
+}
+// Punkt 2: Erinnerungs-Overlay alle 30 Minuten (nur solange die App offen ist)
+function _timerReminderCheck(s){
+  if(document.getElementById('timerRemindOverlay')||document.getElementById('timerLongrunOverlay'))return;
+  const start=s.startMs||Date.now();
+  const elapsed=Date.now()-start;
+  if(elapsed<TIMER_REMIND_MS)return;
+  const lastAsk=s.lastRemindMs||start;
+  if(Date.now()-lastAsk<TIMER_REMIND_MS)return;
+  const t=findTaskById(s.taskId);
+  const ov=document.createElement('div');
+  ov.id='timerRemindOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:340px;width:100%;box-sizing:border-box;">'
+    +'<div style="font-size:32px;text-align:center;margin-bottom:8px;">⏱</div>'
+    +'<div style="font-size:15px;font-weight:700;color:var(--text);text-align:center;margin-bottom:6px;">Stoppuhr läuft seit '+_fmtDauer(elapsed)+'</div>'
+    +'<div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:16px;">'+esc((t&&t.title)||'')+(s.beschreibung?' – '+esc(s.beschreibung):'')+'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="_timerRemindWeiter()" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;">Weiter</button>'
+    +'<button onclick="_timerRemindStop()" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">⏹ Jetzt stoppen</button>'
+    +'</div></div>';
+  document.body.appendChild(ov);
+}
+function _timerRemindWeiter(){
+  const ov=document.getElementById('timerRemindOverlay');if(ov)ov.remove();
+  const s=_loadTimerState();if(s){s.lastRemindMs=Date.now();_saveTimerState(s);}
+}
+function _timerRemindStop(){
+  const ov=document.getElementById('timerRemindOverlay');if(ov)ov.remove();
+  _stopTimerWithEnd(Date.now());
+}
+// Punkt 3: Nachfrage beim App-Öffnen, wenn die Uhr schon sehr lange läuft (z.B. über Nacht)
+function _checkLongRunningTimer(s,t){
+  if(_longRunAsked)return;
+  const elapsed=Date.now()-(s.startMs||Date.now());
+  if(elapsed<TIMER_LONGRUN_MS)return;
+  _longRunAsked=true;
+  const d=new Date(s.startMs);
+  const pad=n=>String(n).padStart(2,'0');
+  const ov=document.createElement('div');
+  ov.id='timerLongrunOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:360px;width:100%;box-sizing:border-box;">'
+    +'<div style="font-size:32px;text-align:center;margin-bottom:8px;">⚠️⏱</div>'
+    +'<div style="font-size:15px;font-weight:700;color:var(--text);text-align:center;margin-bottom:6px;">Stoppuhr läuft seit '+_fmtDauer(elapsed)+'!</div>'
+    +'<div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:4px;">'+esc((t&&t.title)||'')+(s.beschreibung?' – '+esc(s.beschreibung):'')+'</div>'
+    +'<div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:16px;">Gestartet: '+pad(d.getDate())+'.'+pad(d.getMonth()+1)+'. um '+pad(d.getHours())+':'+pad(d.getMinutes())+' Uhr</div>'
+    +'<button onclick="_longrunKorrigieren()" style="width:100%;padding:13px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px;">🕒 Endzeit korrigieren…</button>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="_longrunWeiter()" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;">Weiter laufen lassen</button>'
+    +'<button onclick="_longrunStopNow()" style="flex:1;padding:12px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">⏹ Jetzt stoppen</button>'
+    +'</div></div>';
+  document.body.appendChild(ov);
+}
+function _longrunWeiter(){
+  const ov=document.getElementById('timerLongrunOverlay');if(ov)ov.remove();
+  const s=_loadTimerState();if(s){s.lastRemindMs=Date.now();_saveTimerState(s);} // 30-Min-Zähler zurücksetzen
+}
+function _longrunStopNow(){
+  const ov=document.getElementById('timerLongrunOverlay');if(ov)ov.remove();
+  _stopTimerWithEnd(Date.now());
+}
+function _longrunKorrigieren(){
+  const s=_loadTimerState();if(!s){_longrunWeiter();return;}
+  const d=new Date(s.startMs);
+  const pad=n=>String(n).padStart(2,'0');
+  const vorschlag=pad((d.getHours()+1)%24)+':'+pad(d.getMinutes()); // Vorschlag: 1 Std. nach Start
+  const inp=prompt('Tatsächliche Endzeit eingeben (HH:MM):',vorschlag);
+  if(inp===null)return; // Abbrechen → Overlay bleibt offen
+  const m=/^(\d{1,2})[:.](\d{2})$/.exec(inp.trim());
+  if(!m||+m[1]>23||+m[2]>59){toast('Ungültige Zeit – Format HH:MM (z.B. 16:30)','error');return;}
+  const end=new Date(d);end.setHours(+m[1],+m[2],0,0);
+  if(end.getTime()<s.startMs)end.setDate(end.getDate()+1); // über Mitternacht
+  const ov=document.getElementById('timerLongrunOverlay');if(ov)ov.remove();
+  _stopTimerWithEnd(end.getTime());
+}
+
 function resumeMobileTimerIfNeeded(){
   const s=_loadTimerState();if(!s||!s.taskId)return;
   // Boards noch nicht geladen (z.B. direkt nach App-Start vor Drive-Sync):
@@ -4863,6 +5058,8 @@ function resumeMobileTimerIfNeeded(){
   if(!t){_saveTimerState(null);return;}
   // Wenn Detail dieser Task offen ist, Tick starten
   if(currentTaskId===s.taskId)_startTickLoop();
+  _updateGlobalTimerBar();          // v79 Punkt 1
+  _checkLongRunningTimer(s,t);      // v79 Punkt 3
 }
 function _gcalUrl(z,taskTitle){
   // Build Google Calendar "Add Event" URL from a zeit entry
