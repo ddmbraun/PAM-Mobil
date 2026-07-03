@@ -382,7 +382,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   <div class="hdr">
     <button class="hdr-btn icon" onclick="closeDetail()">←</button>
     <div class="hdr-title-block" style="flex:1;min-width:0;overflow:hidden;">
-      <div class="hdr-title" id="detailTitle" style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+      <div class="hdr-title" id="detailTitle" onclick="_editTaskTitleMob()" title="Antippen zum Umbenennen" style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;"></div>
       <div id="hdrKstChip" style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;"></div>
     </div>
     <span class="save-indicator" id="saveInd"></span>
@@ -674,6 +674,36 @@ async function _mobPhotoDelete(key){
 }
 function _fileToDataUrl(file){
   return new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(file);});
+}
+// v78: Foto vor Speicherung/Upload clientseitig verkleinern.
+// Handy-Fotos haben heute 4–12 MB – das machte Mehrfach-Übernahme aus der Galerie
+// quälend langsam (Base64 + Drive-Upload in Originalgröße). Max. Kantenlänge 2560 px,
+// JPEG 85 % → typisch 300–800 KB, für Baudoku-Zwecke völlig ausreichend.
+// WICHTIG: EXIF (GPS/Datum) geht bei der Kompression verloren – GPS wird deshalb
+// VORHER per _qaApplyGpsFromFiles aus der Originaldatei gelesen; Zeitstempel speichert
+// die App ohnehin selbst (uploadedAt/standortErfasst). Bei Fehlern: Original verwenden.
+const FOTO_MAX_DIM=2560,FOTO_JPEG_QUALITY=0.85,FOTO_COMPRESS_MIN_BYTES=1500000;
+async function _compressFoto(file){
+  try{
+    if(!file||!/^image\//.test(file.type||''))return file;
+    if((file.size||0)<FOTO_COMPRESS_MIN_BYTES)return file; // klein genug → unverändert
+    const url=URL.createObjectURL(file);
+    let img;
+    try{
+      img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url;});
+    }finally{setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_e){}},30000);}
+    const w0=img.naturalWidth,h0=img.naturalHeight;
+    if(!w0||!h0)return file;
+    const scale=Math.min(1,FOTO_MAX_DIM/Math.max(w0,h0));
+    const w=Math.round(w0*scale),h=Math.round(h0*scale);
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+    cv.getContext('2d').drawImage(img,0,0,w,h);
+    const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',FOTO_JPEG_QUALITY));
+    if(!blob||blob.size>=file.size)return file; // Kompression brachte nichts → Original
+    const name=String(file.name||'foto.jpg').replace(/\.(heic|heif|png|webp|jpeg|jpg)$/i,'')+'.jpg';
+    try{return new File([blob],name,{type:'image/jpeg',lastModified:file.lastModified||Date.now()});}
+    catch(_e){blob.name=name;return blob;} // ältere Browser ohne File-Konstruktor
+  }catch(e){console.warn('[Foto-Kompression] Original wird verwendet:',e);return file;}
 }
 function _dataUrlToBlob(dataUrl){
   const arr=dataUrl.split(',');const mime=(arr[0].match(/:(.*?);/)||['','image/jpeg'])[1];
@@ -3261,6 +3291,12 @@ function renderSchnellTab(t){
     +(notizVerlauf.length?'<span class="bau-tages-stat">📝 '+notizVerlauf.length+'</span>':'')
     +'</div>'
 
+    // ── v78: Standort + anpassbare Adresse (fehlte im Schnell-Tab komplett) ──
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+    +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">📍 Standort</button>'
+    +'<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">'
+    +'</div>'
+
     // ── Toggle-Bar ──
     +'<div style="display:flex;background:var(--bg3);border-radius:10px;padding:3px;gap:3px;margin-bottom:12px;">'
     +'<button onclick="_schnellSetMode(\'foto\')" style="flex:1;padding:10px 6px;border-radius:8px;font-size:14px;font-weight:700;border:none;cursor:pointer;'+(isFoto?'background:var(--accent);color:#fff;':'background:transparent;color:var(--text2);')+'" >📷 Foto aufnehmen</button>'
@@ -3277,7 +3313,7 @@ function renderSchnellTab(t){
         +'</div>'
         +'<div style="display:flex;gap:8px;">'
         +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
-        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputGallerySingle\').click()">🖼 Galerie</button>'
+        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
         +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-height:46px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
         +'</div>'
         // Archiv eingeklappt
@@ -4311,8 +4347,22 @@ async function closeDetail(){
   renderList();
 }
 var _qaPanelOpen=false;
+// v78: Titel auf Mobil umbenennen – bisher gab es dafür keinerlei Eingabemöglichkeit
+function _editTaskTitleMob(){
+  const t=currentTask();if(!t)return;
+  const neu=prompt('Titel/Name ändern:',t.title||'');
+  if(neu===null)return; // Abbrechen
+  const v=neu.trim();
+  if(!v||v===t.title)return;
+  t.title=v;
+  forceSave();
+  try{renderDetail(t);}catch(e){}
+  try{renderList();}catch(e){}
+  toast('✓ Titel geändert','success');
+}
 function renderDetail(t){
-  document.getElementById('detailTitle').textContent=t.title||'(ohne Titel)';
+  // v78: ✏️-Hinweis, damit erkennbar ist, dass der Titel antippbar/änderbar ist
+  document.getElementById('detailTitle').innerHTML=esc(t.title||'(ohne Titel)')+' <span style="font-size:12px;opacity:.55;">✏️</span>';
   // KST-Untertitel im Header aktualisieren
   (function(){
     const kst=(t.tags||[]).join(', ');
@@ -5665,15 +5715,12 @@ async function uploadFoto(files){
   try{ if((boardTypes[findBoardByTaskId(t.id)]||'baustelle')==='notiz') await _qaApplyGpsFromFiles(t,fileArr); }catch(e){}
   if(!t.fotos)t.fotos=[];
 
-  // ── Schritt 1: Fotos SOFORT lokal sichern (IndexedDB) + anzeigen ──────────
-  const fotoObjs=await Promise.all(fileArr.map(async file=>{
+  // ── Schritt 1 (v78): Fotos SOFORT anzeigen (ObjectURL), DANN verkleinern + sichern ──
+  // Vorher wurden erst ALLE Fotos komplett als Base64 eingelesen, bevor irgendetwas
+  // sichtbar wurde – bei mehreren großen Galerie-Fotos wirkte die App eingefroren.
+  const fotoObjs=fileArr.map(file=>{
     const localUrl=URL.createObjectURL(file);
     const localKey='photo_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
-    // Sofort in IndexedDB sichern – bleibt auch bei Upload-Fehler erhalten
-    try{
-      const dataUrl=await _fileToDataUrl(file);
-      await _mobPhotoSave(localKey,dataUrl);
-    }catch(e){console.warn('[uploadFoto] localKey save:',e);}
     const fo={
       id:localKey,
       name:file.name,
@@ -5688,17 +5735,32 @@ async function uploadFoto(files){
     };
     t.fotos.push(fo);
     return{file,fo};
-  }));
+  });
   _mOpenSections['Fotos']=true;
   renderDetail(t);
   if(_currentDetailTab==='schnell'){
     renderSchnellTab(t);
     if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs[fotoObjs.length-1].fo,t);
   }
+  // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
+  let _fi=0;
+  for(const o of fotoObjs){
+    _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' wird übernommen…');
+    o.file=await _compressFoto(o.file); // v78: Kompression (EXIF-GPS wurde oben bereits gelesen)
+    o.fo.size=o.file.size||o.fo.size;
+    o.fo.mimeType=o.file.type||o.fo.mimeType;
+    if(o.file.name)o.fo.name=o.file.name;
+    try{
+      const dataUrl=await _fileToDataUrl(o.file);
+      await _mobPhotoSave(o.fo.localKey,dataUrl);
+    }catch(e){console.warn('[uploadFoto] localKey save:',e);}
+  }
 
-  // ── Schritt 2: Upload im Hintergrund ──────────────────────────────────────
-  let success=0,failed=0,lastErr='';
-  await Promise.all(fotoObjs.map(async({file,fo})=>{
+  // ── Schritt 2 (v78): Upload sequenziell mit Fortschrittsanzeige ────────────
+  // Vorher: alle parallel ohne Anzeige (Speicherdruck bei vielen großen Dateien).
+  let success=0,failed=0,lastErr='';_fi=0;
+  for(const {file,fo} of fotoObjs){
+    _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' hochladen…');
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
       _fotoBlobCache.set(meta.id,fo.localUrl);
@@ -5716,7 +5778,7 @@ async function uploadFoto(files){
       failed++;lastErr=e.message||String(e);
       console.error('Foto-Upload-Fehler:',e);
     }
-  }));
+  }
 
   // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   forceSave();
@@ -6211,52 +6273,88 @@ async function _ensureQuickNoteFolder(t,title,dateSlug){
   return f.id;
 }
 // v62: 📍-Button im Schnell-Erfassen-Fenster (Notiz existiert noch nicht)
+// v78: Auf einen GENAUEN GPS-Fix warten statt den ersten (oft groben) zu nehmen.
+// Der erste Fix stammt meist aus WLAN/Funkzelle (±100 m und mehr) – damit findet der
+// Geocoder keine Hausnummer, nur den Ort. watchPosition sammelt Fixes, bis die
+// Genauigkeit ≤ targetAcc (Meter) ist oder maxWait abläuft (dann: bester bisheriger Fix).
+function _getAccuratePosition(targetAcc,maxWait){
+  targetAcc=targetAcc||30;maxWait=maxWait||12000;
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation){reject({code:2});return;}
+    let best=null,done=false,wid=null,tid=null;
+    const finish=(pos,err)=>{
+      if(done)return;done=true;
+      if(wid!==null){try{navigator.geolocation.clearWatch(wid);}catch(_e){}}
+      clearTimeout(tid);
+      if(pos)resolve(pos);else reject(err||{code:3});
+    };
+    try{
+      wid=navigator.geolocation.watchPosition(pos=>{
+        if(!best||pos.coords.accuracy<best.coords.accuracy)best=pos;
+        if(pos.coords.accuracy<=targetAcc)finish(pos);
+      },err=>{
+        // Zugriff verweigert → sofort abbrechen; sonst nur fatal, wenn noch kein Fix da ist
+        if(err&&err.code===1)finish(null,err);
+        else if(!best&&err&&err.code===2)finish(null,err);
+      },{enableHighAccuracy:true,maximumAge:0,timeout:maxWait});
+    }catch(e){reject({code:2});return;}
+    tid=setTimeout(()=>finish(best,{code:3}),maxWait);
+  });
+}
 async function _captureStandortQuickAdd(){
   if(!navigator.geolocation){toast('GPS nicht verfügbar','error');return;}
-  toast('📍 Standort wird ermittelt…','info');
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    const lat=pos.coords.latitude,lon=pos.coords.longitude;
-    let addr='';
-    try{addr=await _reverseGeocode(lat,lon);}catch(e){}
-    _qaStandort={lat,lon,adresse:addr,erfasst:new Date().toISOString()}; // v71: Erfassungszeitpunkt
-    const inp=document.getElementById('quickAddAdresse');
-    // v69: bereits getippte Adresse nicht ungefragt überschreiben
-    if(inp&&addr){
-      const cur=(inp.value||'').trim();
-      if(!cur||cur===addr.trim()||confirm('Eingetragene Adresse:\n„'+cur+'"\n\ndurch ermittelte ersetzen?\n„'+addr+'"'))inp.value=addr;
-    }
-    const info=document.getElementById('quickAddStandortInfo');
-    if(info){info.style.display='block';info.textContent='📍 '+lat.toFixed(5)+', '+lon.toFixed(5)+(addr?'':' – keine Adresse gefunden, bitte manuell eintragen');}
-    toast('✅ '+(addr||'Standort erfasst'),'success');
-  },err=>{
+  toast('📍 Standort wird ermittelt… (genauer GPS-Fix, bis 12 s)','info',4000);
+  let pos;
+  try{pos=await _getAccuratePosition(30,12000);} // v78: warten bis ≤30 m statt erster Fix
+  catch(err){
     const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
-    toast('📍 '+(m[err.code]||'GPS-Fehler'),'error',5000);
-  },{timeout:15000,maximumAge:0,enableHighAccuracy:true}); // v69: maximumAge 0 → keine veraltete (bis 2 Min alte) Position mehr
+    toast('📍 '+(m[err&&err.code]||'GPS-Fehler'),'error',5000);return;
+  }
+  const lat=pos.coords.latitude,lon=pos.coords.longitude,acc=Math.round(pos.coords.accuracy||0);
+  let addr='';
+  try{addr=await _reverseGeocode(lat,lon);}catch(e){}
+  _qaStandort={lat,lon,adresse:addr,erfasst:new Date().toISOString()}; // v71: Erfassungszeitpunkt
+  const inp=document.getElementById('quickAddAdresse');
+  // v69: bereits getippte Adresse nicht ungefragt überschreiben
+  if(inp&&addr){
+    const cur=(inp.value||'').trim();
+    if(!cur||cur===addr.trim()||confirm('Eingetragene Adresse:\n„'+cur+'"\n\ndurch ermittelte ersetzen?\n„'+addr+'"'))inp.value=addr;
+  }
+  // v78: Genauigkeit anzeigen + Hinweis bei unvollständiger Adresse
+  const info=document.getElementById('quickAddStandortInfo');
+  const hinweis=!addr?' – keine Adresse gefunden, bitte manuell eintragen'
+    :(!_adrKomplett(addr)?' – Adresse evtl. unvollständig (📍 erneut versuchen oder manuell ergänzen)':'');
+  if(info){info.style.display='block';info.textContent='📍 '+lat.toFixed(5)+', '+lon.toFixed(5)+' (±'+acc+' m)'+hinweis;}
+  toast('✅ '+(addr||'Standort erfasst')+' (±'+acc+' m)','success');
 }
 // v62: 📍-Button in der Detailansicht (Task existiert)
 async function _captureStandort(){
   const t=currentTask();if(!t){toast('Keine Notiz geöffnet','error');return;}
   if(!navigator.geolocation){toast('GPS nicht verfügbar','error');return;}
-  toast('📍 Standort wird ermittelt…','info');
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    const lat=pos.coords.latitude,lon=pos.coords.longitude;
-    let addr='';
-    try{addr=await _reverseGeocode(lat,lon);}catch(e){}
-    t.lat=lat;t.lon=lon;t.standortErfasst=new Date().toISOString(); // v71: Erfassungszeitpunkt
-    // v68: vorhandene Adresse NICHT versehentlich überschreiben.
-    // Leeres Feld → automatisch füllen; sonst nur nach ausdrücklicher Rückfrage.
-    if(addr){
-      const cur=(t.adresse||'').trim();
-      if(!cur){t.adresse=addr;}
-      else if(cur!==addr.trim()&&confirm('Gespeicherte Adresse:\n„'+cur+'"\n\ndurch ermittelte ersetzen?\n„'+addr+'"')){t.adresse=addr;}
-    }
-    scheduleSave();
-    try{renderDetail(t);}catch(e){}
-    toast(addr?('✅ '+addr):'📍 Standort erfasst – keine Adresse gefunden, bitte manuell eintragen','success',addr?3000:5000);
-  },err=>{
+  toast('📍 Standort wird ermittelt… (genauer GPS-Fix, bis 12 s)','info',4000);
+  let pos;
+  try{pos=await _getAccuratePosition(30,12000);} // v78: warten bis ≤30 m statt erster Fix
+  catch(err){
     const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
-    toast('📍 '+(m[err.code]||'GPS-Fehler'),'error',5000);
-  },{timeout:15000,maximumAge:0,enableHighAccuracy:true}); // v69: maximumAge 0 → keine veraltete (bis 2 Min alte) Position mehr
+    toast('📍 '+(m[err&&err.code]||'GPS-Fehler'),'error',5000);return;
+  }
+  const lat=pos.coords.latitude,lon=pos.coords.longitude,acc=Math.round(pos.coords.accuracy||0);
+  let addr='';
+  try{addr=await _reverseGeocode(lat,lon);}catch(e){}
+  t.lat=lat;t.lon=lon;t.standortErfasst=new Date().toISOString(); // v71: Erfassungszeitpunkt
+  // v68: vorhandene Adresse NICHT versehentlich überschreiben.
+  // Leeres Feld → automatisch füllen; sonst nur nach ausdrücklicher Rückfrage.
+  if(addr){
+    const cur=(t.adresse||'').trim();
+    if(!cur){t.adresse=addr;}
+    else if(cur!==addr.trim()&&confirm('Gespeicherte Adresse:\n„'+cur+'"\n\ndurch ermittelte ersetzen?\n„'+addr+'"')){t.adresse=addr;}
+  }
+  scheduleSave();
+  try{renderDetail(t);}catch(e){}
+  try{if(_currentDetailTab==='schnell')renderSchnellTab(t);}catch(e){} // v78: auch Schnell-Tab aktualisieren
+  // v78: Genauigkeit anzeigen + Hinweis bei unvollständiger Adresse
+  if(addr&&!_adrKomplett(addr))toast('✅ '+addr+' (±'+acc+' m) – evtl. unvollständig, 📍 erneut versuchen oder manuell ergänzen','info',6000);
+  else toast(addr?('✅ '+addr+' (±'+acc+' m)'):'📍 Standort erfasst (±'+acc+' m) – keine Adresse gefunden, bitte manuell eintragen','success',addr?3000:5000);
 }
 function _saveQuickBoard(){
   const v=document.getElementById('quickBoardSelect').value;
@@ -6394,6 +6492,11 @@ async function _submitQuickAdd(){
   };
   // v62: GPS aus dem ersten Foto übernehmen (sofern nicht schon per 📍-Button gesetzt)
   await _qaApplyGpsFromFiles(newT,fotoFiles);
+  // v78: erst NACH der EXIF/GPS-Auswertung verkleinern (Kompression entfernt EXIF)
+  for(let _ci=0;_ci<fotoFiles.length;_ci++){
+    setSaveInd('saving','Foto '+(_ci+1)+'/'+fotoFiles.length+' wird verkleinert…');
+    fotoFiles[_ci]=await _compressFoto(fotoFiles[_ci]);
+  }
   // v68: kein Zwischen-Render hier (verhindert Blinken/Sprung); finaler Render unten
   // ── Reine Textnotiz → KEIN Drive-Ordner (v62: lazy, erst beim ersten Foto) ──
   if(!fotoFiles.length){ forceSave(); _qaRefresh(); return; }
@@ -6715,7 +6818,7 @@ async function _fetchTimeout(url,opts,ms){
 async function _reverseGeocode(lat,lon){
   const key=lat.toFixed(5)+','+lon.toFixed(5);
   if(_geoCache[key]!==undefined)return _geoCache[key];
-  let addr='';
+  let addr='',strasse='';
   // 1) Photon (Komoot) – CORS-freundlich, OSM-Daten, liefert Straße + Hausnummer
   try{
     const r=await _fetchTimeout('https://photon.komoot.io/reverse?lat='+lat+'&lon='+lon+'&lang=de',null,8000);
@@ -6724,27 +6827,35 @@ async function _reverseGeocode(lat,lon){
       const p=(d.features&&d.features[0]&&d.features[0].properties)||{};
       // v69: Straße bevorzugen; p.name nur nutzen, wenn eine Hausnummer existiert
       // (adressiertes Gebäude) – sonst bleibt die Straßenzeile leer statt POI-Name.
-      const str=[p.street||(p.housenumber?(p.name||''):''),p.housenumber].filter(Boolean).join(' ');
+      strasse=[p.street||(p.housenumber?(p.name||''):''),p.housenumber].filter(Boolean).join(' ');
       const ort=[p.postcode,(p.city||p.town||p.village||p.county||'')].filter(Boolean).join(' ');
-      addr=[str,ort].filter(Boolean).join(', ');
+      addr=[strasse,ort].filter(Boolean).join(', ');
     }
   }catch(e){console.warn('[Geocode Photon]',e);}
   // 2) Fallback: Nominatim
-  if(!addr){
+  // v78: auch dann, wenn Photon nur ein TEILergebnis (Ort ohne Straße) lieferte –
+  // vorher wurde der Fallback übersprungen und der Nutzer sah nur „PLZ Ort".
+  if(!addr||!strasse){
     try{
       const r=await _fetchTimeout('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='+lat+'&lon='+lon+'&zoom=18&addressdetails=1&accept-language=de',{headers:{'Accept':'application/json'}},8000);
       if(r.ok){
         const d=await r.json();
         const a=d.address||{};
-        const str=[a.road,a.house_number].filter(Boolean).join(' ');
-        const ort=[a.postcode,(a.city||a.town||a.village||a.municipality||a.county||'')].filter(Boolean).join(' ');
-        addr=[str,ort].filter(Boolean).join(', ')||d.display_name||'';
+        const nStr=[a.road,a.house_number].filter(Boolean).join(' ');
+        const nOrt=[a.postcode,(a.city||a.town||a.village||a.municipality||a.county||'')].filter(Boolean).join(' ');
+        const nAddr=[nStr,nOrt].filter(Boolean).join(', ')||d.display_name||'';
+        // Nominatim nur übernehmen, wenn es MEHR liefert (Straße) oder Photon leer war
+        if(nStr||!addr){addr=nAddr||addr;strasse=nStr||strasse;}
       }
     }catch(e){console.warn('[Geocode Nominatim]',e);}
   }
-  _geoCache[key]=addr;
+  // v78: nur VOLLSTÄNDIGE Ergebnisse (mit Straße) cachen – Teilergebnisse sollen
+  // beim nächsten Versuch (besserer GPS-Fix) neu aufgelöst werden statt aus dem Cache zu kommen.
+  if(strasse)_geoCache[key]=addr;
   return addr;
 }
+// v78: „Adresse komplett?"-Heuristik – Straßenteil (vor dem ersten Komma) enthält eine Hausnummer
+function _adrKomplett(addr){return /\d/.test(String(addr||'').split(',')[0]);}
 // erstes JPEG mit GPS suchen → lat/lon + Adresse am Task setzen
 async function _qaApplyGpsFromFiles(t,files){
   try{
