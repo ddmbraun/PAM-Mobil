@@ -2955,6 +2955,8 @@ async function forceReloadFromDrive(){
 // (tryAutoConnect → _renewTokenViaCloud); der Handoff ist nur noch Fallback.
 const _OAUTH_HANDOFF_KEY='pam_oauth_handoff_v1';
 document.addEventListener('DOMContentLoaded',function(){
+  // ── Deep-Link aus Outlook: ?task=<ID> → nach Daten-Load Task öffnen (Rücksprung vom Handy) ──
+  try{ var _q0=new URLSearchParams(window.location.search); var _tp0=_q0.get('task'); if(_tp0 && !_q0.get('code')){ window._pamPendingTaskId=_tp0; window.history.replaceState({},'',window.location.pathname); _pamTryOpenPendingTaskMobile(); } }catch(e){}
   // ── Neuer Code-Flow: ?code= aus URL lesen ──
   const _query=new URLSearchParams(window.location.search);
   const _authCode=_query.get('code');
@@ -3067,6 +3069,18 @@ document.addEventListener('DOMContentLoaded',function(){
 // ══ LISTE ══
 function findTaskById(id){for(const k of Object.keys(boards)){const f=(boards[k]||[]).find(t=>t.id===id);if(f)return f;}console.warn('Task nicht gefunden:',id);return null;}
 function findBoardByTaskId(id){for(const k of Object.keys(boards)){if((boards[k]||[]).some(t=>t.id===id))return k;}return null;}
+// Deep-Link aus Outlook: wartet bis die (freigegebenen) Boards geladen sind, öffnet dann den Task
+function _pamTryOpenPendingTaskMobile(){
+  if(!window._pamPendingTaskId)return;
+  var tries=0;
+  var iv=setInterval(function(){
+    tries++;
+    var found=false;
+    try{ if(typeof boards==='object'&&boards){ for(var k in boards){ if((boards[k]||[]).some(function(x){return x.id===window._pamPendingTaskId;})){ found=true; break; } } } }catch(e){}
+    if(found){ clearInterval(iv); var id=window._pamPendingTaskId; window._pamPendingTaskId=null; try{ openDetail(id); }catch(e){console.warn('[Deep-Link]',e);} }
+    else if(tries>45){ clearInterval(iv); window._pamPendingTaskId=null; try{ alert('Der verlinkte Task wurde auf dem Handy nicht gefunden.\n\nWahrscheinlich ist sein Board mobil nicht freigegeben. Gib das Board in den Mobil-Einstellungen frei oder öffne den Link am PC.'); }catch(e){} }
+  },800);
+}
 function renderBoardBar(){
   const bar=document.getElementById('boardBar');
   const lbl=document.getElementById('boardLabel');
