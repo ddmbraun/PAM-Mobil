@@ -3072,13 +3072,16 @@ function findBoardByTaskId(id){for(const k of Object.keys(boards)){if((boards[k]
 // Deep-Link aus Outlook: wartet bis die (freigegebenen) Boards geladen sind, öffnet dann den Task
 function _pamTryOpenPendingTaskMobile(){
   if(!window._pamPendingTaskId)return;
+  if(window._pamPendingPolling)return; // nicht doppelt starten
+  window._pamPendingPolling=true;
   var tries=0;
   var iv=setInterval(function(){
+    if(!window._pamPendingTaskId){ clearInterval(iv); window._pamPendingPolling=false; return; }
     tries++;
     var found=false;
     try{ if(typeof boards==='object'&&boards){ for(var k in boards){ if((boards[k]||[]).some(function(x){return x.id===window._pamPendingTaskId;})){ found=true; break; } } } }catch(e){}
-    if(found){ clearInterval(iv); var id=window._pamPendingTaskId; window._pamPendingTaskId=null; try{ openDetail(id); }catch(e){console.warn('[Deep-Link]',e);} }
-    else if(tries>45){ clearInterval(iv); window._pamPendingTaskId=null; try{ alert('Der verlinkte Task wurde auf dem Handy nicht gefunden.\n\nWahrscheinlich ist sein Board mobil nicht freigegeben. Gib das Board in den Mobil-Einstellungen frei oder öffne den Link am PC.'); }catch(e){} }
+    if(found){ clearInterval(iv); window._pamPendingPolling=false; var id=window._pamPendingTaskId; window._pamPendingTaskId=null; try{ openDetail(id); }catch(e){console.warn('[Deep-Link]',e);} }
+    else if(tries>375){ clearInterval(iv); window._pamPendingPolling=false; window._pamPendingTaskId=null; try{ alert('Der verlinkte Task wurde auf dem Handy nicht gefunden.\n\nMögliche Gründe: Board mobil nicht freigegeben, Task archiviert, oder Daten (Google Drive) wurden nicht geladen. Gib das Board in den Mobil-Einstellungen frei, melde dich bei Google Drive an – oder öffne den Link am PC.'); }catch(e){} }
   },800);
 }
 function renderBoardBar(){
