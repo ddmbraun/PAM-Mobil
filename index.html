@@ -1156,15 +1156,46 @@ function silentRefresh(){
     try{gdriveTokenClient.requestAccessToken({prompt:'none'});}catch(e){console.warn('[PTP-Mobile]',e);if(!_done){_done=true;clearTimeout(_t);resolve(false);}}
   });
 }
-async function ensureToken(){
+// v84: Robuste STILLE Token-Sicherung für iOS-PWA.
+// Hintergrund: iOS friert die installierte PWA bei Bildschirm-aus/kurzem Hintergrund
+// ein und lädt sie beim Zurückkehren oft komplett NEU → der Token im Arbeitsspeicher
+// (gdriveToken) ist weg. Ausserdem schläft der setTimeout-Refresh im Hintergrund.
+// Reihenfolge: gültiger RAM-Token → Restore aus localStorage (überlebt den Neustart)
+// → Cloud-Refresh (zuverlässigster Weg auf iOS, +1 Wiederholung bei Netzfehler)
+// → GSI-Silent (nur Desktop; scheitert auf iOS/Safari durch ITP).
+// Mutex _mobReconnecting: läuft nur EINMAL parallel, damit nicht mehrere gleichzeitige
+// Aufrufer (Poll + Save + Visibility) je einen Login-Screen auslösen.
+let _mobReconnecting=null;
+async function _ensureTokenSilent(){
   if(tokenValid())return true;
-  // 1) Cloud-Refresh versuchen (nutzt Refresh-Token – funktioniert ohne Nutzereingriff)
-  const cloud=await _renewTokenViaCloud();
-  if(cloud)return true;
-  // 2) Stiller GSI-Refresh (scheitert auf Safari/iOS oft durch ITP)
-  const ok=await silentRefresh();
-  if(!ok){showLogin('Bitte erneut anmelden');return false;}
-  return true;
+  if(_mobReconnecting)return _mobReconnecting;   // laufenden Versuch mitbenutzen
+  const p=(async()=>{
+    // 1) Aus localStorage wiederherstellen (überlebt iOS-PWA-Neustart)
+    try{
+      const s=JSON.parse(localStorage.getItem(TOKEN_KEY)||'null');
+      if(s&&s.token&&s.exp&&Date.now()<s.exp){
+        gdriveToken=s.token;gdriveTokenExpires=s.exp;
+        _scheduleGdriveRefresh(Math.max(60,(s.exp-Date.now())/1000));
+        if(tokenValid())return true;
+      }
+    }catch(e){}
+    // 2) Cloud-Refresh (nutzt Refresh-Token, ohne Nutzereingriff) – 1 Retry bei Transientfehler
+    if(await _renewTokenViaCloud())return true;
+    if(localStorage.getItem('pam_gdrive_refresh_token')){
+      await new Promise(r=>setTimeout(r,1500));
+      if(await _renewTokenViaCloud())return true;
+    }
+    // 3) Stiller GSI-Refresh (Desktop-Browser; scheitert auf Safari/iOS durch ITP)
+    return await silentRefresh();
+  })();
+  _mobReconnecting=p;
+  try{return await p;}finally{_mobReconnecting=null;}
+}
+async function ensureToken(){
+  if(await _ensureTokenSilent())return true;
+  // Erst nach vollständig ausgeschöpftem stillen Pfad den Login-Screen zeigen.
+  showLogin('Bitte erneut anmelden');
+  return false;
 }
 function forceAppUpdate(){
   if('serviceWorker' in navigator){
@@ -1547,19 +1578,20 @@ function startPolling(){
   if(pollTimer)clearInterval(pollTimer);
   pollTimer=setInterval(pollForChanges,30000); // Synchron mit Desktop (war 20000)
   if(!window._ptpmVisHooked){
-    document.addEventListener('visibilitychange',()=>{
+    document.addEventListener('visibilitychange',async()=>{
       if(document.visibilityState!=='visible')return;
-      // Token-Check: wenn er in <10 Min abläuft, stille Erneuerung versuchen
-      // Wichtig auf Mobile: setTimeout schläft im Hintergrund-Tab ein – dieser
-      // Handler ist das Sicherheitsnetz wenn der Timer nicht feuern konnte.
-      if(gdriveToken&&gdriveTokenExpires){
-        const msLeft=gdriveTokenExpires-Date.now();
-        if(msLeft>0&&msLeft<600000){
-          silentRefresh().then(ok=>{
-            if(ok)_hideMobDriveWarnBanner();
-            else _showMobDriveWarnBanner();
-          });
-        }
+      // v84: Sicherheitsnetz beim Zurückkehren aus Hintergrund/Bildschirm-aus.
+      // Auf iOS ist der RAM-Token nach dem Aufwachen oft weg oder abgelaufen und
+      // der setTimeout-Refresh hat im Hintergrund geschlafen. Fehlt der Token ODER
+      // läuft er in <10 Min ab: STILL erneuern (Cloud-Refresh zuerst) – KEIN
+      // Login-Screen, solange ein gültiger Refresh-Token vorhanden ist.
+      // Erst NACH erfolgreichem Reconnect pollen, damit pollForChanges nicht mit
+      // ungültigem Token vorzeitig showLogin() auslöst.
+      const msLeft=gdriveTokenExpires?gdriveTokenExpires-Date.now():-1;
+      if(!tokenValid()||msLeft<600000){
+        const ok=await _ensureTokenSilent();
+        if(ok)_hideMobDriveWarnBanner();
+        else if(localStorage.getItem('pam_gdrive_refresh_token'))_showMobDriveWarnBanner();
       }
       pollForChanges();
     });
