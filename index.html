@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com https://api.open-meteo.com https://europe-west1-ptp-workboard.cloudfunctions.net https://photon.komoot.io https://nominatim.openstreetmap.org; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com https://api.open-meteo.com https://europe-west1-ptp-workboard.cloudfunctions.net https://photon.komoot.io https://nominatim.openstreetmap.org; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#1a1a2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -337,6 +337,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.7/dist/jspdf.plugin.autotable.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -7604,6 +7606,180 @@ window.Dachplan=(function(){
   }
   function close(){if(E.screen)E.screen.classList.add('dp-hidden');save();}
 
+  return {open,close};
+})();
+</script>
+<script>
+/* ══════════════ DACHPLAN v2 – ECHTE KARTE (Leaflet) ══════════════
+   Überschreibt window.Dachplan. Basis = Luftbild-Karte (Esri), Live-Standort,
+   Pins mit echten Koordinaten (→ Navigation), Fotos zu Drive + lokalem Cache.
+   Speicherung: task.dachplan {mode:'map',center,zoom,pins:[{id,nr,lat,lng,status,title,note,fotos:[{key,driveId}]}],nextNr}.
+   Kacheln werden vom Service-Worker gecacht → einmal online geladene Bereiche sind offline sichtbar. */
+window.Dachplan=(function(){
+  const COL={rot:'#e5484d',gelb:'#f5a623',gruen:'#30a46c'};
+  const LBL={rot:'Schaden',gelb:'Prüfen',gruen:'OK'};
+  let t=null,dp=null,sel=null,addMode=true,filter='alle',built=false,map=null,locM=null,locC=null;
+  const markers={},E={};
+  const say=(m,k)=>{try{toast(m,k||'success');}catch(e){}};
+  const resolveFolder=()=>{try{return extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');}catch(e){return null;}};
+  const save=()=>{try{if(typeof forceSave==='function')forceSave();}catch(e){}};
+
+  function css(){const s=document.createElement('style');s.textContent=
+   '#dpScreen{position:fixed;inset:0;z-index:99990;background:#0f1115;color:#e7eaf0;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
+  +'#dpScreen.dp-hidden,.dp-hidden{display:none!important}'
+  +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap;z-index:2}'
+  +'.dpb{min-height:42px;padding:0 11px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:14px;font-weight:600;cursor:pointer}'
+  +'.dpb.on{background:#153a6b;border-color:#3b82f6}.dpb.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}'
+  +'#dpMap{flex:1;min-height:0;background:#0d0f14}'
+  +'.dpMk{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}'
+  +'.dpMk span{transform:rotate(45deg);color:#fff;font-weight:800;font-size:12px}'
+  +'#dpSheet{position:absolute;left:0;right:0;bottom:0;background:#171a21;border-top:1px solid #2a2f3a;border-radius:16px 16px 0 0;padding:12px 14px 20px;max-height:66%;overflow:auto;transform:translateY(110%);transition:transform .2s;box-shadow:0 -6px 24px rgba(0,0,0,.45);z-index:1200}'
+  +'#dpSheet.show{transform:none}'
+  +'.dpf{font-size:12px;color:#9aa3b2;margin:10px 0 4px;font-weight:600}'
+  +'#dpSheet input,#dpSheet textarea{width:100%;background:#1e222b;border:1px solid #2a2f3a;color:#e7eaf0;border-radius:9px;padding:10px;font-size:15px;font-family:inherit;box-sizing:border-box}'
+  +'.dpStat{display:flex;gap:8px}.dpStat button{flex:1;min-height:44px;border-radius:9px;border:2px solid transparent;color:#fff;font-weight:700;cursor:pointer}.dpStat button.sel{border-color:#fff}'
+  +'.dpThumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}'
+  +'.dpThumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#000}.dpThumb img{width:100%;height:100%;object-fit:cover}'
+  +'.dpThumb b{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer}'
+  +'.dprow{display:flex;gap:8px}.dprow>*{flex:1}'
+  +'#dpPhoto{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center}'
+  +'#dpPhoto img{max-width:100%;max-height:100%}#dpPhoto .x{position:absolute;top:12px;right:18px;font-size:30px;color:#fff;cursor:pointer}';
+   document.head.appendChild(s);}
+
+  function build(){
+    css();
+    const d=document.createElement('div');d.id='dpScreen';d.className='dp-hidden';
+    d.innerHTML=
+     '<div id="dpBar">'
+      +'<button class="dpb" id="dpBack">←</button>'
+      +'<b style="margin:0 2px">Dachplan</b>'
+      +'<button class="dpb" id="dpLoc">📍 Standort</button>'
+      +'<button class="dpb on" id="dpAdd">📍 Pin</button>'
+      +'<button class="dpb" id="dpFilter">Alle</button>'
+     +'</div>'
+     +'<div id="dpMap"></div>'
+     +'<div id="dpSheet">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><b id="dpSheetTitle">Pin</b><button class="dpb" id="dpSheetClose">Schließen</button></div>'
+      +'<div class="dpf">Status</div><div class="dpStat" id="dpStat">'
+        +'<button data-s="rot" style="background:#e5484d">Schaden</button>'
+        +'<button data-s="gelb" style="background:#f5a623">Prüfen</button>'
+        +'<button data-s="gruen" style="background:#30a46c">OK</button></div>'
+      +'<div class="dpf">Titel</div><input id="dpTitle" placeholder="z. B. Ziegel gerissen, First">'
+      +'<div class="dpf">Notiz</div><textarea id="dpNote" rows="2" placeholder="Beschreibung, Maß, Empfehlung…"></textarea>'
+      +'<div class="dpf">Fotos (Kamera)</div><button class="dpb primary" id="dpPhotoBtn" style="width:100%">📸 Foto aufnehmen / wählen</button>'
+      +'<input type="file" id="dpPhotoInput" accept="image/*" capture="environment" multiple style="display:none"><div class="dpThumbs" id="dpThumbs"></div>'
+      +'<div class="dpf">Koordinaten</div><div id="dpCoord" style="font-size:12px;color:#9aa3b2"></div>'
+      +'<button class="dpb" id="dpNav" style="width:100%;margin-top:8px">🧭 Navigation zu diesem Pin</button>'
+      +'<button class="dpb" id="dpDel" style="width:100%;margin-top:10px;color:#e5484d;border-color:#e5484d">🗑 Pin löschen</button>'
+     +'</div>'
+     +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg"></div>';
+    document.body.appendChild(d);
+    E.screen=d;E.mapEl=d.querySelector('#dpMap');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
+    E.photo=d.querySelector('#dpPhoto');E.photoImg=d.querySelector('#dpPhotoImg');
+    const q=id=>d.querySelector(id);
+    q('#dpBack').onclick=close; q('#dpSheetClose').onclick=closeSheet;
+    q('#dpLoc').onclick=()=>{if(map)map.locate({setView:true,maxZoom:19,enableHighAccuracy:true});};
+    q('#dpAdd').onclick=()=>{addMode=!addMode;q('#dpAdd').classList.toggle('on',addMode);};
+    q('#dpFilter').onclick=()=>{filter=filter==='alle'?'schaden':'alle';q('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';renderPins();};
+    q('#dpStat').querySelectorAll('button').forEach(b=>b.onclick=()=>{const p=cur();if(!p)return;p.status=b.dataset.s;markStat(p);renderPins();save();});
+    q('#dpTitle').oninput=e=>{const p=cur();if(p){p.title=e.target.value;save();}};
+    q('#dpNote').oninput=e=>{const p=cur();if(p){p.note=e.target.value;save();}};
+    q('#dpPhotoBtn').onclick=()=>q('#dpPhotoInput').click();
+    q('#dpPhotoInput').onchange=e=>{addPhotos([...e.target.files]);e.target.value='';};
+    q('#dpNav').onclick=()=>{const p=cur();if(!p)return;window.open('https://www.google.com/maps/dir/?api=1&destination='+p.lat+','+p.lng,'_blank');};
+    q('#dpDel').onclick=()=>{const p=cur();if(!p)return;if(!confirm('Pin '+p.nr+' löschen?'))return;
+      (p.fotos||[]).forEach(fo=>{try{_mobPhotoDelete(fo.key);}catch(_){}});
+      dp.pins=dp.pins.filter(x=>x.id!==p.id);sel=null;closeSheet();renderPins();save();};
+    q('#dpPhotoX').onclick=()=>E.photo.classList.add('dp-hidden');
+    E.photo.onclick=ev=>{if(ev.target===E.photo)E.photo.classList.add('dp-hidden');};
+    built=true;
+  }
+
+  function ensureMap(){
+    if(map)return true;
+    if(typeof L==='undefined'){say('Karte braucht einmal Internet zum Laden','error');return false;}
+    map=L.map(E.mapEl,{zoomControl:true});
+    const esri=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Luftbild © Esri, Maxar'});
+    const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
+    esri.addTo(map);
+    L.control.layers({'Luftbild':esri,'Karte':osm},null,{position:'topright'}).addTo(map);
+    map.on('click',e=>{if(addMode)addPin(e.latlng.lat,e.latlng.lng);});
+    map.on('locationfound',e=>{if(locM)map.removeLayer(locM);if(locC)map.removeLayer(locC);
+      locM=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#2d7ef7',fillOpacity:1}).addTo(map);
+      locC=L.circle(e.latlng,{radius:e.accuracy,color:'#2d7ef7',weight:1,fillColor:'#2d7ef7',fillOpacity:.12}).addTo(map);});
+    map.on('locationerror',()=>say('Standort nicht verfügbar (Freigabe/GPS)','error'));
+    return true;
+  }
+
+  function pinIcon(color,nr){return L.divIcon({className:'',html:'<div class="dpMk" style="background:'+color+'"><span>'+nr+'</span></div>',iconSize:[26,26],iconAnchor:[13,25],popupAnchor:[0,-22]});}
+  function cur(){return dp&&sel?dp.pins.find(p=>p.id===sel):null;}
+  function renderPins(){
+    if(!map)return;
+    Object.keys(markers).forEach(k=>{map.removeLayer(markers[k]);delete markers[k];});
+    (dp.pins||[]).forEach(p=>{
+      if(filter==='schaden'&&p.status!=='rot')return;
+      const m=L.marker([p.lat,p.lng],{icon:pinIcon(COL[p.status||'rot'],p.nr),draggable:true});
+      m.on('click',()=>{sel=p.id;openSheet(p);});
+      m.on('dragend',ev=>{const ll=ev.target.getLatLng();p.lat=ll.lat;p.lng=ll.lng;if(cur()===p)setCoord(p);save();});
+      m.addTo(map);markers[p.id]=m;});
+  }
+  function addPin(lat,lng){const p={id:'dp'+Date.now(),nr:dp.nextNr++,lat,lng,status:'rot',title:'',note:'',fotos:[]};
+    dp.pins.push(p);sel=p.id;renderPins();openSheet(p);save();}
+
+  function markStat(p){E.sheet.querySelectorAll('#dpStat button').forEach(b=>b.classList.toggle('sel',b.dataset.s===p.status));}
+  function setCoord(p){E.sheet.querySelector('#dpCoord').textContent=Number(p.lat).toFixed(6)+', '+Number(p.lng).toFixed(6);}
+  function openSheet(p){
+    E.sheet.querySelector('#dpSheetTitle').textContent='Pin '+p.nr+' · '+(LBL[p.status]||'');
+    E.sheet.querySelector('#dpTitle').value=p.title||'';
+    E.sheet.querySelector('#dpNote').value=p.note||'';
+    setCoord(p);markStat(p);drawThumbs(p);E.sheet.classList.add('show');}
+  function closeSheet(){E.sheet.classList.remove('show');}
+
+  async function addPhotos(files){
+    const p=cur();if(!p)return;if(!p.fotos)p.fotos=[];
+    const folderId=resolveFolder();
+    try{if(typeof ensureToken==='function')await ensureToken();}catch(e){}
+    for(const f of files){
+      if(!/^image\//.test(f.type||''))continue;
+      const key='dpph_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+      let small=f;try{small=await _compressFoto(f);}catch(_){}
+      try{const durl=await _fileToDataUrl(small);await _mobPhotoSave(key,durl);}catch(_){}
+      const fo={key:key,driveId:null};p.fotos.push(fo);drawThumbs(p);save();
+      if(folderId){try{const meta=await _uploadOneFotoToDrive(small,folderId);fo.driveId=meta.id;save();}
+        catch(e){say('Foto lokal gesichert – Drive-Upload später','error');}}
+      else{say('Kein Foto-Ordner – Foto nur lokal gesichert','error');}
+    }
+  }
+  function drawThumbs(p){const box=E.thumbs;box.innerHTML='';(p.fotos||[]).forEach((fo,i)=>{
+    const d=document.createElement('div');d.className='dpThumb';const img=document.createElement('img');
+    _mobPhotoGet(fo.key).then(src=>{if(src)img.src=src;else if(fo.driveId)img.src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w400';});
+    img.onclick=()=>showPhoto(fo);const del=document.createElement('b');del.textContent='×';
+    del.onclick=ev=>{ev.stopPropagation();p.fotos.splice(i,1);try{_mobPhotoDelete(fo.key);}catch(_){}drawThumbs(p);save();};
+    d.appendChild(img);d.appendChild(del);box.appendChild(d);});}
+  function showPhoto(fo){_mobPhotoGet(fo.key).then(src=>{if(!src&&fo.driveId)src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w1600';if(src){E.photoImg.src=src;E.photo.classList.remove('dp-hidden');}});}
+
+  async function open(){
+    t=(typeof currentTask==='function')?currentTask():null;
+    if(!t){say('Keine Task geöffnet','error');return;}
+    if(!t.dachplan||t.dachplan.mode!=='map')t.dachplan={mode:'map',center:null,zoom:null,pins:[],nextNr:1};
+    dp=t.dachplan;if(!dp.pins)dp.pins=[];if(!dp.nextNr)dp.nextNr=(dp.pins.length+1);
+    sel=null;filter='alle';addMode=true;
+    if(!built)build();
+    E.screen.querySelector('#dpFilter').textContent='Alle';
+    E.screen.querySelector('#dpAdd').classList.add('on');
+    closeSheet();
+    E.screen.classList.remove('dp-hidden');
+    if(!ensureMap())return;
+    setTimeout(()=>{try{map.invalidateSize();}catch(e){}
+      let c=dp.center,z=dp.zoom;
+      if(!c&&t.lat&&t.lon){c=[+t.lat,+t.lon];z=19;}
+      if(!c){c=[51.1657,10.4515];z=6;}
+      map.setView(c,z||18);renderPins();},80);
+  }
+  function close(){
+    if(map){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();}catch(e){}}
+    if(E.screen)E.screen.classList.add('dp-hidden');save();
+  }
   return {open,close};
 })();
 </script>

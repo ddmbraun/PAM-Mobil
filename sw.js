@@ -12,6 +12,8 @@ const PRECACHE = [
   'https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.js',
   'https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.7/dist/jspdf.plugin.autotable.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
+  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
 ];
 
 self.addEventListener('install', e => {
