@@ -4496,7 +4496,8 @@ function renderDetail(t){
         +'<div style="display:flex;gap:8px;margin-bottom:10px;">'
         +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📷 Fotos in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📷 kein Foto-Ordner</span>')
         +(t.gdriveOrdner?'<a href="'+escAttr(t.gdriveOrdner)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📎 Anhänge in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📎 kein Anhang-Ordner</span>')
-        +'</div>';
+        +'</div>'
+        +'<button onclick="Dachplan.open()" style="width:100%;margin-bottom:12px;padding:13px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">🏠 Dachplan</button>';
     })()
     // ── v62: STANDORT (GPS / Adresse) ──
     +(()=>{
@@ -7355,6 +7356,256 @@ function lbDiscardDraw(){
   if(bar)bar.classList.remove('visible');
   _drawPointer=null;_drawCtx=null;_drawSnapshot=null;
 }
+</script>
+<script>
+/* ══════════════ DACHPLAN-MODUL (isoliert, v1) ══════════════
+   Vollbild-Seite pro Auftrag. Speichert in task.dachplan (workboard.json).
+   Basisbild + Pin-Fotos liegen lokal in der vorhandenen Foto-IndexedDB
+   (_mobPhotoSave/_mobPhotoGet). Öffnen über Button "🏠 Dachplan" im Auftrag. */
+window.Dachplan=(function(){
+  const COL={rot:'#e5484d',gelb:'#f5a623',gruen:'#30a46c'};
+  const LBL={rot:'Schaden',gelb:'Prüfen',gruen:'OK'};
+  let t=null,dp=null,sel=null,addMode=true,filter='alle',built=false;
+  const view={z:1,tx:0,ty:0};
+  const E={};
+  const say=(m,k)=>{try{toast(m,k||'success');}catch(e){}};
+
+  /* ---- Bild verkleinern → dataURL ---- */
+  function loadScaled(file,maxDim,q,cb){
+    const r=new FileReader();
+    r.onload=()=>{const im=new Image();
+      im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));
+        w=Math.round(w*s);h=Math.round(h*s);const c=document.createElement('canvas');
+        c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);cb(c.toDataURL('image/jpeg',q));};
+      im.onerror=()=>cb(r.result);im.src=r.result;};
+    r.readAsDataURL(file);
+  }
+  /* ---- EXIF-GPS ---- */
+  function readExifGps(file,cb){const r=new FileReader();
+    r.onload=()=>{try{cb(parseGps(new DataView(r.result)));}catch(e){cb(null);}};
+    r.onerror=()=>cb(null);r.readAsArrayBuffer(file.slice(0,262144));}
+  function parseGps(dv){
+    if(dv.getUint16(0)!==0xFFD8)return null;let off=2;
+    while(off<dv.byteLength-4){const m=dv.getUint16(off);if((m&0xFF00)!==0xFF00)return null;
+      if(m===0xFFE1){if(dv.getUint32(off+4)!==0x45786966)return null;
+        const tiff=off+10,li=dv.getUint16(tiff)===0x4949,g16=o=>dv.getUint16(o,li),g32=o=>dv.getUint32(o,li);
+        const ifd0=tiff+g32(tiff+4);let gps=0,n=g16(ifd0);
+        for(let i=0;i<n;i++){const e=ifd0+2+i*12;if(g16(e)===0x8825)gps=tiff+g32(e+8);}
+        if(!gps)return null;const dms=o=>g32(o)/g32(o+4)+(g32(o+8)/g32(o+12))/60+(g32(o+16)/g32(o+20))/3600;
+        let latR,lngR,lat,lng,gn=g16(gps);
+        for(let i=0;i<gn;i++){const e=gps+2+i*12,tag=g16(e),vo=tiff+g32(e+8);
+          if(tag===1)latR=String.fromCharCode(dv.getUint8(e+8));else if(tag===2)lat=dms(vo);
+          else if(tag===3)lngR=String.fromCharCode(dv.getUint8(e+8));else if(tag===4)lng=dms(vo);}
+        if(lat==null||lng==null)return null;
+        return{lat:(lat*(latR==='S'?-1:1)).toFixed(6),lng:(lng*(lngR==='W'?-1:1)).toFixed(6)};}
+      off+=2+dv.getUint16(off+2);}
+    return null;
+  }
+  function pinSVG(c){return '<svg width="30" height="41" viewBox="0 0 34 46"><path d="M17 1C8.7 1 2 7.7 2 16c0 11 15 29 15 29s15-18 15-29C32 7.7 25.3 1 17 1z" fill="'+c+'" stroke="#fff" stroke-width="2"/><circle cx="17" cy="16" r="9" fill="rgba(255,255,255,.25)"/></svg>';}
+
+  function css(){const s=document.createElement('style');s.textContent=
+   '#dpScreen{position:fixed;inset:0;z-index:99990;background:#0f1115;color:#e7eaf0;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
+  +'#dpScreen.dp-hidden,.dp-hidden{display:none!important}'
+  +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap}'
+  +'.dpb{min-height:42px;padding:0 11px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:14px;font-weight:600;cursor:pointer}'
+  +'.dpb.on{background:#153a6b;border-color:#3b82f6}.dpb.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}'
+  +'#dpWrap{flex:1;position:relative;overflow:hidden;touch-action:none;background:#0d0f14}'
+  +'#dpStage{position:absolute;top:0;left:0;transform-origin:0 0;line-height:0}#dpImg{display:block}'
+  +'#dpEmpty{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#9aa3b2;text-align:center;width:82%;line-height:1.5}'
+  +'.dpPin{position:absolute;transform:translate(-50%,-100%);filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));touch-action:none;cursor:pointer}'
+  +'.dpPin .n{position:absolute;top:4px;left:50%;transform:translateX(-50%);color:#fff;font-weight:800;font-size:13px}'
+  +'#dpSheet{position:absolute;left:0;right:0;bottom:0;background:#171a21;border-top:1px solid #2a2f3a;border-radius:16px 16px 0 0;padding:12px 14px 20px;max-height:70%;overflow:auto;transform:translateY(110%);transition:transform .2s;box-shadow:0 -6px 24px rgba(0,0,0,.4)}'
+  +'#dpSheet.show{transform:none}'
+  +'.dpf{font-size:12px;color:#9aa3b2;margin:10px 0 4px;font-weight:600}'
+  +'#dpSheet input,#dpSheet textarea{width:100%;background:#1e222b;border:1px solid #2a2f3a;color:#e7eaf0;border-radius:9px;padding:10px;font-size:15px;font-family:inherit;box-sizing:border-box}'
+  +'.dpStat{display:flex;gap:8px}.dpStat button{flex:1;min-height:44px;border-radius:9px;border:2px solid transparent;color:#fff;font-weight:700;cursor:pointer}.dpStat button.sel{border-color:#fff}'
+  +'.dpThumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}'
+  +'.dpThumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#000}.dpThumb img{width:100%;height:100%;object-fit:cover}'
+  +'.dpThumb b{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer}'
+  +'.dprow{display:flex;gap:8px}.dprow>*{flex:1}'
+  +'#dpPhoto{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center}'
+  +'#dpPhoto img{max-width:100%;max-height:100%}#dpPhoto .x{position:absolute;top:12px;right:18px;font-size:30px;color:#fff;cursor:pointer}';
+   document.head.appendChild(s);}
+
+  function build(){
+    css();
+    const d=document.createElement('div');d.id='dpScreen';d.className='dp-hidden';
+    d.innerHTML=
+     '<div id="dpBar">'
+      +'<button class="dpb" id="dpBack">←</button>'
+      +'<b style="margin:0 2px 0 2px">Dachplan</b>'
+      +'<button class="dpb" id="dpLoad">📷 Bild</button>'
+      +'<button class="dpb" id="dpZoomOut">➖</button>'
+      +'<button class="dpb" id="dpZoomIn">➕</button>'
+      +'<button class="dpb" id="dpFit">⤢</button>'
+      +'<button class="dpb on" id="dpAdd">📍 Pin</button>'
+      +'<button class="dpb" id="dpFilter">Alle</button>'
+      +'<input type="file" id="dpBaseInput" accept="image/*" style="display:none">'
+     +'</div>'
+     +'<div id="dpWrap"><div id="dpStage" class="dp-hidden"><img id="dpImg" alt="Dach"></div>'
+      +'<div id="dpEmpty"><b>Basisbild laden</b><br>Tippe oben auf „📷 Bild" und wähle dein Luftbild / Orthofoto. Danach aufs Dach tippen = Pin.</div>'
+     +'</div>'
+     +'<div id="dpSheet">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center"><b id="dpSheetTitle">Pin</b><button class="dpb" id="dpSheetClose">Schließen</button></div>'
+      +'<div class="dpf">Status</div><div class="dpStat" id="dpStat">'
+        +'<button data-s="rot" style="background:#e5484d">Schaden</button>'
+        +'<button data-s="gelb" style="background:#f5a623">Prüfen</button>'
+        +'<button data-s="gruen" style="background:#30a46c">OK</button></div>'
+      +'<div class="dpf">Titel</div><input id="dpTitle" placeholder="z. B. Ziegel gerissen, First">'
+      +'<div class="dpf">Notiz</div><textarea id="dpNote" rows="2" placeholder="Beschreibung, Maß, Empfehlung…"></textarea>'
+      +'<div class="dpf">Fotos (Kamera)</div><button class="dpb primary" id="dpPhotoBtn" style="width:100%">📸 Foto aufnehmen / wählen</button>'
+      +'<input type="file" id="dpPhotoInput" accept="image/*" capture="environment" multiple style="display:none"><div class="dpThumbs" id="dpThumbs"></div>'
+      +'<div class="dpf">Geo-Position (auto aus Foto-EXIF oder vor Ort)</div>'
+      +'<div class="dprow"><input id="dpLat" placeholder="lat" inputmode="decimal"><input id="dpLng" placeholder="lng" inputmode="decimal"></div>'
+      +'<div class="dprow" style="margin-top:8px"><button class="dpb" id="dpGeoHere">🛰️ Standort</button><button class="dpb" id="dpNav">🧭 Navigation</button></div>'
+      +'<button class="dpb" id="dpDel" style="width:100%;margin-top:14px;color:#e5484d;border-color:#e5484d">🗑 Pin löschen</button>'
+     +'</div>'
+     +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg"></div>';
+    document.body.appendChild(d);
+    E.screen=d;E.wrap=d.querySelector('#dpWrap');E.stage=d.querySelector('#dpStage');E.img=d.querySelector('#dpImg');
+    E.empty=d.querySelector('#dpEmpty');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
+    E.photo=d.querySelector('#dpPhoto');E.photoImg=d.querySelector('#dpPhotoImg');
+    const q=id=>d.querySelector(id);
+    q('#dpBack').onclick=close; q('#dpSheetClose').onclick=closeSheet;
+    q('#dpLoad').onclick=()=>q('#dpBaseInput').click();
+    q('#dpBaseInput').onchange=e=>{if(e.target.files[0])setBase(e.target.files[0]);e.target.value='';};
+    q('#dpZoomIn').onclick=()=>{const r=E.wrap.getBoundingClientRect();zoomAt(r.width/2,r.height/2,1.25);};
+    q('#dpZoomOut').onclick=()=>{const r=E.wrap.getBoundingClientRect();zoomAt(r.width/2,r.height/2,0.8);};
+    q('#dpFit').onclick=fit;
+    q('#dpAdd').onclick=()=>{addMode=!addMode;q('#dpAdd').classList.toggle('on',addMode);};
+    q('#dpFilter').onclick=()=>{filter=filter==='alle'?'schaden':'alle';q('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';render();};
+    E.img.addEventListener('load',fit);
+    q('#dpStat').querySelectorAll('button').forEach(b=>b.onclick=()=>{const p=cur();if(!p)return;p.status=b.dataset.s;markStat(p);render();save();});
+    q('#dpTitle').oninput=e=>{const p=cur();if(p){p.title=e.target.value;save();}};
+    q('#dpNote').oninput=e=>{const p=cur();if(p){p.note=e.target.value;save();}};
+    q('#dpLat').oninput=e=>{const p=cur();if(p){p.lat=e.target.value.trim();save();}};
+    q('#dpLng').oninput=e=>{const p=cur();if(p){p.lng=e.target.value.trim();save();}};
+    q('#dpPhotoBtn').onclick=()=>q('#dpPhotoInput').click();
+    q('#dpPhotoInput').onchange=e=>{addPhotos([...e.target.files]);e.target.value='';};
+    q('#dpGeoHere').onclick=()=>{const p=cur();if(!p)return;if(!navigator.geolocation){say('Kein GPS','error');return;}
+      navigator.geolocation.getCurrentPosition(g=>{p.lat=g.coords.latitude.toFixed(6);p.lng=g.coords.longitude.toFixed(6);q('#dpLat').value=p.lat;q('#dpLng').value=p.lng;save();say('Standort übernommen');},()=>say('Standort nicht abrufbar','error'),{enableHighAccuracy:true});};
+    q('#dpNav').onclick=()=>{const p=cur();if(!p||!p.lat||!p.lng){say('Erst Geo-Position setzen','error');return;}window.open('https://www.google.com/maps/dir/?api=1&destination='+p.lat+','+p.lng,'_blank');};
+    q('#dpDel').onclick=()=>{const p=cur();if(!p)return;if(!confirm('Pin '+p.nr+' löschen?'))return;
+      (p.photoKeys||[]).forEach(k=>{try{_mobPhotoDelete(k);}catch(_){}});
+      dp.pins=dp.pins.filter(x=>x.id!==p.id);sel=null;closeSheet();render();save();};
+    E.photoImg.dataset;q('#dpPhotoX').onclick=()=>E.photo.classList.add('dp-hidden');
+    E.photo.onclick=ev=>{if(ev.target===E.photo)E.photo.classList.add('dp-hidden');};
+    wireCanvas();
+    built=true;
+  }
+
+  /* ---- Zoom/Pan ---- */
+  function applyView(){E.stage.style.transform='translate('+view.tx+'px,'+view.ty+'px) scale('+view.z+')';}
+  function fit(){const r=E.wrap.getBoundingClientRect(),iw=E.img.naturalWidth,ih=E.img.naturalHeight;if(!iw||!ih)return;
+    const z=Math.min(r.width/iw,r.height/ih)*0.96;view.z=z;view.tx=(r.width-iw*z)/2;view.ty=(r.height-ih*z)/2;applyView();}
+  function zoomAt(cx,cy,f){const nz=Math.min(12,Math.max(0.15,view.z*f)),k=nz/view.z;
+    view.tx=cx-(cx-view.tx)*k;view.ty=cy-(cy-view.ty)*k;view.z=nz;applyView();}
+
+  const pts=new Map();let startPos=null,lastPan=null,moved=false,pinchPrev=null;
+  function pinchInfo(){const a=[...pts.values()];return{dist:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),cx:(a[0].x+a[1].x)/2,cy:(a[0].y+a[1].y)/2};}
+  function wireCanvas(){
+    E.wrap.addEventListener('wheel',e=>{e.preventDefault();const r=E.wrap.getBoundingClientRect();zoomAt(e.clientX-r.left,e.clientY-r.top,e.deltaY<0?1.1:1/1.1);},{passive:false});
+    E.wrap.addEventListener('pointerdown',e=>{
+      if(e.target.closest('.dpPin'))return;
+      pts.set(e.pointerId,{x:e.clientX,y:e.clientY});try{E.wrap.setPointerCapture(e.pointerId);}catch(_){}
+      if(pts.size===1){moved=false;startPos={x:e.clientX,y:e.clientY};lastPan={x:e.clientX,y:e.clientY};}
+      else if(pts.size===2)pinchPrev=pinchInfo();});
+    E.wrap.addEventListener('pointermove',e=>{
+      if(!pts.has(e.pointerId))return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+      if(pts.size>=2){const pi=pinchInfo();if(pinchPrev){const r=E.wrap.getBoundingClientRect();
+        zoomAt(pi.cx-r.left,pi.cy-r.top,pi.dist/pinchPrev.dist);view.tx+=pi.cx-pinchPrev.cx;view.ty+=pi.cy-pinchPrev.cy;applyView();}
+        pinchPrev=pi;moved=true;}
+      else if(startPos){const dx=e.clientX-lastPan.x,dy=e.clientY-lastPan.y;lastPan={x:e.clientX,y:e.clientY};
+        if(Math.hypot(e.clientX-startPos.x,e.clientY-startPos.y)>8){moved=true;view.tx+=dx;view.ty+=dy;applyView();}}});
+    const endP=e=>{const was=pts.size;pts.delete(e.pointerId);
+      if(was===1&&!moved&&addMode&&dp&&dp.imgKey){const r=E.stage.getBoundingClientRect();
+        const x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
+        if(x>=0&&x<=1&&y>=0&&y<=1){const p={id:'dp'+Date.now(),nr:dp.nextNr++,x,y,status:'rot',title:'',note:'',lat:'',lng:'',photoKeys:[]};
+          dp.pins.push(p);sel=p.id;render();openSheet(p);save();}}
+      if(pts.size<2)pinchPrev=null;if(pts.size===0)startPos=null;};
+    E.wrap.addEventListener('pointerup',endP);
+    E.wrap.addEventListener('pointercancel',e=>{pts.delete(e.pointerId);if(pts.size<2)pinchPrev=null;if(pts.size===0)startPos=null;});
+  }
+
+  /* ---- Bild ---- */
+  async function loadImg(){
+    if(dp.imgKey){const data=await _mobPhotoGet(dp.imgKey);
+      if(data){E.img.src=data;E.stage.classList.remove('dp-hidden');E.empty.classList.add('dp-hidden');return;}}
+    E.stage.classList.add('dp-hidden');E.empty.classList.remove('dp-hidden');}
+  function setBase(file){
+    if(!/^image\//.test(file.type||'')){say('Bitte ein Bild wählen','error');return;}
+    loadScaled(file,2400,0.85,async url=>{
+      const key='dpimg_'+t.id;
+      await _mobPhotoSave(key,url);
+      dp.imgKey=key;dp.pins=[];dp.nextNr=1;sel=null;closeSheet();
+      E.img.src=url;E.stage.classList.remove('dp-hidden');E.empty.classList.add('dp-hidden');
+      render();save();say('Basisbild gesetzt');});}
+
+  /* ---- Pins ---- */
+  function cur(){return dp&&sel?dp.pins.find(p=>p.id===sel):null;}
+  function render(){
+    if(!E.stage)return;
+    [...E.stage.querySelectorAll('.dpPin')].forEach(n=>n.remove());
+    (dp.pins||[]).forEach(p=>{
+      if(filter==='schaden'&&p.status!=='rot')return;
+      const el=document.createElement('div');el.className='dpPin';
+      el.style.left=(p.x*100)+'%';el.style.top=(p.y*100)+'%';
+      el.innerHTML=pinSVG(COL[p.status||'rot'])+'<div class="n">'+p.nr+'</div>';
+      drag(el,p);E.stage.appendChild(el);});
+  }
+  function drag(el,p){let mv=false,dd=false;
+    el.addEventListener('pointerdown',ev=>{ev.stopPropagation();mv=true;dd=false;try{el.setPointerCapture(ev.pointerId);}catch(_){}
+      sel=p.id;openSheet(p);});
+    el.addEventListener('pointermove',ev=>{if(!mv)return;dd=true;const r=E.stage.getBoundingClientRect();
+      p.x=Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width));p.y=Math.min(1,Math.max(0,(ev.clientY-r.top)/r.height));
+      el.style.left=(p.x*100)+'%';el.style.top=(p.y*100)+'%';});
+    el.addEventListener('pointerup',()=>{mv=false;if(dd)save();});}
+
+  /* ---- Sheet ---- */
+  function markStat(p){E.sheet.querySelectorAll('#dpStat button').forEach(b=>b.classList.toggle('sel',b.dataset.s===p.status));}
+  function openSheet(p){
+    E.sheet.querySelector('#dpSheetTitle').textContent='Pin '+p.nr+' · '+(LBL[p.status]||'');
+    E.sheet.querySelector('#dpTitle').value=p.title||'';
+    E.sheet.querySelector('#dpNote').value=p.note||'';
+    E.sheet.querySelector('#dpLat').value=p.lat||'';E.sheet.querySelector('#dpLng').value=p.lng||'';
+    markStat(p);drawThumbs(p);E.sheet.classList.add('show');}
+  function closeSheet(){E.sheet.classList.remove('show');}
+
+  /* ---- Fotos ---- */
+  function addPhotos(files){const p=cur();if(!p)return;if(!p.photoKeys)p.photoKeys=[];
+    files.forEach(f=>{if(!/^image\//.test(f.type||''))return;
+      loadScaled(f,1400,0.8,async url=>{const key='dpph_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+        await _mobPhotoSave(key,url);p.photoKeys.push(key);drawThumbs(p);save();});
+      readExifGps(f,g=>{if(g&&!p.lat){p.lat=g.lat;p.lng=g.lng;if(cur()===p){E.sheet.querySelector('#dpLat').value=g.lat;E.sheet.querySelector('#dpLng').value=g.lng;}save();say('Geo aus Foto übernommen');}});});}
+  function drawThumbs(p){const box=E.thumbs;box.innerHTML='';(p.photoKeys||[]).forEach((key,i)=>{
+    const d=document.createElement('div');d.className='dpThumb';const img=document.createElement('img');
+    _mobPhotoGet(key).then(src=>{if(src)img.src=src;});
+    img.onclick=()=>showPhoto(key);const del=document.createElement('b');del.textContent='×';
+    del.onclick=ev=>{ev.stopPropagation();p.photoKeys.splice(i,1);try{_mobPhotoDelete(key);}catch(_){}drawThumbs(p);save();};
+    d.appendChild(img);d.appendChild(del);box.appendChild(d);});}
+  function showPhoto(key){_mobPhotoGet(key).then(src=>{if(src){E.photoImg.src=src;E.photo.classList.remove('dp-hidden');}});}
+
+  function save(){try{if(typeof forceSave==='function')forceSave();}catch(e){}}
+
+  /* ---- Öffnen/Schließen ---- */
+  async function open(){
+    t=(typeof currentTask==='function')?currentTask():null;
+    if(!t){say('Keine Task geöffnet','error');return;}
+    if(!t.dachplan)t.dachplan={imgKey:null,pins:[],nextNr:1};
+    dp=t.dachplan;if(!dp.pins)dp.pins=[];if(!dp.nextNr)dp.nextNr=(dp.pins.length+1);
+    sel=null;filter='alle';addMode=true;
+    if(!built)build();
+    E.screen.querySelector('#dpFilter').textContent='Alle';
+    E.screen.querySelector('#dpAdd').classList.add('on');
+    closeSheet();
+    E.screen.classList.remove('dp-hidden');
+    view.z=1;view.tx=0;view.ty=0;
+    await loadImg();render();
+  }
+  function close(){if(E.screen)E.screen.classList.add('dp-hidden');save();}
+
+  return {open,close};
+})();
 </script>
 </body>
 </html>
