@@ -746,7 +746,7 @@ function _mobSetOfflinePin(taskId,on){try{const s=_mobOfflinePins();if(on)s.add(
 function _mobCollectOfflineIds(t){
   const ids=[],seen=new Set();
   (t.fotos||[]).forEach(f=>{const id=f.editedDriveId||f.driveId;if(id&&!seen.has(id)){seen.add(id);ids.push({key:id,name:f.name||'',mime:f.type||'image/jpeg'});}});
-  (t.attachments||[]).forEach(a=>{const id=a.driveId||a.fileId;if(id&&!a.data&&!seen.has(id)){seen.add(id);ids.push({key:id,name:a.name||'',mime:a.type||''});}});
+  (t.attachments||[]).forEach(a=>{const id=a.driveId||a.fileId;if(id&&!seen.has(id)){seen.add(id);ids.push({key:id,name:a.name||'',mime:a.type||''});}});
   return ids;
 }
 // „Offline mitnehmen"/„entfernen" – lädt (online) alle Drive-Dateien des Tasks in die
@@ -5877,10 +5877,12 @@ async function _openAttachGalleryMob(i){
   // Offline-Ablage zuerst: „mitgenommene" Datei ohne Netz/Token öffnen
   const _off=fid?await _mobOfflineGet(fid):null;
 
-  // Bild: Lightbox mit Drive-Fetch (bzw. Offline-Blob)
-  if(isImg&&fid){
+  // Bild: Offline-Blob → Base64 → (online) Drive-Fetch. Offline NIE einen Login auslösen.
+  if(isImg){
     if(_off&&_off.blob){openLightbox(URL.createObjectURL(_off.blob),name,'',{});return;}
-    if(!(await ensureToken()))return;
+    if(a.data){openLightbox(a.data,name,'',{});return;}
+    if(!fid){toast('Bild nicht verfügbar','error');return;}
+    if(!(await ensureToken())){toast('Bild ist nicht offline gespeichert – online „📴 Offline mitnehmen"','error');return;}
     const viewUrl='https://drive.google.com/file/d/'+fid+'/view';
     const thumbSrc=a.data||('https://drive.google.com/thumbnail?id='+fid+'&sz=w400');
     openLightbox(thumbSrc,name,viewUrl,{});
@@ -5892,23 +5894,29 @@ async function _openAttachGalleryMob(i){
     }
     return;
   }
-  // Offline-Blob (PDF/Datei) direkt aus lokaler Ablage öffnen
-  if(_off&&_off.blob){
-    window.open(URL.createObjectURL(_off.blob),'_blank');
+  // PDF/Datei: lokale Kopie bevorzugen (Offline-Blob ODER Base64). Öffnen per Download-Link –
+  // auf iOS zeigt das die PDF-Vorschau zuverlässig; window.open(blob) blieb dort weiß.
+  let _docBlob=null;
+  if(_off&&_off.blob)_docBlob=_off.blob;
+  else if(a.data){try{_docBlob=_dataUrlToBlob(a.data);}catch(e){console.warn('[MobOffline] data→blob',e);}}
+  if(_docBlob){
+    try{
+      const url=URL.createObjectURL(_docBlob);
+      const link=document.createElement('a');
+      link.href=url;link.download=name||'dokument';link.rel='noopener';
+      document.body.appendChild(link);link.click();
+      setTimeout(()=>{try{link.remove();}catch(_e){}try{URL.revokeObjectURL(url);}catch(_e){}},120000);
+    }catch(e){console.warn('[MobOffline] Dokument öffnen',e);toast('Konnte Dokument nicht öffnen','error');}
     return;
   }
-  // PDF oder Drive-Datei → in neuem Tab öffnen (sicherster Weg auf iOS)
+  // Keine lokale Kopie: offline klare Meldung statt Google-Login/weißer Seite
+  if((typeof navigator!=='undefined'&&navigator.onLine===false)||!tokenValid()){
+    toast('Dokument ist nicht offline gespeichert – bitte mit Empfang „📴 Offline mitnehmen"','error');
+    return;
+  }
+  // Online: PDF/Drive-Datei in neuem Tab öffnen
   const driveUrl=a.url||(fid?'https://drive.google.com/file/d/'+fid+'/view':'');
-  if(driveUrl){
-    window.open(driveUrl,'_blank');
-    return;
-  }
-  // Nur data-URL (kein Drive-Link)
-  if(a.data){
-    const w=window.open('','_blank');
-    if(w){w.document.write('<html><body style="margin:0"><iframe src="'+a.data+'" style="width:100%;height:100vh;border:none"></iframe></body></html>');w.document.close();}
-    return;
-  }
+  if(driveUrl){window.open(driveUrl,'_blank');return;}
   toast('Datei nicht verfügbar','error');
 }
 function _showTextViewer(name,text){
