@@ -635,6 +635,23 @@ async function _restoreMobileBackupIfDirty(){
     forceSave();
   }
 }
+// Offline-Start: Boards aus dem lokalen Backup laden, wenn Drive nicht erreichbar ist.
+// Nur wenn wirklich offline/kein gültiger Token – online hat Drive Vorrang. Read-only:
+// saveFile() blockt Drive-Writes solange _mobOfflineActive (kein Clobber neuerer Stände).
+function _mobRestoreBoardsOffline(){
+  const reallyOffline=(typeof navigator!=='undefined'&&navigator.onLine===false)||!tokenValid();
+  if(!reallyOffline)return false;
+  const bk=_getMobileBackup();
+  if(!bk||!bk.data)return false;
+  try{
+    _applyMobileFilter(bk.data);
+    const bkeys=Object.keys(boards);
+    if(!currentBoard||!boards[currentBoard])currentBoard=bkeys[0]||'';
+    _mobOfflineActive=true;
+    try{toast('📴 Offline – lokaler Stand (nur ansehen)','info');}catch(e){}
+    return true;
+  }catch(e){console.warn('[PTP-Mobile] Offline-Restore fehlgeschlagen:',e);return false;}
+}
 
 // ── JSON-Replacer: localUrl (data:/blob:) und _uploading aus Fotos heraushalten ──
 // Hält die Drive-JSON klein; Fotos werden über IndexedDB (localKey) wiederhergestellt.
@@ -685,6 +702,86 @@ async function _mobPhotoDelete(key){
       tx.onerror=()=>{db.close();res();};
     });
   }catch(e){}
+}
+// ── Offline-Ablage v1: Drive-Dateien (Fotos/Dokumente) als Blob lokal vorhalten ──
+// Für „Offline mitnehmen": angepinnte Tasks bleiben OHNE Netz und OHNE gültigen Token
+// ansehbar. Key = Drive-fileId. Bewusst getrennt vom Foto-Cache (_MOB_PHOTO_DB).
+const _MOB_OFFLINE_DB='mob-offline-v1';
+const _MOB_OFFLINE_STORE='blobs';
+function _mobOfflineDbOpen(){
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open(_MOB_OFFLINE_DB,1);
+    req.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(_MOB_OFFLINE_STORE))db.createObjectStore(_MOB_OFFLINE_STORE,{keyPath:'key'});};
+    req.onsuccess=e=>res(e.target.result);
+    req.onerror=e=>rej(e.target.error);
+  });
+}
+async function _mobOfflinePut(key,blob,mime,name){
+  try{const db=await _mobOfflineDbOpen();
+    await new Promise((res,rej)=>{const tx=db.transaction(_MOB_OFFLINE_STORE,'readwrite');
+      tx.objectStore(_MOB_OFFLINE_STORE).put({key,blob,mime:mime||'',name:name||'',ts:Date.now()});
+      tx.oncomplete=()=>{db.close();res();};tx.onerror=e=>{db.close();rej(e.target.error);};});
+  }catch(e){console.warn('[MobOffline] Speichern:',e);}
+}
+async function _mobOfflineGet(key){
+  try{const db=await _mobOfflineDbOpen();
+    return await new Promise(res=>{const tx=db.transaction(_MOB_OFFLINE_STORE,'readonly');
+      const req=tx.objectStore(_MOB_OFFLINE_STORE).get(key);
+      req.onsuccess=e=>{db.close();res(e.target.result||null);};req.onerror=()=>{db.close();res(null);};});
+  }catch(e){return null;}
+}
+async function _mobOfflineDelete(key){
+  try{const db=await _mobOfflineDbOpen();
+    await new Promise(res=>{const tx=db.transaction(_MOB_OFFLINE_STORE,'readwrite');
+      tx.objectStore(_MOB_OFFLINE_STORE).delete(key);tx.oncomplete=()=>{db.close();res();};tx.onerror=()=>{db.close();res();};});
+  }catch(e){}
+}
+async function _mobOfflineHas(key){const e=await _mobOfflineGet(key);return !!e;}
+// ── Offline-Pins: welche Tasks sind „für unterwegs" mitgenommen (geräte-lokal) ──
+const _MOB_OFFLINE_PINS_KEY='pam_mob_offline_pins_v1';
+function _mobOfflinePins(){try{return new Set(JSON.parse(localStorage.getItem(_MOB_OFFLINE_PINS_KEY)||'[]'));}catch(e){return new Set();}}
+function _mobIsOfflinePinned(taskId){return !!taskId&&_mobOfflinePins().has(taskId);}
+function _mobSetOfflinePin(taskId,on){try{const s=_mobOfflinePins();if(on)s.add(taskId);else s.delete(taskId);localStorage.setItem(_MOB_OFFLINE_PINS_KEY,JSON.stringify([...s]));}catch(e){}}
+// Drive-Dateien (Fotos + Dokumente) eines Tasks sammeln; Base64-Anhänge sind schon offline.
+function _mobCollectOfflineIds(t){
+  const ids=[],seen=new Set();
+  (t.fotos||[]).forEach(f=>{const id=f.editedDriveId||f.driveId;if(id&&!seen.has(id)){seen.add(id);ids.push({key:id,name:f.name||'',mime:f.type||'image/jpeg'});}});
+  (t.attachments||[]).forEach(a=>{const id=a.driveId||a.fileId;if(id&&!a.data&&!seen.has(id)){seen.add(id);ids.push({key:id,name:a.name||'',mime:a.type||''});}});
+  return ids;
+}
+// „Offline mitnehmen"/„entfernen" – lädt (online) alle Drive-Dateien des Tasks in die
+// lokale Ablage bzw. räumt sie wieder. Danach ist der Task ohne Netz ansehbar.
+async function _mobOfflinePinTask(taskId,btn){
+  const t=findTaskById(taskId)||currentTask();
+  if(!t){toast('Task nicht gefunden','error');return;}
+  const setBtn=(txt,dis)=>{if(btn){btn.textContent=txt;btn.disabled=!!dis;}};
+  const items=_mobCollectOfflineIds(t);
+  // Bereits gepinnt → wieder entfernen
+  if(_mobIsOfflinePinned(taskId)){
+    for(const it of items){try{await _mobOfflineDelete(it.key);}catch(e){}}
+    _mobSetOfflinePin(taskId,false);
+    setBtn('📴 Offline mitnehmen',false);
+    toast('Offline-Kopie entfernt','ok');
+    return;
+  }
+  if(!items.length){_mobSetOfflinePin(taskId,true);setBtn('✅ Offline (nur Text)',false);toast('Keine Drive-Dateien – Text ist offline da','info');return;}
+  if(!(await ensureToken())){toast('Kein Netz/Token – bitte mit Empfang mitnehmen','error');return;}
+  let ok=0,fail=0;
+  for(let i=0;i<items.length;i++){
+    const it=items[i];
+    setBtn('⏳ Lädt… '+(i+1)+'/'+items.length,true);
+    try{
+      const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(it.key)+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const blob=await r.blob();
+      await _mobOfflinePut(it.key,blob,it.mime||blob.type||'',it.name||'');
+      ok++;
+    }catch(e){fail++;console.warn('[MobOffline] Laden fehlgeschlagen',it.key,e);}
+  }
+  _mobSetOfflinePin(taskId,true);
+  try{_saveMobileBackup();}catch(e){}
+  setBtn(fail?('📴 Offline ('+ok+'/'+items.length+')'):'✅ Offline mitgenommen',false);
+  toast(fail?('Teilweise: '+ok+' von '+items.length+' geladen'):'Für unterwegs gespeichert ('+ok+' Dateien)',fail?'info':'ok');
 }
 function _fileToDataUrl(file){
   return new Promise((res,rej)=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.onerror=rej;r.readAsDataURL(file);});
@@ -749,6 +846,7 @@ let currentTaskId=null;
 let saveTimer=null;
 let dirty=false;
 let _dirtyTs=0; // Zeitstempel wann dirty=true gesetzt wurde (Polling-Block max. 60s)
+let _mobOfflineActive=false; // true = Boards kamen aus lokalem Backup (Offline-Start); KEIN Drive-Save bis frisch geladen
 let _mobSaving=false;     // Mutex: verhindert parallele saveFile()-Läufe (Race Condition)
 let _mobSaveQueued=false; // Während eines laufenden Saves kam ein weiterer Save-Wunsch → danach erneut speichern
 let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
@@ -1445,6 +1543,8 @@ async function findOrPickFile(){
   document.getElementById('loginStatus').textContent='Suche workboard.json in Drive…';
   // Aus localStorage
   try{const c=JSON.parse(localStorage.getItem(FILE_KEY)||'null');if(c&&c.id){fileId=c.id;fileName=c.name||'workboard.json';const ok=await loadFile();if(ok){showList();renderList();return;}}}catch(e){console.warn('[PTP-Mobile] localStorage lesen FILE_KEY:',e);}
+  // Offline-Start: kein Netz/Token, aber lokales Backup vorhanden → gepinnte Tasks lokal ansehen
+  try{if(_mobRestoreBoardsOffline()){showList();renderList();return;}}catch(e){console.warn('[PTP-Mobile] Offline-Restore:',e);}
   // Auf Drive suchen
   try{
     const found=await _searchWorkboardInDrive();
@@ -1530,6 +1630,7 @@ async function loadFile(){
       }
     }catch(e){console.warn('[PTP-Mobile]',e);}
     startPolling();
+    _mobOfflineActive=false; // frischer Drive-Stand → Offline-Modus verlassen, Speichern wieder erlaubt
     try{ if(typeof _pamTryOpenPendingTaskMobile==='function')_pamTryOpenPendingTaskMobile(); }catch(e){} // Deep-Link öffnen, sobald Daten da sind (auch nach Login-Redirect)
     return true;
   }catch(e){toast('Laden fehlgeschlagen: '+e.message,'error');return false;}
@@ -1610,6 +1711,14 @@ function _mergeListByKey(remoteList,localList,keyFn){
   return out;
 }
 async function saveFile(){
+  if(_mobOfflineActive){
+    // Boards stammen aus dem Offline-Start (lokales Backup). NICHT nach Drive schreiben,
+    // bevor wieder frisch geladen wurde – sonst könnten neuere Büro-Änderungen überschrieben
+    // werden. Nur lokal sichern; bei Netz frisch laden (loadFile setzt _mobOfflineActive zurück).
+    if(dirty)_saveMobileBackup();
+    if(fileId&&navigator.onLine!==false){try{loadFile();}catch(e){}}
+    return;
+  }
   if(!fileId||!gdriveToken){
     // Fix: Indikator blieb sonst auf "Speichere…" hängen; Änderungen lokal sichern
     if(dirty){_saveMobileBackup();setSaveInd('error','✗ Nicht verbunden – lokal gesichert');}
@@ -3231,6 +3340,7 @@ function renderList(resetScroll){
       +'<div class="task-card-title" style="color:var(--text)">'+esc(t.title||'(ohne Titel)')+'</div>'
       +'<div class="task-card-meta">'
       +(status?'<span class="badge status">'+esc(status)+'</span>':'')
+      +(_mobIsOfflinePinned(t.id)?'<span class="badge" style="background:#0f5132;color:#fff;border:1px solid #1a8a3c;">📴 Offline</span>':'')
       +(isRunning?'<span class="task-timer-badge" style="color:var(--text);font-size:12px;font-weight:600;margin-left:auto">⏱ '+formatTimerFor(t.id)+'</span>':'')
       +'</div>'
       +(()=>{ try {
@@ -3291,7 +3401,10 @@ function renderList(resetScroll){
           const dataUrl=await _mobPhotoGet(f.localKey);
           if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}
         }else if(f.driveId){
-          if(f.thumbnail){img.src=f.thumbnail;}
+          const _ok=f.editedDriveId||f.driveId;
+          const _off=await _mobOfflineGet(_ok);
+          if(_off&&_off.blob){img.src=URL.createObjectURL(_off.blob);}
+          else if(f.thumbnail){img.src=f.thumbnail;}
           else{const u=await _mobFetchThumb(f.driveId);if(u){img.src=u;f.thumbnail=u;}}
         }
       }catch(e){console.warn('[card-foto]',t.id,e);}
@@ -4499,7 +4612,8 @@ function renderDetail(t){
         +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📷 Fotos in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📷 kein Foto-Ordner</span>')
         +(t.gdriveOrdner?'<a href="'+escAttr(t.gdriveOrdner)+'" target="_blank" style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;">📎 Anhänge in Drive</a>':'<span style="flex:1;padding:10px 6px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;display:flex;align-items:center;justify-content:center;">📎 kein Anhang-Ordner</span>')
         +'</div>'
-        +'<button onclick="Dachplan.open()" style="width:100%;margin-bottom:12px;padding:13px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">🏠 Dachplan</button>';
+        +'<button onclick="Dachplan.open()" style="width:100%;margin-bottom:12px;padding:13px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">🏠 Dachplan</button>'
+        +'<button id="mobOfflineBtn" onclick="_mobOfflinePinTask(\''+escAttr(t.id)+'\',this)" style="width:100%;margin-bottom:12px;padding:13px;border-radius:8px;border:1px solid '+(_mobIsOfflinePinned(t.id)?'#1a8a3c':'var(--accent)')+';background:'+(_mobIsOfflinePinned(t.id)?'#0f5132':'var(--bg3)')+';color:'+(_mobIsOfflinePinned(t.id)?'#fff':'var(--text)')+';font-size:15px;font-weight:700;cursor:pointer;">'+(_mobIsOfflinePinned(t.id)?'✅ Offline mitgenommen':'📴 Offline mitnehmen')+'</button>';
     })()
     // ── v62: STANDORT (GPS / Adresse) ──
     +(()=>{
@@ -5579,6 +5693,8 @@ async function _fetchFotoBlob(driveId){
   // In-Memory-Cache zuerst
   if(_fotoBlobCache.has(driveId))return _fotoBlobCache.get(driveId);
   if(_fotoBlobInflight.has(driveId))return _fotoBlobInflight.get(driveId);
+  // Offline-Ablage zuerst: „mitgenommene" Fotos ohne Netz/Token anzeigen
+  try{const _off=await _mobOfflineGet(driveId);if(_off&&_off.blob){const _u=URL.createObjectURL(_off.blob);_fotoBlobCache.set(driveId,_u);return _u;}}catch(_e){}
   // HV-Bild IndexedDB pruefen: wenn HV-Bild das Vorschaubild bereits gecacht hat
   // (gleiche Origin -> gleiche IndexedDB), sofort zurueckgeben ohne API-Call.
   const hvCached = await _hvBildIdbLookup(driveId);
@@ -5662,8 +5778,8 @@ function _mobThumbFallback(img){
   img.dataset.fbDone='1';
   const id=img.getAttribute('data-foto-id');
   const localKey=img.getAttribute('data-local-key');
-  if(id&&gdriveToken){
-    // Drive-Blob holen
+  if(id){
+    // Drive-Blob holen (bzw. Offline-Ablage, falls „mitgenommen")
     img.removeAttribute('onerror');
     _fetchFotoBlob(id).then(u=>{
       if(u){img.src=u;img.style.display='';}
@@ -5758,9 +5874,12 @@ async function _openAttachGalleryMob(i){
   const name=a.name||'Datei';
   const isImg=a.type&&a.type.startsWith('image/');
   const isPdf=(a.type==='application/pdf')||(name.toLowerCase().endsWith('.pdf'));
+  // Offline-Ablage zuerst: „mitgenommene" Datei ohne Netz/Token öffnen
+  const _off=fid?await _mobOfflineGet(fid):null;
 
-  // Bild: Lightbox mit Drive-Fetch
+  // Bild: Lightbox mit Drive-Fetch (bzw. Offline-Blob)
   if(isImg&&fid){
+    if(_off&&_off.blob){openLightbox(URL.createObjectURL(_off.blob),name,'',{});return;}
     if(!(await ensureToken()))return;
     const viewUrl='https://drive.google.com/file/d/'+fid+'/view';
     const thumbSrc=a.data||('https://drive.google.com/thumbnail?id='+fid+'&sz=w400');
@@ -5771,6 +5890,11 @@ async function _openAttachGalleryMob(i){
     if(blob&&img&&lb&&lb.classList.contains('open')){
       img.src=blob;if(img.style.display==='none')img.style.display='';
     }
+    return;
+  }
+  // Offline-Blob (PDF/Datei) direkt aus lokaler Ablage öffnen
+  if(_off&&_off.blob){
+    window.open(URL.createObjectURL(_off.blob),'_blank');
     return;
   }
   // PDF oder Drive-Datei → in neuem Tab öffnen (sicherster Weg auf iOS)
