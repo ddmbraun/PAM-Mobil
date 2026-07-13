@@ -7624,6 +7624,7 @@ window.Dachplan=(function(){
   let imap=null,imgLayer=null,locMi=null,locCi=null;
   const resolveFolder=()=>{try{return extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');}catch(e){return null;}};
   const save=()=>{try{if(typeof forceSave==='function')forceSave();}catch(e){}};
+  let _vsT=null;const saveViewSoon=()=>{clearTimeout(_vsT);_vsT=setTimeout(()=>save(),800);};
 
   function css(){const s=document.createElement('style');s.textContent=
    '#dpScreen{position:fixed;inset:0;z-index:99990;background:#0f1115;color:#e7eaf0;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
@@ -7666,6 +7667,7 @@ window.Dachplan=(function(){
       +'<button class="dpb" id="dpAdd">➕ Pin</button>'
       +'<button class="dpb" id="dpList" title="Pin-Liste">☰</button>'
       +'<button class="dpb" id="dpFilter">Alle</button>'
+      +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen">🗑</button>'
       +'<input type="file" id="dpBildInput" accept="image/*" style="display:none">'
      +'</div>'
      +'<div id="dpMap"></div>'
@@ -7699,6 +7701,7 @@ window.Dachplan=(function(){
     q('#dpBild').onclick=()=>q('#dpBildInput').click();
     q('#dpBildInput').onchange=e=>{if(e.target.files[0])loadBild(e.target.files[0]);e.target.value='';};
     q('#dpCalib').onclick=startCalib;
+    q('#dpReset').onclick=resetPlan;
     q('#dpSearch').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();doSearch(q('#dpSearch').value);}});
     q('#dpAdd').onclick=()=>{addMode=!addMode;q('#dpAdd').classList.toggle('on',addMode);q('#dpAdd').textContent=addMode?'➕ Pin ✓':'➕ Pin';};
     q('#dpFilter').onclick=()=>{filter=filter==='alle'?'schaden':'alle';q('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';renderPins();};
@@ -7727,6 +7730,7 @@ window.Dachplan=(function(){
     esri.addTo(map);
     L.control.layers({'Luftbild':esri,'Karte':osm},null,{position:'topright'}).addTo(map);
     map.on('click',e=>{if(addMode)addPin(e.latlng.lat,e.latlng.lng);else say('Zum Setzen erst „➕ Pin" oben antippen');});
+    map.on('moveend',()=>{if(dp&&dp.base!=='bild'){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();saveViewSoon();}catch(_){}}});
     map.on('locationfound',e=>{if(locM)map.removeLayer(locM);if(locC)map.removeLayer(locC);
       locM=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#2d7ef7',fillOpacity:1}).addTo(map);
       locC=L.circle(e.latlng,{radius:e.accuracy,color:'#2d7ef7',weight:1,fillColor:'#2d7ef7',fillOpacity:.12}).addTo(map);});
@@ -7846,16 +7850,17 @@ window.Dachplan=(function(){
     if(typeof L==='undefined'){say('Karte braucht einmal Internet','error');return false;}
     imap=L.map(E.imapEl,{crs:L.CRS.Simple,zoomControl:true,minZoom:-5,maxZoom:6,attributionControl:false});
     imap.on('click',e=>{if(calStep>0){onCalibTap(e.latlng);return;}if(!dp.imgKey){say('Erst „📷 Bild" laden');return;}if(addMode)addImgPin(e.latlng);else say('Zum Setzen erst „➕ Pin" antippen');});
+    imap.on('moveend',()=>{if(dp&&dp.base==='bild'){try{dp.imgC=[imap.getCenter().lat,imap.getCenter().lng];dp.imgZ=imap.getZoom();saveViewSoon();}catch(_){}}});
     return true;
   }
-  function showBaseImg(url){if(!imap)return;try{if(imgLayer)imap.removeLayer(imgLayer);}catch(_){}imgLayer=L.imageOverlay(url,bnd()).addTo(imap);imap.setMaxBounds(bnd());imap.fitBounds(bnd());}
+  function showBaseImg(url){if(!imap)return;try{if(imgLayer)imap.removeLayer(imgLayer);}catch(_){}imgLayer=L.imageOverlay(url,bnd()).addTo(imap);imap.setMaxBounds(bnd());}
   async function loadBild(file){
     if(!/^image\//.test(file.type||'')){say('Bitte ein Bild wählen','error');return;}
     say('Bild wird geladen…');
     const sc=await scaleImg(file,2600,0.85);
     const key='dpbase_'+t.id;try{await _mobPhotoSave(key,sc.url);}catch(_){}
     dp.imgKey=key;dp.imgW=sc.w;dp.imgH=sc.h;
-    showBaseImg(sc.url);renderImgPins();save();say('Basisbild gesetzt');
+    showBaseImg(sc.url);try{imap.fitBounds(bnd());}catch(_){}renderImgPins();save();say('Basisbild gesetzt');
     const folderId=resolveFolder();
     if(folderId){try{if(typeof ensureToken==='function')await ensureToken();const f=await dataUrlToFile(sc.url,'dachplan_basis.jpg');const meta=await _uploadOneFotoToDrive(f,folderId);dp.imgDriveId=meta.id;save();}catch(e){say('Bild lokal gesichert – Drive-Upload später');}}
   }
@@ -7877,7 +7882,7 @@ window.Dachplan=(function(){
     if(isB){
       if(!ensureImap())return;
       setTimeout(()=>{try{imap.invalidateSize();}catch(e){}
-        if(dp.imgKey){_mobPhotoGet(dp.imgKey).then(url=>{if(url){showBaseImg(url);}renderImgPins();});}
+        if(dp.imgKey){_mobPhotoGet(dp.imgKey).then(url=>{if(url){showBaseImg(url);}try{if(dp.imgC&&dp.imgZ!=null)imap.setView(dp.imgC,dp.imgZ);else imap.fitBounds(bnd());}catch(_){}renderImgPins();});}
         else{say('Kein Bild – oben „📷 Bild" antippen');}
       },60);
     }else{
@@ -7933,6 +7938,15 @@ window.Dachplan=(function(){
       if(fr.nx<0||fr.nx>1||fr.ny<0||fr.ny>1)say('Standort außerhalb des Bildbereichs (±'+Math.round(pos.coords.accuracy)+' m)');
       else say('Standort gesetzt (±'+Math.round(pos.coords.accuracy)+' m)');
     },err=>{say('Standort nicht verfügbar: '+((err&&err.message)||'Freigabe/GPS'),'error');},{enableHighAccuracy:true,timeout:12000,maximumAge:0});
+  }
+  function resetPlan(){
+    if(!confirm('Dachplan komplett zurücksetzen? Alle Pins, das Basisbild und die Kalibrierung werden entfernt. Der Auftrag selbst bleibt.'))return;
+    try{if(dp.imgKey)_mobPhotoDelete(dp.imgKey);(dp.pins||[]).forEach(p=>(p.fotos||[]).forEach(f=>{if(f&&f.key)_mobPhotoDelete(f.key);}));}catch(_){}
+    dp.pins=[];dp.nextNr=1;dp.cal=null;dp.imgKey=null;dp.imgDriveId=null;dp.imgW=null;dp.imgH=null;dp.imgC=null;dp.imgZ=null;dp.center=null;dp.zoom=null;dp.base='map';
+    sel=null;calStep=0;
+    try{if(imgLayer&&imap){imap.removeLayer(imgLayer);imgLayer=null;}}catch(_){}
+    Object.keys(markers).forEach(k=>{try{if(map)map.removeLayer(markers[k]);}catch(_){}try{if(imap)imap.removeLayer(markers[k]);}catch(_){}delete markers[k];});
+    closeSheet();setBase('map');save();say('Dachplan zurückgesetzt');
   }
   function close(){
     if(map){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();}catch(e){}}
