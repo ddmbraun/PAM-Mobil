@@ -291,6 +291,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 /* ── 360° Pannellum Container ── */
 #pannellumContainer{display:none;position:absolute;inset:0;z-index:1;}
 #pannellumContainer.active{display:block;}
+/* ── Lightbox-Blätterpfeile (v99) ── */
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;border:none;border-radius:10px;background:rgba(0,0,0,.45);color:#fff;font-size:34px;line-height:1;z-index:10002;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+.lb-nav.prev{left:8px;}
+.lb-nav.next{right:8px;}
 /* ── Zeichen-Canvas ── */
 #drawCanvas{display:none;position:absolute;inset:0;cursor:crosshair;touch-action:none;z-index:20;}
 #drawCanvas.active{display:block;}
@@ -7354,6 +7358,8 @@ if ('serviceWorker' in navigator) {
       <button class="lb-draw-btn discard" onclick="event.stopPropagation();lbDiscardDraw()">✕ Verwerfen</button>
     </div>
   </div>
+  <button class="lb-nav prev" id="lbNavPrev" onclick="event.stopPropagation();_lbNavFoto(-1)" aria-label="Vorheriges Foto" style="display:none;">‹</button>
+  <button class="lb-nav next" id="lbNavNext" onclick="event.stopPropagation();_lbNavFoto(1)" aria-label="Nächstes Foto" style="display:none;">›</button>
   <button class="lb-close" onclick="event.stopPropagation();closeLightbox()" aria-label="Schließen">✕</button>
   <div class="lb-textbar" id="lbTextbar" onclick="event.stopPropagation()">
     <div class="lb-text-view">
@@ -7376,6 +7382,17 @@ if ('serviceWorker' in navigator) {
 let _lbCurrentUrl='';
 let _lbFotoIdx=-1;
 let _pannellumViewer=null;
+// v99: eindeutige 360°-Erkennung (wie Desktop b478). Equirectangular-Panoramen sind exakt 2:1;
+// die alte Regel „Ratio ≥ 1.8" traf normale breite Fotos → sie öffneten als Kugel, ohne Malen/Blättern.
+function _lbIs360Name(n){
+  n=String(n||'');
+  return /\.insp$/i.test(n)||/(^|[^a-z0-9])(pano|panorama)([^a-z0-9]|$)/i.test(n);
+}
+function _lbIs360Ratio(w,h){
+  if(!w||!h)return false;
+  const r=w/h;
+  return r>=1.95&&r<=2.05;
+}
 function openLightbox(src,name,externalUrl,opts){
   if(!src&&!externalUrl)return;
   opts=opts||{};
@@ -7387,7 +7404,7 @@ function openLightbox(src,name,externalUrl,opts){
   img.onerror=()=>{img.style.display='none';cap.textContent=(name||'')+' — Vorschau nicht verfügbar';};
   img.onload=()=>{
     cap.textContent=name||'';
-    if(img.naturalWidth&&img.naturalHeight&&(img.naturalWidth/img.naturalHeight)>=1.8){_lbInitPannellum(img.src);}
+    if(_lbIs360Name(name)||_lbIs360Ratio(img.naturalWidth,img.naturalHeight)){_lbInitPannellum(img.src);}
     else{img.style.display='';}
   };
   img.style.display=src?'':'none';
@@ -7397,15 +7414,22 @@ function openLightbox(src,name,externalUrl,opts){
   btnOrig.style.display=_lbCurrentUrl?'':'none';
   const shareBtn=document.getElementById('lbShareBtn');
   const bar=document.getElementById('lbTextbar');
+  const _navP=document.getElementById('lbNavPrev'),_navN=document.getElementById('lbNavNext');
   if(typeof opts.fotoIdx==='number'&&opts.fotoIdx>=0){
     _lbFotoIdx=opts.fotoIdx;
     _lbShowCaption(opts.caption||'');
     bar.classList.add('open');bar.classList.remove('editing');
     if(shareBtn)shareBtn.style.display='';
+    // v99: Blätterpfeile nur bei mehr als einem Task-Foto
+    const _t=currentTask(),_multi=!!(_t&&_t.fotos&&_t.fotos.length>1);
+    if(_navP)_navP.style.display=_multi?'':'none';
+    if(_navN)_navN.style.display=_multi?'':'none';
   }else{
     _lbFotoIdx=-1;
     bar.classList.remove('open','editing');
     if(shareBtn)shareBtn.style.display='none';
+    if(_navP)_navP.style.display='none';
+    if(_navN)_navN.style.display='none';
   }
   lb.classList.add('open');
   document.addEventListener('keydown',_lbOnKey);
@@ -7420,8 +7444,57 @@ function closeLightbox(){
 function _lbHandleTap(e){
   if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lbImg'))closeLightbox();
 }
-function _lbOnKey(e){if(e.key==='Escape')closeLightbox();}
+function _lbOnKey(e){
+  if(e.key==='Escape')closeLightbox();
+  else if(e.key==='ArrowLeft')_lbNavFoto(-1);
+  else if(e.key==='ArrowRight')_lbNavFoto(1);
+}
 function _lbResetZoom(){const img=document.getElementById('lbImg');if(img){img.style.transform='';img.style.transformOrigin='';}}
+// v99: Blättern durch die Task-Fotos (Pfeile, Wischgeste, Pfeiltasten) – mit Umlauf wie am Desktop
+function _lbNavFoto(dir){
+  if(_lbFotoIdx<0)return;
+  const t=currentTask();if(!t||!t.fotos||t.fotos.length<2)return;
+  const c=document.getElementById('drawCanvas');
+  if(c&&c.classList.contains('active'))return; // beim Malen nicht blättern
+  let ni=_lbFotoIdx+dir;
+  if(ni<0)ni=t.fotos.length-1;else if(ni>=t.fotos.length)ni=0;
+  openFotoFullscreen(ni);
+}
+(function(){
+  const lb=document.getElementById('lightbox');if(!lb)return;
+  // Wischgeste links/rechts = blättern (nur 1 Finger, deutlich horizontal, nicht beim Malen/360°)
+  let _tx=null,_ty=null;
+  lb.addEventListener('touchstart',function(e){
+    if(e.touches.length!==1){_tx=null;return;}
+    _tx=e.touches[0].clientX;_ty=e.touches[0].clientY;
+  },{passive:true});
+  lb.addEventListener('touchend',function(e){
+    if(_tx===null||!e.changedTouches||!e.changedTouches.length)return;
+    const dx=e.changedTouches[0].clientX-_tx,dy=e.changedTouches[0].clientY-_ty;
+    _tx=null;
+    if(_pannellumViewer)return;
+    const c=document.getElementById('drawCanvas');
+    if(c&&c.classList.contains('active'))return;
+    if(Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy))_lbNavFoto(dx<0?1:-1);
+  },{passive:true});
+  // v99: S-Pen malt sofort – Stift berührt das Foto → Malen startet automatisch mit dem
+  // zuletzt gewählten Werkzeug/Farbe (Finger bedient weiter normal: tippen/wischen/blättern)
+  lb.addEventListener('pointerdown',function(e){
+    try{
+      if(e.pointerType!=='pen')return;
+      if(_lbFotoIdx<0||_pannellumViewer)return;
+      const canvas=document.getElementById('drawCanvas');
+      if(!canvas||canvas.classList.contains('active'))return; // Malen läuft schon → normale Canvas-Handler
+      const img=document.getElementById('lbImg');
+      if(!img||!img.src||img.style.display==='none')return;
+      if(e.target&&e.target.closest&&e.target.closest('.lb-textbar,.lb-draw-bar,.lb-close,.lb-open,.lb-nav'))return;
+      lbStartDraw();
+      // ersten Strich direkt übernehmen (Canvas deckt die ganze Lightbox ab)
+      const r=canvas.getBoundingClientRect();
+      _onDrawDown({preventDefault:function(){},pointerId:e.pointerId,offsetX:e.clientX-r.left,offsetY:e.clientY-r.top});
+    }catch(err){console.warn('[Stift-Automalen]',err);}
+  },true);
+})();
 function _lbInitPannellum(blobUrl){
   const container=document.getElementById('pannellumContainer');
   const img=document.getElementById('lbImg');if(!container)return;
