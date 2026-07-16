@@ -811,9 +811,33 @@ async function _compressFoto(file){
     cv.getContext('2d').drawImage(img,0,0,w,h);
     const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',FOTO_JPEG_QUALITY));
     if(!blob||blob.size>=file.size)return file; // Kompression brachte nichts → Original
+    // v98: GPS + Aufnahmedatum + Kamera aus dem Original in die verkleinerte Datei zurückschreiben.
+    // Die Canvas-Kompression (v78) warf ALLE EXIF-Daten weg – seitdem zeigte das Desktop-ℹ keinen
+    // Aufnahmeort mehr. Orientation wird bewusst NICHT kopiert: der Browser dreht das Bild beim
+    // Dekodieren bereits richtig, das Canvas-JPEG ist also schon aufrecht.
+    let out=blob;
+    try{
+      if((file.type||'')==='image/jpeg'||/\.jpe?g$/i.test(file.name||'')){
+        if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+        if(window.piexif){
+          const origUrl=await _fileToDataUrl(file);
+          if(origUrl.slice(0,20).startsWith('data:image/jpeg')){
+            const src=piexif.load(origUrl);
+            const z=src['0th']||{},ex=src['Exif']||{};
+            const keep={'0th':{},'Exif':{},'GPS':src['GPS']||{},'1st':{},'thumbnail':null};
+            [piexif.ImageIFD.Make,piexif.ImageIFD.Model,piexif.ImageIFD.DateTime].forEach(t=>{if(z[t]!==undefined)keep['0th'][t]=z[t];});
+            [piexif.ExifIFD.DateTimeOriginal,piexif.ExifIFD.DateTimeDigitized].forEach(t=>{if(ex[t]!==undefined)keep['Exif'][t]=ex[t];});
+            if(Object.keys(keep['GPS']).length||Object.keys(keep['0th']).length||Object.keys(keep['Exif']).length){
+              const cmpUrl=await _fileToDataUrl(blob);
+              out=_dataUrlToBlob(piexif.insert(piexif.dump(keep),cmpUrl));
+            }
+          }
+        }
+      }
+    }catch(e){console.warn('[Foto-Kompression] EXIF-Übernahme übersprungen:',e);out=blob;}
     const name=String(file.name||'foto.jpg').replace(/\.(heic|heif|png|webp|jpeg|jpg)$/i,'')+'.jpg';
-    try{return new File([blob],name,{type:'image/jpeg',lastModified:file.lastModified||Date.now()});}
-    catch(_e){blob.name=name;return blob;} // ältere Browser ohne File-Konstruktor
+    try{return new File([out],name,{type:'image/jpeg',lastModified:file.lastModified||Date.now()});}
+    catch(_e){out.name=name;return out;} // ältere Browser ohne File-Konstruktor
   }catch(e){console.warn('[Foto-Kompression] Original wird verwendet:',e);return file;}
 }
 function _dataUrlToBlob(dataUrl){
@@ -7770,13 +7794,13 @@ window.Dachplan=(function(){
   function css(){const s=document.createElement('style');s.textContent=
    '#dpScreen{position:fixed;inset:0;z-index:99990;background:#0f1115;color:#e7eaf0;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
   +'#dpScreen.dp-hidden,.dp-hidden{display:none!important}'
-  +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap;z-index:2}'
+  +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap;position:relative;z-index:1400}'
   +'.dpb{min-height:42px;padding:0 11px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:14px;font-weight:600;cursor:pointer}'
   +'.dpb.on{background:#153a6b;border-color:#3b82f6}.dpb.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}'
   +'#dpMap{flex:1;min-height:0;background:#0d0f14}#dpImap{flex:1;min-height:0;background:#0d0f14}'
   +'.dpMk{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}'
   +'.dpMk span{transform:rotate(45deg);color:#fff;font-weight:800;font-size:12px}'
-  +'#dpListPanel{position:absolute;inset:0;background:#0f1115;z-index:1300;overflow:auto;padding:12px}'
+  +'#dpListPanel{position:absolute;top:58px;left:0;right:0;bottom:0;background:#0f1115;z-index:1300;overflow:auto;padding:12px}'
   +'.dpLi{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid #2a2f3a;border-radius:12px;margin-bottom:8px;background:#1e222b;cursor:pointer}'
   +'.dpLi .b{width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:13px}'
   +'.dpLi .tx{flex:1;min-width:0}.dpLi .tx b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dpLi .tx span{color:#9aa3b2;font-size:12px}'
@@ -7868,7 +7892,7 @@ window.Dachplan=(function(){
   function ensureMap(){
     if(map)return true;
     if(typeof L==='undefined'){say('Karte braucht einmal Internet zum Laden','error');return false;}
-    map=L.map(E.mapEl,{zoomControl:true});
+    map=L.map(E.mapEl,{zoomControl:true,zoomSnap:0.25,zoomDelta:0.5,wheelPxPerZoomLevel:120});
     const esri=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:21,maxNativeZoom:19,attribution:'Luftbild © Esri, Maxar'});
     const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'});
     esri.addTo(map);
@@ -8016,7 +8040,7 @@ window.Dachplan=(function(){
   function ensureImap(){
     if(imap)return true;
     if(typeof L==='undefined'){say('Karte braucht einmal Internet','error');return false;}
-    imap=L.map(E.imapEl,{crs:L.CRS.Simple,zoomControl:true,minZoom:-5,maxZoom:6,attributionControl:false});
+    imap=L.map(E.imapEl,{crs:L.CRS.Simple,zoomControl:true,minZoom:-5,maxZoom:6,attributionControl:false,zoomSnap:0.25,zoomDelta:0.5,wheelPxPerZoomLevel:120});
     imap.on('click',e=>{if(calStep>0){onCalibTap(e.latlng);return;}if(!dp.imgKey){say('Erst „📷 Bild" laden');return;}if(addMode)addImgPin(e.latlng);else say('Zum Setzen erst „➕ Pin" antippen');});
     imap.on('moveend',()=>{if(dp&&dp.base==='bild'){try{dp.imgC=[imap.getCenter().lat,imap.getCenter().lng];dp.imgZ=imap.getZoom();saveViewSoon();}catch(_){}}});
     return true;
