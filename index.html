@@ -3476,26 +3476,38 @@ function renderList(resetScroll){
   }).join('');
   if(runningTaskId)_startListTickLoop();else _stopListTickLoop();
   // Foto-Thumbnails asynchron nachladen
+  // v117: nicht nur Foto 1 – ist das erste Foto nicht ladbar (kein Drive/localKey, Upload-Leiche,
+  // Video), werden die nächsten Fotos probiert (max. 6), inkl. Weiterschalten bei Ladefehler.
   (async()=>{
+    const _srcFor=async f=>{
+      try{
+        if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))return f.localUrl;
+        if(f.localKey){const d=await _mobPhotoGet(f.localKey);if(d){f.localUrl=d;return d;}}
+        if(f.driveId){
+          const _ok=f.editedDriveId||f.driveId;
+          const _off=await _mobOfflineGet(_ok);
+          if(_off&&_off.blob)return URL.createObjectURL(_off.blob);
+          if(f.thumbnail)return f.thumbnail;
+          const u=await _mobFetchThumb(f.driveId);if(u){f.thumbnail=u;return u;}
+        }
+      }catch(e){}
+      return '';
+    };
     for(const t of filtered){
       if(!(t.fotos&&t.fotos.length))continue;
       const img=document.getElementById('cfoto_'+t.id);
       if(!img)continue;
-      const f=t.fotos[0];
-      try{
-        if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){
-          img.src=f.localUrl;
-        }else if(f.localKey){
-          const dataUrl=await _mobPhotoGet(f.localKey);
-          if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}
-        }else if(f.driveId){
-          const _ok=f.editedDriveId||f.driveId;
-          const _off=await _mobOfflineGet(_ok);
-          if(_off&&_off.blob){img.src=URL.createObjectURL(_off.blob);}
-          else if(f.thumbnail){img.src=f.thumbnail;}
-          else{const u=await _mobFetchThumb(f.driveId);if(u){img.src=u;f.thumbnail=u;}}
+      const cands=t.fotos.slice(0,6);
+      let ci=0;
+      const tryNext=async()=>{
+        while(ci<cands.length){
+          const src=await _srcFor(cands[ci++]);
+          if(src){img.style.display='';img.src=src;return;}
         }
-      }catch(e){console.warn('[card-foto]',t.id,e);}
+        img.style.display='none';
+      };
+      img.onerror=()=>{tryNext();};
+      try{await tryNext();}catch(e){console.warn('[card-foto]',t.id,e);}
     }
   })();
 }
@@ -4610,6 +4622,7 @@ function openDetail(id){
   const t=findTaskById(id);if(!t)return;
   currentTaskId=id;
   _currentDetailTab='info'; // Neuer Task → immer auf Task-Info starten
+  _setTimerCollapsed(true); // v117: Uhr startet in jedem Task eingeklappt (Zustand hing sonst dauerhaft am letzten Task)
   document.getElementById('listScreen').classList.add('hidden');
   document.getElementById('detailScreen').classList.remove('hidden');
   renderDetail(t);
