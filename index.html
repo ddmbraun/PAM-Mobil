@@ -64,9 +64,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   .task-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-content:start}
   .task-list .task-card{margin-bottom:0}
   .board-chip{font-size:16px;padding:13px 20px}
-  #detailBody{display:grid;grid-template-columns:1fr 1fr;gap:0 12px;align-items:start}
-  #detailBody>*{grid-column:1/-1}
-  #detailBody>.sect{grid-column:auto}
+  /* v115: Task-Detail NICHT mehr zweispaltig – überlappte auf dem Tab S10 FE quer
+     (Befund Frank: quer unlesbar, hochkant ok). Sektionen jetzt immer untereinander. */
 }
 .task-card-body{flex:1;min-width:0}
 .task-card-title{font-weight:600;font-size:17px;margin:0 0 6px;line-height:1.3}
