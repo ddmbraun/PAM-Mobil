@@ -4738,14 +4738,17 @@ function renderDetail(t){
     +(()=>{
       const hasCoords=t.lat&&t.lon;
       const mapHref=hasCoords?('https://www.google.com/maps/search/?api=1&query='+t.lat+','+t.lon):'';
-      let h='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
-        +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));font-weight:600;cursor:pointer;">📍 Standort</button>';
+      // v108: Standort-Knopf und Adresse in zwei eigene Zeilen (Wunsch Frank – Adresse volle Breite)
+      let h='<div style="margin-bottom:10px;">'
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+        +'<button onclick="_captureStandort()" style="flex:1;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));font-weight:600;cursor:pointer;">📍 Standort erfassen</button>'
+        +'<button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));cursor:pointer;">✏️</button>' // v79
+        +(hasCoords?'<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;flex-shrink:0;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>':'')
+        +'</div>';
       // v69: ein einziges Adress-Datenfeld, live über alle Eingabefelder synchronisiert
       // (kein voller Re-Render mehr beim Verlassen → kein Fokus-/Cursor-Verlust).
-      h+='<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:150px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));">'
-        +'<button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));cursor:pointer;">✏️</button>'; // v79
-      if(hasCoords)h+='<a href="'+escAttr(mapHref)+'" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none;">'+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>';
-      h+='</div>';
+      h+='<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="width:100%;box-sizing:border-box;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));">'
+        +'</div>';
       return h;
     })()
     // ── ZEIT/TERMIN BADGE ──
@@ -4807,12 +4810,7 @@ function renderDetail(t){
       +'<button class="add-btn" onclick="addKontakt()">+ Kontakt hinzufügen</button>'
     +'</div></div>':'')
     // ── TERMINE (nur Baustelle) ──
-    +(!isNotiz?'<div class="sect'+oc('Termine')+'" data-sect="Termine"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Außer-Haus-Termine ('+termine.length+')</div><div class="sect-body">'
-      +'<div id="termineList">'+renderTermineRows(termine)+'</div>'
-      +'<button class="add-btn" onclick="addTermin()">+ Termin hinzufügen</button>'
-      +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
-    +'</div></div>':'')
-    // ── NOTIZEN ──
+    // ── NOTIZEN ── (Außer-Haus-Termine: seit v108 weiter unten, direkt über der Zeiterfassung)
     +'<div class="sect'+oc('Notizen')+'" data-sect="Notizen"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizprotokoll'
     +(notizVerlauf.length>0?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+notizVerlauf.length+')</span>':'')
     +'</div><div class="sect-body">'
@@ -4833,6 +4831,12 @@ function renderDetail(t){
         +'<button class="add-btn" style="width:44px;flex-shrink:0;font-size:18px;padding:0" onclick="addMCkItem()">+</button>'
       +'</div>'
     +'</div></div>'
+    // ── AUSSER-HAUS-TERMINE ── (v108: hierher verschoben, direkt über Zeiterfassung – Wunsch Frank)
+    +(!isNotiz?'<div class="sect'+oc('Termine')+'" data-sect="Termine"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Außer-Haus-Termine ('+termine.length+')</div><div class="sect-body">'
+      +'<div id="termineList">'+renderTermineRows(termine)+'</div>'
+      +'<button class="add-btn" onclick="addTermin()">+ Termin hinzufügen</button>'
+      +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
+    +'</div></div>':'')
     // ── ZEITERFASSUNG ──
     +'<div class="sect'+oc('Zeiterfassung')+'" data-sect="Zeiterfassung"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⏱ Zeiterfassung ('+zeiten.length+')</div><div class="sect-body">'
       +'<div id="zeitenList">'+renderZeitenRows(zeiten)+'</div>'
@@ -5496,14 +5500,15 @@ function renderNotizen(list){
   const sorted=[...open.slice().reverse(),...done.slice().reverse()];
   return sorted.map(({n,i})=>{
     const isDone=!!n.done;
+    // v108: Antippen der Notiz öffnet Lese-Popup; Erledigt-Kreis in hellem Blau (accent2, seit v107 ist accent dunkel)
     return '<div class="notiz-entry" style="'+(isDone?'opacity:.55;':'')+'">'
-      +'<button onclick="toggleNotizDone('+i+')" style="float:left;margin-right:8px;min-width:32px;width:32px;height:32px;border-radius:50%;border:1.5px solid var(--accent);background:'+(isDone?'var(--accent)':'transparent')+';color:'+(isDone?'#fff':'var(--accent)')+';font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;">'+(isDone?'✓':'○')+'</button>'
-      +'<div style="overflow:hidden;">'
-        +(isDone?'<s style="color:var(--text2);font-size:13px;">'+esc(n.text||'')+'</s>':'<span style="font-size:13px;">'+esc(n.text||'')+'</span>')
-        +'<div style="font-size:10px;color:var(--text2);margin-top:3px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
+      +'<button onclick="toggleNotizDone('+i+')" style="float:left;margin-right:8px;min-width:32px;width:32px;height:32px;border-radius:50%;border:1.5px solid var(--accent2);background:'+(isDone?'var(--accent2)':'transparent')+';color:'+(isDone?'#08102e':'var(--accent2)')+';font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;flex-shrink:0;">'+(isDone?'✓':'○')+'</button>'
+      +'<div style="overflow:hidden;cursor:pointer;" onclick="openNotizPopup('+i+')">'
+        +(isDone?'<s style="color:var(--text2);font-size:calc(14px * var(--m-scale,1));">'+esc(n.text||'')+'</s>':'<span style="font-size:calc(14px * var(--m-scale,1));">'+esc(n.text||'')+'</span>')
+        +'<div style="font-size:calc(11px * var(--m-scale,1));color:var(--text2);margin-top:3px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">'
           +'<span>'+esc(_fmtNotizTs(n.ts||''))+'</span>'
           +(isDone?'<span style="color:var(--green)">· ✓ '+esc(_fmtNotizTs(n.doneTs||''))+'</span>':'')
-          +'<button class="rm-btn" style="height:22px;font-size:11px;padding:0 6px;margin-left:auto;" onclick="removeNotiz('+i+')">✕</button>'
+          +'<button class="rm-btn" style="height:22px;font-size:11px;padding:0 6px;margin-left:auto;" onclick="event.stopPropagation();removeNotiz('+i+')">✕</button>'
         +'</div>'
       +'</div>'
     +'</div>';
@@ -5584,6 +5589,53 @@ function toggleNotizDone(idx){
   scheduleSave();
   const el=document.getElementById('notizList');if(el)el.innerHTML=renderNotizen(t.notizVerlauf);
   const el2=document.getElementById('bauNotizList');if(el2)el2.innerHTML=renderNotizen(t.notizVerlauf);
+}
+// ══ v108: NOTIZ-GROSSANSICHT (Popup zum besseren Lesen, Wunsch Frank) ══
+function closeNotizPopup(){const o=document.getElementById('notizPopup');if(o)o.remove();}
+function openNotizPopup(idx){
+  const t=currentTask();if(!t||!t.notizVerlauf||!t.notizVerlauf[idx])return;
+  const n=t.notizVerlauf[idx];
+  closeNotizPopup();
+  const done=!!n.done;
+  const ov=document.createElement('div');
+  ov.id='notizPopup';
+  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:18px;';
+  ov.addEventListener('click',e=>{if(e.target===ov)closeNotizPopup();});
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;max-width:560px;width:100%;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,.5);">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0;">'
+      +'<span style="color:var(--text);font-weight:600;font-size:calc(15px * var(--m-scale,1));flex:1;">📝 Notiz vom '+esc(_fmtNotizTs(n.ts||''))+'</span>'
+      +'<button onclick="closeNotizPopup()" style="background:transparent;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px 8px;">✕</button>'
+    +'</div>'
+    +'<div id="notizPopupBody" style="overflow-y:auto;">'
+      +'<div style="color:'+(done?'var(--text2)':'var(--text)')+';font-size:calc(17px * var(--m-scale,1));line-height:1.6;white-space:pre-wrap;word-break:break-word;'+(done?'text-decoration:line-through;':'')+'">'+esc(n.text||'')+'</div>'
+      +(done?'<div style="font-size:calc(12px * var(--m-scale,1));color:var(--green);margin-top:8px;">✓ erledigt am '+esc(_fmtNotizTs(n.doneTs||''))+'</div>':'')
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin-top:14px;flex-shrink:0;">'
+      +'<button onclick="_notizPopupEdit('+idx+')" style="flex:1;min-height:48px;padding:10px 4px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">✏️ Bearbeiten</button>'
+      +'<button onclick="toggleNotizDone('+idx+');openNotizPopup('+idx+');" style="flex:1;min-height:48px;padding:10px 4px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">'+(done?'↩ Wieder öffnen':'○ Erledigt')+'</button>'
+      +'<button onclick="closeNotizPopup()" style="flex:1;min-height:48px;padding:10px 4px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:calc(14px * var(--m-scale,1));font-weight:700;cursor:pointer;">Schließen</button>'
+    +'</div>'
+  +'</div>';
+  document.body.appendChild(ov);
+}
+function _notizPopupEdit(idx){
+  const t=currentTask();if(!t||!t.notizVerlauf||!t.notizVerlauf[idx])return;
+  const n=t.notizVerlauf[idx];
+  const body=document.getElementById('notizPopupBody');if(!body)return;
+  body.innerHTML='<textarea id="notizPopupTA" style="width:100%;box-sizing:border-box;min-height:140px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;font-size:calc(17px * var(--m-scale,1));line-height:1.5;font-family:inherit;resize:vertical;">'+esc(n.text||'')+'</textarea>'
+    +'<button onclick="_notizPopupSave('+idx+')" style="width:100%;margin-top:8px;min-height:48px;padding:11px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-weight:700;font-size:calc(14px * var(--m-scale,1));cursor:pointer;">✓ Speichern</button>';
+  const ta=document.getElementById('notizPopupTA');if(ta){ta.focus();}
+}
+function _notizPopupSave(idx){
+  const t=currentTask();if(!t||!t.notizVerlauf||!t.notizVerlauf[idx])return;
+  const ta=document.getElementById('notizPopupTA');if(!ta)return;
+  const txt=ta.value.trim();
+  if(!txt){toast('Notiz ist leer – nicht gespeichert','error');return;}
+  t.notizVerlauf[idx].text=txt;
+  forceSave();
+  const el=document.getElementById('notizList');if(el)el.innerHTML=renderNotizen(t.notizVerlauf);
+  const el2=document.getElementById('bauNotizList');if(el2)el2.innerHTML=renderNotizen(t.notizVerlauf);
+  openNotizPopup(idx);
 }
 
 // ══ CHECKLISTE ══
