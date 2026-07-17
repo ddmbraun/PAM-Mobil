@@ -6513,6 +6513,8 @@ let _skizzeLastX=0,_skizzeLastY=0;
 let _skizzeScale=1,_skizzePanX=0,_skizzePanY=0;
 let _skizzePinching=false,_skizzePinchDist=0,_skizzePinchMidX=0,_skizzePinchMidY=0;
 let _skizzeEditingTaskId=null;
+let _skizzePenSeen=false;      // v111: sobald der S-Pen einmal gemalt hat → Finger verschieben/zoomen statt malen
+let _skizzeFingerPan=null;     // v111: Ein-Finger-Verschieben im Stift-Modus
 
 function renderSkizzeTab(t){
   const body=document.getElementById('detailBodySkizze');
@@ -6566,11 +6568,11 @@ function _skizzeOpen(){
     const ctx=canvas.getContext('2d');
     ctx.fillStyle='#ffffff';
     ctx.fillRect(0,0,canvas.width,canvas.height);
+    canvas.style.transformOrigin='0 0';canvas.style.transform=''; // v111 FIX: stand außerhalb, wo `canvas` nicht existiert → ReferenceError, Werkzeug-Reset darunter lief nie
     _skizzeBindEvents(canvas);
   });
   // Werkzeug- und Zoom-Reset
-  _skizzeScale=1;_skizzePanX=0;_skizzePanY=0;
-  canvas.style.transformOrigin='0 0';canvas.style.transform='';
+  _skizzeScale=1;_skizzePanX=0;_skizzePanY=0;_skizzeFingerPan=null;
   const _zrb=document.getElementById('skizzeZoomResetBtn');if(_zrb)_zrb.style.display='none';
   _skizzeEraser=false;
   _skizzeColor='#111111';
@@ -6587,23 +6589,48 @@ function _skizzeBindEvents(canvas){
     canvas.style.transform='translate('+_skizzePanX+'px,'+_skizzePanY+'px) scale('+_skizzeScale+')';
     _skizzeUpdateZoomBtn();
   }
+  // v111: STIFT MALT, FINGER VERSCHIEBEN/ZOOMEN (wie Samsung Notes; Befund Frank: Zwei-Finger-Zoom
+  // malte los, weil der erste Finger schon als Strich zählte). S-Pen/Maus laufen über Pointer-Events;
+  // sobald der Stift einmal gemalt hat (_skizzePenSeen), verschiebt EIN Finger und zoomen ZWEI Finger.
+  // Ohne Stift (z.B. iPhone) malt ein Finger weiter wie bisher.
+  canvas.onpointerdown=e=>{
+    if(e.pointerType==='touch')return; // Finger → Touch-Handler unten
+    e.preventDefault();
+    if(e.pointerType==='pen')_skizzePenSeen=true;
+    const c=_toCanvas(e.clientX,e.clientY);
+    _skizzeDrawing=true;_skizzeLastX=c.x;_skizzeLastY=c.y;
+    try{canvas.setPointerCapture(e.pointerId);}catch(_){}
+  };
+  canvas.onpointermove=e=>{
+    if(e.pointerType==='touch')return;
+    if(!_skizzeDrawing)return;
+    const c=_toCanvas(e.clientX,e.clientY);
+    _skizzeDraw(canvas,c.x,c.y);
+  };
+  canvas.onpointerup=canvas.onpointercancel=e=>{if(e.pointerType!=='touch')_skizzeDrawing=false;};
   canvas.ontouchstart=e=>{
     e.preventDefault();
     if(e.touches.length>=2){
-      _skizzeDrawing=false;_skizzePinching=true;
+      _skizzeDrawing=false;_skizzePinching=true;_skizzeFingerPan=null;
       _skizzePinchDist=_pDist(e.touches);
       _skizzePinchMidX=(e.touches[0].clientX+e.touches[1].clientX)/2;
       _skizzePinchMidY=(e.touches[0].clientY+e.touches[1].clientY)/2;
       return;
     }
     _skizzePinching=false;
+    if(_skizzePenSeen){
+      // Stift-Modus: EIN Finger verschiebt den Ausschnitt
+      _skizzeFingerPan={x:e.touches[0].clientX,y:e.touches[0].clientY,px:_skizzePanX,py:_skizzePanY};
+      _skizzeDrawing=false;
+      return;
+    }
     const c=_toCanvas(e.touches[0].clientX,e.touches[0].clientY);
     _skizzeDrawing=true;_skizzeLastX=c.x;_skizzeLastY=c.y;
   };
   canvas.ontouchmove=e=>{
     e.preventDefault();
     if(e.touches.length>=2){
-      _skizzePinching=true;_skizzeDrawing=false;
+      _skizzePinching=true;_skizzeDrawing=false;_skizzeFingerPan=null;
       const nd=_pDist(e.touches);
       const mx=(e.touches[0].clientX+e.touches[1].clientX)/2;
       const my=(e.touches[0].clientY+e.touches[1].clientY)/2;
@@ -6619,14 +6646,17 @@ function _skizzeBindEvents(canvas){
       _applyTf();
       return;
     }
+    if(_skizzeFingerPan){
+      _skizzePanX=_skizzeFingerPan.px+(e.touches[0].clientX-_skizzeFingerPan.x);
+      _skizzePanY=_skizzeFingerPan.py+(e.touches[0].clientY-_skizzeFingerPan.y);
+      _applyTf();
+      return;
+    }
     if(!_skizzeDrawing)return;
     const c=_toCanvas(e.touches[0].clientX,e.touches[0].clientY);
     _skizzeDraw(canvas,c.x,c.y);
   };
-  canvas.ontouchend=e=>{e.preventDefault();_skizzeDrawing=false;if(e.touches.length<2)_skizzePinching=false;};
-  canvas.onmousedown=e=>{const c=_toCanvas(e.clientX,e.clientY);_skizzeDrawing=true;_skizzeLastX=c.x;_skizzeLastY=c.y;};
-  canvas.onmousemove=e=>{if(!_skizzeDrawing)return;const c=_toCanvas(e.clientX,e.clientY);_skizzeDraw(canvas,c.x,c.y);};
-  canvas.onmouseup=()=>{_skizzeDrawing=false;};
+  canvas.ontouchend=e=>{e.preventDefault();_skizzeDrawing=false;if(e.touches.length<2){_skizzePinching=false;}if(e.touches.length===0)_skizzeFingerPan=null;};
   canvas.addEventListener('wheel',e=>{
     e.preventDefault();
     const tbOffset=_tbh();
