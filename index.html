@@ -303,7 +303,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .lightbox .lb-text-edit-form{display:none;gap:6px;align-items:stretch;}
 .lightbox .lb-textbar.editing .lb-text-edit-form{display:flex;}
 .lightbox .lb-textbar.editing .lb-text-view{display:none;}
-.lightbox .lb-text-edit-form textarea{flex:1;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit;min-height:56px;resize:vertical;}
+.lightbox .lb-text-edit-form textarea{flex:1;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:10px 12px;font-size:17px;font-family:inherit;min-height:130px;resize:vertical;} /* v112: größer für S-Pen-Handschrift (war 56px/13px) */
 .lightbox .lb-text-edit-form button{background:rgba(255,255,255,.9);color:#000;border:none;padding:6px 10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;}
 .lightbox .lb-text-edit-form button.cancel{background:rgba(255,255,255,.2);color:#fff;}
 /* ── 360° Pannellum Container ── */
@@ -504,6 +504,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <div style="width:1px;height:28px;background:rgba(255,255,255,0.2);margin:0 2px;"></div>
     <!-- Radierer -->
     <button onclick="_skizzeSetEraser()" id="skizzeEraserBtn" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#fff;font-size:18px;padding:4px 8px;cursor:pointer;" title="Radierer">🧹</button>
+    <!-- v112: Hand-Werkzeug – Stift verschiebt statt zu malen (Samsung blockiert Finger, solange der S-Pen nah dran ist) -->
+    <button onclick="_skizzeToggleHand()" id="skizzeHandBtn" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#fff;font-size:18px;padding:4px 8px;cursor:pointer;" title="Verschieben (Stift bewegt den Ausschnitt statt zu malen)">✋</button>
     <!-- Alles löschen -->
     <button onclick="_skizzeClear()" style="background:rgba(255,255,255,0.05);border:2px solid transparent;border-radius:6px;color:#e74c3c;font-size:18px;padding:4px 8px;cursor:pointer;" title="Alles löschen">🗑</button>
     <!-- Zoom-Reset (nur sichtbar wenn gezoomt) -->
@@ -6515,6 +6517,8 @@ let _skizzePinching=false,_skizzePinchDist=0,_skizzePinchMidX=0,_skizzePinchMidY
 let _skizzeEditingTaskId=null;
 let _skizzePenSeen=false;      // v111: sobald der S-Pen einmal gemalt hat → Finger verschieben/zoomen statt malen
 let _skizzeFingerPan=null;     // v111: Ein-Finger-Verschieben im Stift-Modus
+let _skizzeHand=false;         // v112: ✋-Werkzeug – Stift verschiebt statt zu malen
+let _skizzePointerPan=null;    // v112: Verschieben per Stift/Maus (Hand-Modus oder S-Pen-Seitentaste)
 
 function renderSkizzeTab(t){
   const body=document.getElementById('detailBodySkizze');
@@ -6573,6 +6577,8 @@ function _skizzeOpen(){
   });
   // Werkzeug- und Zoom-Reset
   _skizzeScale=1;_skizzePanX=0;_skizzePanY=0;_skizzeFingerPan=null;
+  _skizzePointerPan=null;
+  if(_skizzeHand)_skizzeToggleHand(); // v112: ✋ beim Öffnen immer aus
   const _zrb=document.getElementById('skizzeZoomResetBtn');if(_zrb)_zrb.style.display='none';
   _skizzeEraser=false;
   _skizzeColor='#111111';
@@ -6593,21 +6599,36 @@ function _skizzeBindEvents(canvas){
   // malte los, weil der erste Finger schon als Strich zählte). S-Pen/Maus laufen über Pointer-Events;
   // sobald der Stift einmal gemalt hat (_skizzePenSeen), verschiebt EIN Finger und zoomen ZWEI Finger.
   // Ohne Stift (z.B. iPhone) malt ein Finger weiter wie bisher.
+  canvas.oncontextmenu=e=>e.preventDefault(); // v112: S-Pen-Seitentaste soll kein Kontextmenü öffnen
   canvas.onpointerdown=e=>{
     if(e.pointerType==='touch')return; // Finger → Touch-Handler unten
     e.preventDefault();
     if(e.pointerType==='pen')_skizzePenSeen=true;
+    // v112: Hand-Modus (✋) oder gehaltene S-Pen-Seitentaste → Stift VERSCHIEBT statt zu malen.
+    // Nötig, weil Samsung Finger-Gesten unterdrückt, solange der S-Pen nah am Display ist.
+    if(_skizzeHand||(e.pointerType==='pen'&&(e.buttons&2))){
+      _skizzePointerPan={x:e.clientX,y:e.clientY,px:_skizzePanX,py:_skizzePanY};
+      _skizzeDrawing=false;
+      try{canvas.setPointerCapture(e.pointerId);}catch(_){}
+      return;
+    }
     const c=_toCanvas(e.clientX,e.clientY);
     _skizzeDrawing=true;_skizzeLastX=c.x;_skizzeLastY=c.y;
     try{canvas.setPointerCapture(e.pointerId);}catch(_){}
   };
   canvas.onpointermove=e=>{
     if(e.pointerType==='touch')return;
+    if(_skizzePointerPan){
+      _skizzePanX=_skizzePointerPan.px+(e.clientX-_skizzePointerPan.x);
+      _skizzePanY=_skizzePointerPan.py+(e.clientY-_skizzePointerPan.y);
+      _applyTf();
+      return;
+    }
     if(!_skizzeDrawing)return;
     const c=_toCanvas(e.clientX,e.clientY);
     _skizzeDraw(canvas,c.x,c.y);
   };
-  canvas.onpointerup=canvas.onpointercancel=e=>{if(e.pointerType!=='touch')_skizzeDrawing=false;};
+  canvas.onpointerup=canvas.onpointercancel=e=>{if(e.pointerType!=='touch'){_skizzeDrawing=false;_skizzePointerPan=null;}};
   canvas.ontouchstart=e=>{
     e.preventDefault();
     if(e.touches.length>=2){
@@ -6618,8 +6639,8 @@ function _skizzeBindEvents(canvas){
       return;
     }
     _skizzePinching=false;
-    if(_skizzePenSeen){
-      // Stift-Modus: EIN Finger verschiebt den Ausschnitt
+    if(_skizzePenSeen||_skizzeHand){
+      // Stift-Modus oder ✋: EIN Finger verschiebt den Ausschnitt
       _skizzeFingerPan={x:e.touches[0].clientX,y:e.touches[0].clientY,px:_skizzePanX,py:_skizzePanY};
       _skizzeDrawing=false;
       return;
@@ -6695,6 +6716,15 @@ function _skizzeUpdateZoomBtn(){
     btn.style.display='';
     btn.textContent=_skizzeScale.toFixed(1)+'× 🔍';
   }else{btn.style.display='none';}
+}
+// v112: ✋-Werkzeug umschalten – Stift (und ein Finger) verschieben statt zu malen
+function _skizzeToggleHand(){
+  _skizzeHand=!_skizzeHand;
+  const b=document.getElementById('skizzeHandBtn');
+  if(b){
+    b.style.background=_skizzeHand?'rgba(255,255,255,0.35)':'rgba(255,255,255,0.05)';
+    b.style.borderColor=_skizzeHand?'#fff':'transparent';
+  }
 }
 function _skizzeSetColor(c){_skizzeEraser=false;_skizzeColor=c;_skizzeUpdateUI();}
 function _skizzeSetSize(s){_skizzeSize=s;_skizzeUpdateUI();}
@@ -7807,9 +7837,71 @@ function _lbClosePannellum(){
   const img=document.getElementById('lbImg');if(img)img.style.display='';
 }
 function _lbShowCaption(text){const lbl=document.getElementById('lbTextViewLabel');if(lbl)lbl.textContent=text||'';}
+// v113: „📝 Text" öffnet ein GROSSES Schreib-Popup statt des schmalen Streifens –
+// genug Fläche für S-Pen-Handschrift (Samsung „S Pen zu Text" schreibt direkt ins Feld).
+let _capDiktatRec=null;
 function lbEditCaption(){
-  const bar=document.getElementById('lbTextbar'),inp=document.getElementById('lbTextInput'),lbl=document.getElementById('lbTextViewLabel');
-  if(!bar||!inp)return;inp.value=lbl?lbl.textContent:'';bar.classList.add('editing');setTimeout(()=>inp.focus(),50);
+  const lbl=document.getElementById('lbTextViewLabel');
+  const cur=lbl?lbl.textContent:'';
+  _capPopupClose();
+  const ov=document.createElement('div');
+  ov.id='captionPopup';
+  ov.style.cssText='position:fixed;inset:0;z-index:10030;background:rgba(0,0,0,.75);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px 14px;';
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;width:100%;max-width:720px;display:flex;flex-direction:column;gap:10px;">'
+    +'<div style="display:flex;align-items:center;gap:8px;">'
+      +'<span style="color:var(--text);font-weight:600;font-size:16px;flex:1;">📝 Text zum Foto</span>'
+      +'<button onclick="_capPopupClose()" style="background:transparent;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px 8px;">✕</button>'
+    +'</div>'
+    +'<textarea id="capPopupTA" placeholder="Beschreibung zum Foto – mit dem Stift direkt hineinschreiben…" style="width:100%;box-sizing:border-box;height:52vh;background:#ffffff;color:#111111;border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:19px;line-height:1.6;font-family:inherit;resize:vertical;"></textarea>'
+    +'<div style="display:flex;gap:8px;">'
+      +'<button id="capPopupDiktat" onclick="_capPopupDiktat()" style="flex:1;min-height:50px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;">🎤 Diktieren</button>'
+      +'<button onclick="_capPopupClose()" style="flex:1;min-height:50px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;">Abbrechen</button>'
+      +'<button onclick="_capPopupSave()" style="flex:1;min-height:50px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">✓ Speichern</button>'
+    +'</div>'
+  +'</div>';
+  document.body.appendChild(ov);
+  const ta=document.getElementById('capPopupTA');if(ta){ta.value=cur;setTimeout(()=>ta.focus(),80);}
+}
+function _capPopupClose(){
+  if(_capDiktatRec){try{_capDiktatRec.stop();}catch(_){}_capDiktatRec=null;}
+  const o=document.getElementById('captionPopup');if(o)o.remove();
+}
+function _capPopupSave(){
+  const ta=document.getElementById('capPopupTA');if(!ta)return;
+  const text=ta.value.trim();
+  _lbShowCaption(text);
+  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){t.fotos[_lbFotoIdx].caption=text;scheduleSave();if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
+  _capPopupClose();
+}
+function _capPopupDiktat(){
+  if(_capDiktatRec){try{_capDiktatRec.stop();}catch(_){}return;}
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    toast('Spracherkennung nicht verfügbar (Chrome/Android empfohlen)','error');return;
+  }
+  const ta=document.getElementById('capPopupTA'),btn=document.getElementById('capPopupDiktat');
+  if(!ta)return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const r=new SR();
+  r.lang='de-DE';r.interimResults=true;r.maxAlternatives=1;r.continuous=true;
+  _capDiktatRec=r;
+  const base=ta.value?(ta.value.trim()+' '):'';
+  let finalText='';
+  if(btn){btn.style.background='var(--orange)';btn.style.color='#111';btn.textContent='⏺ Stoppen';}
+  r.onresult=function(e){
+    let final='',interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal)final+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
+    }
+    if(final){finalText+=((finalText?' ':'')+final.trim());}
+    ta.value=base+finalText+(interim?' …'+interim:'');
+  };
+  r.onerror=function(){_capDiktatRec=null;if(btn){btn.style.background='var(--bg3)';btn.style.color='var(--text)';btn.textContent='🎤 Diktieren';}};
+  r.onend=function(){
+    _capDiktatRec=null;ta.value=base+finalText;
+    if(btn){btn.style.background='var(--bg3)';btn.style.color='var(--text)';btn.textContent='🎤 Diktieren';}
+  };
+  r.start();
 }
 function lbSaveCaption(){
   const inp=document.getElementById('lbTextInput'),bar=document.getElementById('lbTextbar');if(!inp)return;
