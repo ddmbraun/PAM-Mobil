@@ -3648,9 +3648,12 @@ function _renderSchnellArchiv(t){
   const list=document.getElementById('schnellArchivList');
   if(!list)return;
   // localKey ebenfalls berücksichtigen – nach Reload fehlt localUrl (vom Replacer entfernt)
-  const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId||f.localKey));
+  // v109 FIX: Klick rief openFotoViewer auf – die Funktion gibt es nicht, Tippen tat NICHTS.
+  // Jetzt echte Vollbild-Ansicht (openFotoFullscreen) mit dem ORIGINAL-Index in t.fotos
+  // (der gefilterte Index zeigte sonst aufs falsche Foto).
+  const fotos=(t.fotos||[]).map((f,oi)=>({f,oi})).filter(x=>x.f&&(x.f.localUrl||x.f.url||x.f.driveId||x.f.localKey));
   list.innerHTML='';
-  fotos.forEach((f,fi)=>{
+  fotos.forEach(({f,oi})=>{
     const div=document.createElement('div');
     div.style.cssText='aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;';
     const img=document.createElement('img');
@@ -3665,7 +3668,7 @@ function _renderSchnellArchiv(t){
       _mobPhotoGet(f.localKey).then(dataUrl=>{if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}else{img.style.display='none';}});
     }
     div.appendChild(img);
-    div.onclick=()=>{if(typeof openFotoViewer==='function')openFotoViewer(t,fi);};
+    div.onclick=()=>openFotoFullscreen(oi);
     list.appendChild(div);
   });
 }
@@ -6319,6 +6322,13 @@ async function uploadFoto(files){
     renderSchnellTab(t);
     if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs[fotoObjs.length-1].fo,t);
   }
+  // v109: EIN neues Foto (Kamera) → direkt Vollbild mit aufgeklapptem Textfeld öffnen
+  // (Wunsch Frank – vorher musste man das Foto erst in der Foto-Sektion suchen).
+  // Nicht im Schnell-Tab (der hat seine eigene Vorschau + Notizfeld). Upload läuft im Hintergrund weiter.
+  if(fotoObjs.length===1&&_currentDetailTab!=='schnell'){
+    const _ni=t.fotos.indexOf(fotoObjs[0].fo);
+    if(_ni>=0){try{openFotoFullscreen(_ni);setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);}catch(e){}}
+  }
   // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
   let _fi=0;
   for(const o of fotoObjs){
@@ -6374,10 +6384,18 @@ async function openFotoFullscreen(i){
   const viewUrl=_vid?'https://drive.google.com/file/d/'+_vid+'/view':(f.url||'');
   const cached=_vid?_fotoBlobCache.get(_vid):null;
   const _thumbFb=f.thumbnail||f.thumbnailLink||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
-  const _localFallback=f.localUrl||'';
+  let _localFallback=f.localUrl||'';
+  // v109: Lokal bearbeitete Version (Zeichnung ohne Drive-Upload) hat VORRANG – vorher
+  // überdeckte das Drive-ORIGINAL die Bearbeitung wieder. Nach Reload liegt sie nur
+  // noch in der IndexedDB (localKey), localUrl wird beim Speichern entfernt.
+  const _hasLocalEdit=!!(f.editedName&&!f.editedDriveId);
+  if(_hasLocalEdit&&!_localFallback&&f.localKey){
+    try{const du=await _mobPhotoGet(f.localKey);if(du){f.localUrl=du;_localFallback=du;}}catch(e){}
+  }
   if(!cached&&!_thumbFb&&!_localFallback&&!viewUrl){toast('Foto noch nicht verfügbar','info');return;}
-  openLightbox(cached||_thumbFb||_localFallback,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
-  if(!cached&&_vid){
+  const _first=(_hasLocalEdit&&_localFallback)?_localFallback:(cached||_thumbFb||_localFallback);
+  openLightbox(_first,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
+  if(!cached&&_vid&&!(_hasLocalEdit&&_localFallback)){
     const url=await _fetchFotoBlob(_vid);
     if(url){
       const img=document.getElementById('lbImg');
@@ -7821,8 +7839,30 @@ function lbSaveDraw(){
   const out=document.createElement('canvas');out.width=img.naturalWidth||canvas.width;out.height=img.naturalHeight||canvas.height;
   const octx=out.getContext('2d');octx.drawImage(img,0,0,out.width,out.height);octx.drawImage(canvas,0,0,out.width,out.height);
   const dataUrl=out.toDataURL('image/jpeg',0.92);
-  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){const f=t.fotos[_lbFotoIdx];f.localUrl=dataUrl;f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');if(f.localKey)_mobPhotoSave(f.localKey,dataUrl).catch(()=>{});scheduleSave();toast('Zeichnung gespeichert','success');if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
+  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){const f=t.fotos[_lbFotoIdx];f.localUrl=dataUrl;f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');if(f.localKey)_mobPhotoSave(f.localKey,dataUrl).catch(()=>{});scheduleSave();toast('Zeichnung gespeichert','success');_uploadEditedFoto(t,f,dataUrl);if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
   lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
+}
+// v109: Bemalte Kopie zusätzlich als EIGENE Datei zu Drive hochladen (wie Desktop, Original bleibt).
+// Vorher lag die Zeichnung nur lokal auf dem Gerät → am Desktop unsichtbar und beim
+// nächsten Öffnen wieder vom Drive-Original verdeckt.
+async function _uploadEditedFoto(t,f,dataUrl){
+  try{
+    const folderId=extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)
+      ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
+    if(!folderId){toast('Zeichnung nur lokal – kein Foto-Ordner im Task','info');return;}
+    if(!(await ensureToken())){toast('Zeichnung nur lokal – nicht angemeldet/offline','info');return;}
+    const blob=await (await fetch(dataUrl)).blob();
+    const file=new File([blob],f.editedName||'Foto_bearbeitet.jpg',{type:'image/jpeg'});
+    const meta=await _uploadOneFotoToDrive(file,folderId);
+    f.editedDriveId=meta.id;
+    _fotoBlobCache.set(meta.id,dataUrl);
+    forceSave();
+    toast('✏ Bearbeitete Kopie in Drive gespeichert','success');
+    if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);
+  }catch(e){
+    console.warn('[EditedFoto-Upload]',e);
+    toast('⚠ Zeichnung lokal gespeichert – Drive-Upload fehlgeschlagen','info');
+  }
 }
 function lbDiscardDraw(){
   const canvas=document.getElementById('drawCanvas'),bar=document.getElementById('lbDrawBar');
