@@ -5,6 +5,8 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://oauth2.googleapis.com https://lh3.googleusercontent.com https://api.open-meteo.com https://europe-west1-ptp-workboard.cloudfunctions.net https://photon.komoot.io https://nominatim.openstreetmap.org; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com https://server.arcgisonline.com https://*.arcgisonline.com https://*.tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#1a1a2e">
+<link rel="manifest" href="./manifest.json"><!-- v101: macht die App auf Android „richtig" installierbar (eigenes Fenster statt Browser) -->
+<link rel="apple-touch-icon" href="./icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="PAM Mobile">
@@ -291,10 +293,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 /* ── 360° Pannellum Container ── */
 #pannellumContainer{display:none;position:absolute;inset:0;z-index:1;}
 #pannellumContainer.active{display:block;}
-/* ── Lightbox-Blätterpfeile (v99) ── */
-.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;border:none;border-radius:10px;background:rgba(0,0,0,.45);color:#fff;font-size:34px;line-height:1;z-index:10002;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
-.lb-nav.prev{left:8px;}
-.lb-nav.next{right:8px;}
+/* ── Lightbox-Blätterpfeile (v99, v100: deutlich größer für Tablet/Handschuh) ── */
+.lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:62px;height:116px;border:1px solid rgba(255,255,255,.28);border-radius:14px;background:rgba(0,0,0,.55);color:#fff;font-size:54px;line-height:1;z-index:10002;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+.lb-nav.prev{left:6px;}
+.lb-nav.next{right:6px;}
 /* ── Zeichen-Canvas ── */
 #drawCanvas{display:none;position:absolute;inset:0;cursor:crosshair;touch-action:none;z-index:20;}
 #drawCanvas.active{display:block;}
@@ -7442,6 +7444,10 @@ function closeLightbox(){
   _lbFotoIdx=-1;
 }
 function _lbHandleTap(e){
+  // v100: Touch-Tipps schließen über die Gesten-Logik (Einzeltipp verzögert, Doppeltipp = Zoom).
+  // Hier nur noch der Maus-Fallback (Desktop-Test); Stift startet das Malen und schließt nie.
+  if(e.pointerType&&e.pointerType!=='mouse')return;
+  if(Date.now()-_lbLastTouchEnd<700)return; // Klick stammt von einem Touch-Tipp → Gesten-Logik entscheidet
   if(e.target===document.getElementById('lightbox')||e.target===document.getElementById('lbImg'))closeLightbox();
 }
 function _lbOnKey(e){
@@ -7449,7 +7455,14 @@ function _lbOnKey(e){
   else if(e.key==='ArrowLeft')_lbNavFoto(-1);
   else if(e.key==='ArrowRight')_lbNavFoto(1);
 }
-function _lbResetZoom(){const img=document.getElementById('lbImg');if(img){img.style.transform='';img.style.transformOrigin='';}}
+// v100: Zoom-Zustand der Großansicht (Pinch + Doppeltipp). transform = translate + scale auf #lbImg.
+let _lz={s:1,tx:0,ty:0};
+let _lbLastTouchEnd=0; // Zeitmarke: unterdrückt den Geister-Klick nach Touch-Tipps (iOS ohne pointerType)
+function _lzApply(){
+  const img=document.getElementById('lbImg');if(!img)return;
+  img.style.transform=(_lz.s>1)?('translate('+_lz.tx+'px,'+_lz.ty+'px) scale('+_lz.s+')'):'';
+}
+function _lbResetZoom(){_lz={s:1,tx:0,ty:0};const img=document.getElementById('lbImg');if(img){img.style.transform='';img.style.transformOrigin='';}}
 // v99: Blättern durch die Task-Fotos (Pfeile, Wischgeste, Pfeiltasten) – mit Umlauf wie am Desktop
 function _lbNavFoto(dir){
   if(_lbFotoIdx<0)return;
@@ -7462,20 +7475,93 @@ function _lbNavFoto(dir){
 }
 (function(){
   const lb=document.getElementById('lightbox');if(!lb)return;
-  // Wischgeste links/rechts = blättern (nur 1 Finger, deutlich horizontal, nicht beim Malen/360°)
-  let _tx=null,_ty=null;
+  // v100: Gesten der Großansicht – Pinch-Zoom (bis 6×), Ziehen (wenn gezoomt), Doppeltipp-Zoom,
+  // Wischen = blättern (nur ungezoomt), Einzeltipp = schließen (leicht verzögert, damit der
+  // Doppeltipp nicht schließt). Beim Malen und in der 360°-Kugel sind alle Gesten aus.
+  function _gesturesAus(){
+    const c=document.getElementById('drawCanvas');
+    return (c&&c.classList.contains('active'))||!!_pannellumViewer;
+  }
+  let _t1=null,_panStart=null,_pinch=null,_moved=false,_lastTap=0,_closeTimer=null;
   lb.addEventListener('touchstart',function(e){
-    if(e.touches.length!==1){_tx=null;return;}
-    _tx=e.touches[0].clientX;_ty=e.touches[0].clientY;
+    if(_closeTimer){clearTimeout(_closeTimer);_closeTimer=null;}
+    if(_gesturesAus())return;
+    if(e.touches.length===1){
+      _t1={x:e.touches[0].clientX,y:e.touches[0].clientY};
+      _panStart={tx:_lz.tx,ty:_lz.ty};
+      _moved=false;_pinch=null;
+    }else if(e.touches.length===2){
+      const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
+      _pinch={d0:Math.hypot(dx,dy)||1,s0:_lz.s,
+        cx:(e.touches[0].clientX+e.touches[1].clientX)/2,
+        cy:(e.touches[0].clientY+e.touches[1].clientY)/2,
+        tx0:_lz.tx,ty0:_lz.ty};
+      _t1=null;
+    }
+  },{passive:true});
+  lb.addEventListener('touchmove',function(e){
+    if(_gesturesAus())return;
+    if(e.touches.length===2&&_pinch){
+      // Pinch: Skala ändern, Bildpunkt unter dem Finger-Mittelpunkt bleibt stehen
+      const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;
+      const cx=(e.touches[0].clientX+e.touches[1].clientX)/2,cy=(e.touches[0].clientY+e.touches[1].clientY)/2;
+      const w=window.innerWidth/2,h=window.innerHeight/2;
+      const ns=Math.min(6,Math.max(1,_pinch.s0*(Math.hypot(dx,dy)/_pinch.d0)));
+      const k=ns/_pinch.s0;
+      _lz.s=ns;
+      if(ns<=1){_lz.tx=0;_lz.ty=0;}
+      else{
+        _lz.tx=(cx-w)+k*(_pinch.tx0-(_pinch.cx-w));
+        _lz.ty=(cy-h)+k*(_pinch.ty0-(_pinch.cy-h));
+      }
+      _lzApply();_moved=true;
+    }else if(e.touches.length===1&&_t1&&_lz.s>1){
+      // gezoomt: 1 Finger = Bild verschieben
+      const dx=e.touches[0].clientX-_t1.x,dy=e.touches[0].clientY-_t1.y;
+      if(Math.abs(dx)+Math.abs(dy)>4)_moved=true;
+      _lz.tx=_panStart.tx+dx;_lz.ty=_panStart.ty+dy;
+      _lzApply();
+    }else if(e.touches.length===1&&_t1){
+      const dx=e.touches[0].clientX-_t1.x,dy=e.touches[0].clientY-_t1.y;
+      if(Math.abs(dx)+Math.abs(dy)>10)_moved=true;
+    }
   },{passive:true});
   lb.addEventListener('touchend',function(e){
-    if(_tx===null||!e.changedTouches||!e.changedTouches.length)return;
-    const dx=e.changedTouches[0].clientX-_tx,dy=e.changedTouches[0].clientY-_ty;
-    _tx=null;
-    if(_pannellumViewer)return;
-    const c=document.getElementById('drawCanvas');
-    if(c&&c.classList.contains('active'))return;
-    if(Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy))_lbNavFoto(dx<0?1:-1);
+    _lbLastTouchEnd=Date.now();
+    if(_gesturesAus()){_t1=null;_pinch=null;return;}
+    if(e.touches.length>0)return; // es sind noch Finger auf dem Display (z.B. Pinch-Ende)
+    const warPinch=!!_pinch;_pinch=null;
+    if(!e.changedTouches||!e.changedTouches.length){_t1=null;return;}
+    const cx=e.changedTouches[0].clientX,cy=e.changedTouches[0].clientY;
+    const t1=_t1;_t1=null;
+    if(warPinch||!t1)return;
+    // Tipps auf Bedienelemente überlassen wir deren eigenen Knöpfen
+    if(e.target&&e.target.closest&&e.target.closest('.lb-textbar,.lb-draw-bar,.lb-close,.lb-open,.lb-nav,.lb-caption')){_moved=false;return;}
+    if(!_moved){
+      const now=Date.now();
+      if(now-_lastTap<320){
+        // Doppeltipp: ranzoomen (2.5×, getippte Stelle bleibt stehen) bzw. zurücksetzen
+        _lastTap=0;
+        if(_closeTimer){clearTimeout(_closeTimer);_closeTimer=null;}
+        if(_lz.s>1)_lbResetZoom();
+        else{
+          const w=window.innerWidth/2,h=window.innerHeight/2;
+          _lz.s=2.5;_lz.tx=(w-cx)*1.5;_lz.ty=(h-cy)*1.5;_lzApply();
+        }
+      }else{
+        _lastTap=now;
+        // Einzeltipp (ungezoomt) = schließen wie bisher – minimal verzögert, damit ein Doppeltipp gewinnt
+        if(_lz.s===1){
+          if(_closeTimer)clearTimeout(_closeTimer);
+          _closeTimer=setTimeout(function(){_closeTimer=null;closeLightbox();},340);
+        }
+      }
+    }else if(_lz.s===1){
+      // Wischgeste links/rechts = blättern (deutlich horizontal)
+      const dx=cx-t1.x,dy=cy-t1.y;
+      if(Math.abs(dx)>60&&Math.abs(dx)>2*Math.abs(dy))_lbNavFoto(dx<0?1:-1);
+    }
+    _moved=false;
   },{passive:true});
   // v99: S-Pen malt sofort – Stift berührt das Foto → Malen startet automatisch mit dem
   // zuletzt gewählten Werkzeug/Farbe (Finger bedient weiter normal: tippen/wischen/blättern)
@@ -7539,6 +7625,7 @@ function lbSetMode(mode,btn){
 function lbStartDraw(){
   const img=document.getElementById('lbImg');if(!img||!img.src||img.style.display==='none')return;
   const canvas=document.getElementById('drawCanvas');if(!canvas)return;
+  _lbResetZoom(); // v100: gezoomt malen würde die Striche versetzt speichern → immer in Gesamtansicht malen
   const lb=document.getElementById('lightbox');
   canvas.style.cssText='position:absolute;left:0;top:0;width:100%;height:100%;';
   canvas.width=lb.offsetWidth||window.innerWidth;canvas.height=lb.offsetHeight||window.innerHeight;
