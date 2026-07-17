@@ -7428,6 +7428,29 @@ document.addEventListener('visibilitychange',()=>{
 // ══════════════════════════════════════════════
 window.addEventListener('offline',()=>setSaveInd('error','📴 Offline'));
 window.addEventListener('online', ()=>{if(!dirty)setSaveInd('saved','✓ Online');});
+// ── v114: NACH DEM DREHEN NEU ZEICHNEN (Befund Frank, Tab S10 FE quer) ──
+// Die App hatte keinerlei Dreh-/Resize-Handler; Samsung zeigte nach dem Drehen
+// überlappende Alt-Pixel (echtes Bildschirmfoto war normal = reines Anzeige-Artefakt).
+// Nach Drehen/Größenänderung wird die aktuelle Ansicht einmal frisch gerendert.
+let _rotRerenderTimer=null;
+function _rerenderAfterRotate(){
+  clearTimeout(_rotRerenderTimer);
+  _rotRerenderTimer=setTimeout(()=>{
+    try{
+      const detailOffen=(document.getElementById('detailScreen')||{}).style.display==='flex';
+      const t=currentTask();
+      if(detailOffen&&t){
+        if(_currentDetailTab==='bau')renderBaudokuTab(t);
+        else if(_currentDetailTab==='schnell')renderSchnellTab(t);
+        else renderDetail(t);
+      }else if((document.getElementById('listScreen')||{}).style.display==='flex'&&typeof renderList==='function'){
+        renderList();
+      }
+    }catch(e){console.warn('[Rotate-Rerender]',e);}
+  },350);
+}
+window.addEventListener('orientationchange',_rerenderAfterRotate);
+window.addEventListener('resize',_rerenderAfterRotate);
 </script>
 
 <!-- ══ EXIF HELPER ══ -->
