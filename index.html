@@ -8076,7 +8076,7 @@ window.Dachplan=(function(){
    '#dpScreen{position:fixed;inset:0;z-index:99990;background:#0f1115;color:#e7eaf0;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
   +'#dpScreen.dp-hidden,.dp-hidden{display:none!important}'
   +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap}'
-  +'.dpb{min-height:42px;padding:0 11px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:14px;font-weight:600;cursor:pointer}'
+  +'.dpb{min-height:52px;padding:0 14px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:16px;font-weight:600;cursor:pointer}' /* v116: Kopfleiste größer (42/14 → 52/16, Wunsch Frank) */
   +'.dpb.on{background:#153a6b;border-color:#3b82f6}.dpb.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}'
   +'#dpWrap{flex:1;position:relative;overflow:hidden;touch-action:none;background:#0d0f14}'
   +'#dpStage{position:absolute;top:0;left:0;transform-origin:0 0;line-height:0}#dpImg{display:block}'
@@ -8129,7 +8129,9 @@ window.Dachplan=(function(){
       +'<div class="dprow" style="margin-top:8px"><button class="dpb" id="dpGeoHere">🛰️ Standort</button><button class="dpb" id="dpNav">🧭 Navigation</button></div>'
       +'<button class="dpb" id="dpDel" style="width:100%;margin-top:14px;color:#e5484d;border-color:#e5484d">🗑 Pin löschen</button>'
      +'</div>'
-     +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg"></div>';
+     +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg">'
+      +'<div id="dpPhotoCap" style="position:absolute;left:12px;right:12px;bottom:84px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:16px;display:none"></div>'
+      +'<button class="dpb" id="dpPhotoText" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:2;border-color:#2d7ef7;color:#7db4ff">📝 Text</button></div>';
     document.body.appendChild(d);
     E.screen=d;E.wrap=d.querySelector('#dpWrap');E.stage=d.querySelector('#dpStage');E.img=d.querySelector('#dpImg');
     E.empty=d.querySelector('#dpEmpty');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
@@ -8297,7 +8299,7 @@ window.Dachplan=(function(){
    '#dpScreen{position:fixed;inset:0;z-index:99990;background:#0f1115;color:#e7eaf0;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
   +'#dpScreen.dp-hidden,.dp-hidden{display:none!important}'
   +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap;position:relative;z-index:1400}'
-  +'.dpb{min-height:42px;padding:0 11px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:14px;font-weight:600;cursor:pointer}'
+  +'.dpb{min-height:52px;padding:0 14px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:16px;font-weight:600;cursor:pointer}' /* v116: Kopfleiste größer (42/14 → 52/16, Wunsch Frank) */
   +'.dpb.on{background:#153a6b;border-color:#3b82f6}.dpb.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}'
   +'#dpMap{flex:1;min-height:0;background:#0d0f14}#dpImap{flex:1;min-height:0;background:#0d0f14}'
   +'.dpMk{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}'
@@ -8327,7 +8329,7 @@ window.Dachplan=(function(){
      '<div id="dpBar">'
       +'<button class="dpb" id="dpBack">←</button>'
       +'<button class="dpb" id="dpMode" title="Karte / eigenes Bild">🗺️</button>'
-      +'<input id="dpSearch" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:90px;min-height:42px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;padding:0 10px;font-size:14px">'
+      +'<input id="dpSearch" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:90px;min-height:52px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;padding:0 12px;font-size:16px">'
       +'<button class="dpb" id="dpDach" title="Karte auf die Auftragsadresse springen">🏠 Dach</button>'
       +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild</button>'
       +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kal.</button>'
@@ -8356,10 +8358,13 @@ window.Dachplan=(function(){
       +'<input type="file" id="dpPhotoInput" accept="image/*" capture="environment" multiple style="display:none">'
       +'<input type="file" id="dpGalInput" accept="image/*" multiple style="display:none"><div class="dpThumbs" id="dpThumbs"></div>'
       +'<div class="dpf">Koordinaten</div><div id="dpCoord" style="font-size:12px;color:#9aa3b2"></div>'
-      +'<button class="dpb" id="dpNav" style="width:100%;margin-top:8px">🧭 Navigation zu diesem Pin</button>'
+      +'<button class="dpb" id="dpGuide" style="width:100%;margin-top:8px;border-color:#2d7ef7;color:#7db4ff">🧭 Dahin führen (Live-Linie)</button>'
+      +'<button class="dpb" id="dpNav" style="width:100%;margin-top:8px">🗺 Google-Navigation zu diesem Pin</button>'
       +'<button class="dpb" id="dpDel" style="width:100%;margin-top:10px;color:#e5484d;border-color:#e5484d">🗑 Pin löschen</button>'
      +'</div>'
-     +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg"></div>';
+     +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg">'
+      +'<div id="dpPhotoCap" style="position:absolute;left:12px;right:12px;bottom:84px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:16px;display:none"></div>'
+      +'<button class="dpb" id="dpPhotoText" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:2;border-color:#2d7ef7;color:#7db4ff">📝 Text</button></div>';
     document.body.appendChild(d);
     E.screen=d;E.mapEl=d.querySelector('#dpMap');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
     E.photo=d.querySelector('#dpPhoto');E.photoImg=d.querySelector('#dpPhotoImg');E.msg=d.querySelector('#dpMsg');E.imapEl=d.querySelector('#dpImap');
@@ -8388,6 +8393,8 @@ window.Dachplan=(function(){
       (p.fotos||[]).forEach(fo=>{try{_mobPhotoDelete(fo.key);}catch(_){}});
       dp.pins=dp.pins.filter(x=>x.id!==p.id);sel=null;closeSheet();renderPins();save();};
     q('#dpPhotoX').onclick=()=>E.photo.classList.add('dp-hidden');
+    q('#dpGuide').onclick=()=>{const p=cur();if(p)guideStart(p.id);}; // v116
+    q('#dpPhotoText').onclick=()=>{if(window._dpPhotoFo)dpFotoText(window._dpPhotoFo);}; // v116
     E.photo.onclick=ev=>{if(ev.target===E.photo)E.photo.classList.add('dp-hidden');};
     built=true;
   }
@@ -8462,8 +8469,12 @@ window.Dachplan=(function(){
     _mobPhotoGet(fo.key).then(src=>{if(src)img.src=src;else if(fo.driveId)img.src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w400';});
     img.onclick=()=>showPhoto(fo);const del=document.createElement('b');del.textContent='×';
     del.onclick=ev=>{ev.stopPropagation();p.fotos.splice(i,1);try{_mobPhotoDelete(fo.key);}catch(_){}drawThumbs(p);save();};
-    d.appendChild(img);d.appendChild(del);box.appendChild(d);});}
-  function showPhoto(fo){_mobPhotoGet(fo.key).then(src=>{if(!src&&fo.driveId)src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w1600';if(src){E.photoImg.src=src;E.photo.classList.remove('dp-hidden');}});}
+    d.appendChild(img);d.appendChild(del);
+    if(fo.caption){const c=document.createElement('span');c.textContent=fo.caption;c.style.cssText='position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:10px;line-height:1.3;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;';d.appendChild(c);} // v116: Foto-Text als Balken auf dem Vorschaubild
+    box.appendChild(d);});}
+  function showPhoto(fo){window._dpPhotoFo=fo; /* v116: für 📝-Text-Knopf merken */
+    try{const cap=E.screen.querySelector('#dpPhotoCap');if(cap){cap.textContent=fo.caption||'';cap.style.display=fo.caption?'':'none';}}catch(_){}
+    _mobPhotoGet(fo.key).then(src=>{if(!src&&fo.driveId)src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w1600';if(src){E.photoImg.src=src;E.photo.classList.remove('dp-hidden');}});}
 
   async function open(){
     t=(typeof currentTask==='function')?currentTask():null;
@@ -8554,8 +8565,89 @@ window.Dachplan=(function(){
       else{liveC.setLatLng(ll);liveC.setRadius(p.coords.accuracy);}
       if(b)b.textContent='📡 ±'+acc+' m';
       if(liveFirst){liveFirst=false;map.setView(ll,Math.max(map.getZoom()||18,19));}
+      guideTick(ll); // v116: „Dahin führen" – Linie/Entfernung bei jeder GPS-Messung aktualisieren
     },err=>{say('Standort nicht verfügbar: '+((err&&err.message)||'Freigabe/GPS'),'error');liveStop();},
       {enableHighAccuracy:true,maximumAge:0,timeout:25000});
+  }
+  // ── v116: „DAHIN FÜHREN" – Live-Linie vom eigenen Standort zum Ziel-Pin (Wunsch Frank,
+  // großes Dach ~20.000 m²; Google routet nicht über Dächer). Nutzt den Live-Standort (📡),
+  // startet ihn bei Bedarf automatisch. Nur Kartenansicht; Bild-Pins brauchen Kalibrierung. ──
+  let guideId=null,guideLine=null,guideBox=null,guideLast=null;
+  function guideLatLng(p){let lat=p.lat,lng=p.lng;if((lat==null||lng==null)&&p.nx!=null&&dp&&dp.cal){try{const w=calFrToLatLng(p.nx,p.ny);if(w){lat=w.lat;lng=w.lng;}}catch(_){}}return (lat!=null&&lng!=null)?[lat,lng]:null;}
+  function guideStop(){guideId=null;guideLast=null;if(guideLine&&map){try{map.removeLayer(guideLine);}catch(_){}}guideLine=null;if(guideBox)guideBox.classList.add('dp-hidden');}
+  function guideStart(id){
+    const p=(dp.pins||[]).find(x=>x.id===id);if(!p)return;
+    if(dp.base==='bild'){say('„Dahin führen" läuft in der Kartenansicht – oben auf 🗺️ umschalten','error');return;}
+    if(!guideLatLng(p)){say('Pin hat keine Koordinaten (Bild ohne Kalibrierung)','error');return;}
+    guideId=id;closeSheet();
+    if(!guideBox){
+      guideBox=document.createElement('div');
+      guideBox.id='dpGuideBox';
+      guideBox.style.cssText='position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:1500;background:rgba(13,15,20,.92);border:2px solid #2d7ef7;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;max-width:94%;';
+      guideBox.innerHTML='<span id="dpGuideTxt" style="font-size:20px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">…</span>'
+        +'<button class="dpb" id="dpGuideNext" style="display:none;border-color:#30a46c;color:#5fe0a0">▶ nächster Pin</button>'
+        +'<button class="dpb" id="dpGuideStop">✕</button>';
+      E.screen.appendChild(guideBox);
+      guideBox.querySelector('#dpGuideStop').onclick=guideStop;
+      guideBox.querySelector('#dpGuideNext').onclick=guideNext;
+    }
+    guideBox.classList.remove('dp-hidden');
+    guideBox.querySelector('#dpGuideNext').style.display='none';
+    guideBox.querySelector('#dpGuideTxt').textContent='→ '+(p.title||('Pin '+p.nr))+' · warte auf GPS…';
+    if(liveWid==null)liveToggle();
+    if(guideLast)guideTick(guideLast);
+  }
+  function guideNext(){
+    const cs=(dp.pins||[]).filter(x=>guideLatLng(x)).sort((a,b)=>a.nr-b.nr);
+    if(!cs.length){guideStop();return;}
+    const c=(dp.pins||[]).find(y=>y.id===guideId);
+    const p=cs.find(x=>c&&x.nr>c.nr)||cs[0];
+    guideId=p.id;
+    if(guideBox)guideBox.querySelector('#dpGuideNext').style.display='none';
+    if(guideLast)guideTick(guideLast);
+  }
+  function guideTick(ll){
+    guideLast=ll;
+    if(!guideId||!map)return;
+    const p=(dp.pins||[]).find(x=>x.id===guideId);
+    if(!p){guideStop();return;}
+    const tgt=guideLatLng(p);if(!tgt)return;
+    if(!guideLine)guideLine=L.polyline([ll,tgt],{color:'#2d7ef7',weight:4,dashArray:'8 8',interactive:false}).addTo(map);
+    else guideLine.setLatLngs([ll,tgt]);
+    const d=map.distance(ll,tgt);
+    const txt=guideBox&&guideBox.querySelector('#dpGuideTxt');
+    const nb=guideBox&&guideBox.querySelector('#dpGuideNext');
+    if(d<=5){
+      if(txt)txt.textContent='✅ '+(p.title||('Pin '+p.nr))+' erreicht';
+      if(nb)nb.style.display='';
+    }else{
+      if(txt)txt.textContent='→ '+(p.title||('Pin '+p.nr))+' · '+(d>=1000?(d/1000).toFixed(1)+' km':Math.round(d)+' m');
+      if(nb)nb.style.display='none';
+    }
+  }
+  // ── v116: TEXT PRO PIN-FOTO – großes Schreibfeld wie bei den Task-Fotos (S-Pen-Handschrift) ──
+  function dpFotoText(fo){
+    const old=document.getElementById('dpFotoTextPopup');if(old)old.remove();
+    const ov=document.createElement('div');
+    ov.id='dpFotoTextPopup';
+    ov.style.cssText='position:fixed;inset:0;z-index:100060;background:rgba(0,0,0,.75);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px 14px;';
+    ov.innerHTML='<div style="background:#171a21;border:1px solid #2a2f3a;border-radius:14px;padding:14px;width:100%;max-width:720px;display:flex;flex-direction:column;gap:10px;">'
+      +'<b style="color:#e7eaf0;font-size:16px;">📝 Text zum Foto</b>'
+      +'<textarea id="dpFotoTA" placeholder="Was zeigt dieses Foto? – mit dem Stift direkt hineinschreiben…" style="width:100%;box-sizing:border-box;height:50vh;background:#ffffff;color:#111111;border:none;border-radius:10px;padding:14px 16px;font-size:19px;line-height:1.6;font-family:inherit;resize:vertical;"></textarea>'
+      +'<div style="display:flex;gap:8px;">'
+        +'<button class="dpb" id="dpFotoTAbbr" style="flex:1">Abbrechen</button>'
+        +'<button class="dpb" id="dpFotoTSave" style="flex:1;background:#2d7ef7;border-color:#2d7ef7;color:#fff">✓ Speichern</button>'
+      +'</div></div>';
+    document.body.appendChild(ov);
+    const ta=ov.querySelector('#dpFotoTA');ta.value=fo.caption||'';setTimeout(()=>ta.focus(),80);
+    ov.querySelector('#dpFotoTAbbr').onclick=()=>ov.remove();
+    ov.querySelector('#dpFotoTSave').onclick=()=>{
+      fo.caption=ta.value.trim();save();
+      const cap=E.screen.querySelector('#dpPhotoCap');
+      if(cap){cap.textContent=fo.caption;cap.style.display=fo.caption?'':'none';}
+      const p=cur();if(p)drawThumbs(p);
+      ov.remove();say('Foto-Text gespeichert');
+    };
   }
   async function doSearch(qstr){
     qstr=(qstr||'').trim();if(!qstr||!map)return;
@@ -8599,8 +8691,12 @@ window.Dachplan=(function(){
     const arr=(dp.pins||[]).slice().sort((a,b)=>a.nr-b.nr);
     let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Pins ('+arr.length+')</b><button class="dpb" id="dpListClose">Schließen</button></div>';
     if(!arr.length)h+='<div style="color:#9aa3b2;line-height:1.5">Noch keine Pins. Oben „➕ Pin" aktivieren und auf die Karte tippen.</div>';
-    arr.forEach(p=>{const ti=(p.title?String(p.title).replace(/</g,'&lt;'):'Pin '+p.nr);
-      h+='<div class="dpLi" data-id="'+p.id+'"><div class="b" style="background:'+COL[p.status||'rot']+'">'+p.nr+'</div><div class="tx"><b>'+ti+'</b><span>'+(LBL[p.status]||'')+' · '+((p.fotos||[]).length)+' Foto(s)</span></div></div>';});
+    // v116: Titel → sonst Notiz als Hauptzeile; Notiz zusätzlich als zweite Zeile (Wunsch Frank – Notizen waren in der Liste unsichtbar)
+    arr.forEach(p=>{const _e=s=>String(s||'').replace(/</g,'&lt;');
+      const note=String(p.note||'').replace(/\s+/g,' ').trim();
+      const ti=p.title?_e(p.title):(note?_e(note.length>48?note.slice(0,48)+'…':note):'Pin '+p.nr);
+      const sub=(p.title&&note)?('<span style="display:block;white-space:normal;color:#c6ccd8;font-size:14px;margin:2px 0 3px">'+_e(note.length>120?note.slice(0,120)+'…':note)+'</span>'):'';
+      h+='<div class="dpLi" data-id="'+p.id+'"><div class="b" style="background:'+COL[p.status||'rot']+'">'+p.nr+'</div><div class="tx"><b>'+ti+'</b>'+sub+'<span>'+(LBL[p.status]||'')+' · '+((p.fotos||[]).length)+' Foto(s)</span></div></div>';});
     panel.innerHTML=h;panel.classList.remove('dp-hidden');
     panel.querySelector('#dpListClose').onclick=()=>panel.classList.add('dp-hidden');
     panel.querySelectorAll('.dpLi').forEach(row=>{row.onclick=()=>{const p=dp.pins.find(x=>x.id===row.dataset.id);if(!p)return;panel.classList.add('dp-hidden');sel=p.id;try{if(dp.base==='bild'&&imap&&p.nx!=null)imap.setView(frToLatLng(p.nx,p.ny),Math.max(imap.getZoom()||0,1));else if(map&&p.lat!=null)map.setView([p.lat,p.lng],Math.max(map.getZoom()||19,19));}catch(_){}openSheet(p);};});
@@ -8726,6 +8822,7 @@ window.Dachplan=(function(){
     closeSheet();setBase('map');save();say('Dachplan zurückgesetzt');
   }
   function close(){
+    try{guideStop();}catch(_){} // v116: Führung beim Schließen beenden
     try{liveStop();}catch(_){} // v105: GPS/Kompass nicht im Hintergrund weiterlaufen lassen (Akku)
     if(map){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();}catch(e){}}
     if(E.screen)E.screen.classList.add('dp-hidden');save();
