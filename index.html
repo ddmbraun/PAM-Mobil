@@ -3737,7 +3737,7 @@ function _showSchnellFotoPreview(fo, t){
   img.src=src;img.style.cssText='max-width:90vw;max-height:65vh;border-radius:12px;object-fit:contain;';
   const lbl=document.createElement('div');
   lbl.style.cssText='font-size:14px;color:#fff;opacity:.8;';lbl.textContent=fo.name||'Foto';
-  const row=document.createElement('div');row.style.cssText='display:flex;gap:12px;';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:12px;flex-wrap:wrap;justify-content:center;padding:0 10px;';
   const btnDel=document.createElement('button');
   btnDel.textContent='✕ Verwerfen';
   btnDel.style.cssText='padding:12px 24px;border-radius:10px;background:#E24B4A;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
@@ -3748,9 +3748,20 @@ function _showSchnellFotoPreview(fo, t){
   btnKeep.onclick=function(){prev.remove();};
   const btnMore=document.createElement('button');
   btnMore.textContent='📷 Weiteres Foto';
-  btnMore.style.cssText='padding:12px 24px;border-radius:10px;background:rgba(106,138,255,.85);color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
+  btnMore.style.cssText='padding:12px 24px;border-radius:10px;background:#2e4fc4;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
   btnMore.onclick=function(){prev.remove();var inp=document.getElementById('fotoInputCamera');if(inp)inp.click();};
-  row.appendChild(btnDel);row.appendChild(btnMore);row.appendChild(btnKeep);
+  // v110: ✏️ Bearbeiten – behält das Foto und öffnet direkt die Vollbild-Ansicht (Text + Malen), Wunsch Frank
+  const btnEdit=document.createElement('button');
+  btnEdit.textContent='✏️ Bearbeiten';
+  btnEdit.style.cssText='padding:12px 24px;border-radius:10px;background:#2e4fc4;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
+  btnEdit.onclick=function(){
+    prev.remove();
+    const t2=currentTask();if(!t2||!t2.fotos)return;
+    let i=t2.fotos.indexOf(fo);
+    if(i<0&&fo.localKey)i=t2.fotos.findIndex(f=>f&&f.localKey===fo.localKey);
+    if(i>=0)openFotoFullscreen(i);
+  };
+  row.appendChild(btnDel);row.appendChild(btnMore);row.appendChild(btnEdit);row.appendChild(btnKeep);
   prev.appendChild(img);prev.appendChild(lbl);prev.appendChild(row);
   document.body.appendChild(prev);
 }
