@@ -820,9 +820,10 @@ function _fileToDataUrl(file){
 // Handy-Fotos haben heute 4–12 MB – das machte Mehrfach-Übernahme aus der Galerie
 // quälend langsam (Base64 + Drive-Upload in Originalgröße). Max. Kantenlänge 2560 px,
 // JPEG 85 % → typisch 300–800 KB, für Baudoku-Zwecke völlig ausreichend.
-// WICHTIG: EXIF (GPS/Datum) geht bei der Kompression verloren – GPS wird deshalb
-// VORHER per _qaApplyGpsFromFiles aus der Originaldatei gelesen; Zeitstempel speichert
-// die App ohnehin selbst (uploadedAt/standortErfasst). Bei Fehlern: Original verwenden.
+// EXIF: seit v118 wird das KOMPLETTE EXIF (außer Orientation/MakerNote/Thumbnail) aus dem
+// Original in die verkleinerte Datei zurückgeschrieben – s. Block unten. GPS wird trotzdem
+// weiterhin VORHER per _qaApplyGpsFromFiles aus der Originaldatei gelesen (unabhängig davon);
+// Zeitstempel speichert die App ohnehin selbst (uploadedAt/standortErfasst). Bei Fehlern: Original verwenden.
 const FOTO_MAX_DIM=2560,FOTO_JPEG_QUALITY=0.85,FOTO_COMPRESS_MIN_BYTES=1500000;
 async function _compressFoto(file){
   try{
@@ -841,10 +842,16 @@ async function _compressFoto(file){
     cv.getContext('2d').drawImage(img,0,0,w,h);
     const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',FOTO_JPEG_QUALITY));
     if(!blob||blob.size>=file.size)return file; // Kompression brachte nichts → Original
-    // v98: GPS + Aufnahmedatum + Kamera aus dem Original in die verkleinerte Datei zurückschreiben.
-    // Die Canvas-Kompression (v78) warf ALLE EXIF-Daten weg – seitdem zeigte das Desktop-ℹ keinen
-    // Aufnahmeort mehr. Orientation wird bewusst NICHT kopiert: der Browser dreht das Bild beim
-    // Dekodieren bereits richtig, das Canvas-JPEG ist also schon aufrecht.
+    // v118: KOMPLETTES EXIF aus dem Original in die verkleinerte Datei übernehmen (Wunsch Frank).
+    // v98 kopierte nur GPS + Datum + Make/Model – Belichtung, ISO, Blende, Brennweite usw. gingen
+    // bei der Kompression verloren. Jetzt werden 0th-, Exif- und GPS-IFD komplett kopiert, mit Ausnahmen:
+    //  - Orientation NICHT: der Browser dreht das Bild beim Dekodieren bereits richtig,
+    //    das Canvas-JPEG ist schon aufrecht – das Tag würde Hochkant-Fotos doppelt drehen.
+    //  - ImageWidth/ImageLength raus + PixelX/YDimension auf die NEUEN Maße – sonst stünde die Originalgröße drin.
+    //  - MakerNote NICHT: proprietärer Binärblock (Samsung mehrere KB) mit Datei-Offsets,
+    //    die nach dem Neuschreiben ins Leere zeigen – alle Standardwerte stehen ohnehin in normalen Exif-Tags.
+    //  - Thumbnail (1st-IFD) NICHT: spart KB, nutzt niemand.
+    // Schlägt piexif.dump am vollen Satz fehl (exotische Tag-Typen), Rückfall auf den v98-Minimalsatz.
     let out=blob;
     try{
       if((file.type||'')==='image/jpeg'||/\.jpe?g$/i.test(file.name||'')){
@@ -854,12 +861,25 @@ async function _compressFoto(file){
           if(origUrl.slice(0,20).startsWith('data:image/jpeg')){
             const src=piexif.load(origUrl);
             const z=src['0th']||{},ex=src['Exif']||{};
-            const keep={'0th':{},'Exif':{},'GPS':src['GPS']||{},'1st':{},'thumbnail':null};
-            [piexif.ImageIFD.Make,piexif.ImageIFD.Model,piexif.ImageIFD.DateTime].forEach(t=>{if(z[t]!==undefined)keep['0th'][t]=z[t];});
-            [piexif.ExifIFD.DateTimeOriginal,piexif.ExifIFD.DateTimeDigitized].forEach(t=>{if(ex[t]!==undefined)keep['Exif'][t]=ex[t];});
+            const keep={'0th':Object.assign({},z),'Exif':Object.assign({},ex),'GPS':src['GPS']||{},'1st':{},'thumbnail':null};
+            delete keep['0th'][piexif.ImageIFD.Orientation];
+            delete keep['0th'][piexif.ImageIFD.ImageWidth];
+            delete keep['0th'][piexif.ImageIFD.ImageLength];
+            delete keep['Exif'][piexif.ExifIFD.MakerNote];
+            keep['Exif'][piexif.ExifIFD.PixelXDimension]=w;
+            keep['Exif'][piexif.ExifIFD.PixelYDimension]=h;
             if(Object.keys(keep['GPS']).length||Object.keys(keep['0th']).length||Object.keys(keep['Exif']).length){
               const cmpUrl=await _fileToDataUrl(blob);
-              out=_dataUrlToBlob(piexif.insert(piexif.dump(keep),cmpUrl));
+              let exifBytes;
+              try{exifBytes=piexif.dump(keep);}
+              catch(eDump){
+                console.warn('[Foto-Kompression] Volles EXIF nicht schreibbar, Rückfall auf Minimalsatz (GPS/Datum/Kamera):',eDump);
+                const mini={'0th':{},'Exif':{},'GPS':src['GPS']||{},'1st':{},'thumbnail':null};
+                [piexif.ImageIFD.Make,piexif.ImageIFD.Model,piexif.ImageIFD.DateTime].forEach(t=>{if(z[t]!==undefined)mini['0th'][t]=z[t];});
+                [piexif.ExifIFD.DateTimeOriginal,piexif.ExifIFD.DateTimeDigitized].forEach(t=>{if(ex[t]!==undefined)mini['Exif'][t]=ex[t];});
+                exifBytes=piexif.dump(mini);
+              }
+              out=_dataUrlToBlob(piexif.insert(exifBytes,cmpUrl));
             }
           }
         }
