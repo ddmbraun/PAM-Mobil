@@ -604,6 +604,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
    ═══════════════════════════════════════════════ */
 const GDRIVE_CLIENT_ID='56419258975-2ri3eujer9p6saph1mesa5hihlcae1pl.apps.googleusercontent.com';
 const CLOUD_FUNCTION_URL='https://europe-west1-ptp-workboard.cloudfunctions.net/oauthBridge';
+const HANDOFF_CODE_KEY='pam_mob_handoff_code'; // v119: Einmal-Code fürs Server-Schließfach (Login-Handoff, siehe _mobClaimHandoff)
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly'; // Sync mit Desktop
 const TOKEN_KEY='ptp_gdrive_token_v1';  // Synchronisiert mit PC-Version
 let mobETag = null;  // ETag für Optimistic Locking
@@ -1089,6 +1090,10 @@ function gdriveLogin(){
   // (invalid_grant), löscht _renewTokenViaCloud() ihn → nächster Login fordert neu an.
   if(!localStorage.getItem('pam_gdrive_refresh_token'))params.set('prompt','consent');
   if(hint)params.set('login_hint',hint);
+  // v119: Einmal-Code für den Schließfach-Handoff erzeugen und im APP-Speicher merken.
+  // Der Login läuft u. U. in einem anderen Browser-Kontext (installierte App!) – über diesen
+  // Code holt die App das Dauer-Ticket später beim Server ab (siehe _mobClaimHandoff).
+  try{const _hc=_mobNewHandoffCode();localStorage.setItem(HANDOFF_CODE_KEY,_hc);params.set('state',_hc);}catch(e){}
   window.location.href='https://accounts.google.com/o/oauth2/v2/auth?'+params;
 }
 function initTokenClient(){
@@ -1284,6 +1289,9 @@ function _openOAuthNewTab(){
   // Fix v59: prompt=consent nur ohne vorhandenen Refresh-Token (siehe gdriveLogin)
   if(!localStorage.getItem('pam_gdrive_refresh_token'))params.set('prompt','consent');
   if(hint)params.set('login_hint',hint);
+  // v119: Handoff-Code wie in gdriveLogin – hier besonders wichtig, weil der Login in einem
+  // eigenen Tab (= fremder Speicher-Kontext) läuft.
+  try{const _hc=_mobNewHandoffCode();localStorage.setItem(HANDOFF_CODE_KEY,_hc);params.set('state',_hc);}catch(e){}
   const authUrl='https://accounts.google.com/o/oauth2/v2/auth?'+params;
   const w=window.open(authUrl,'_blank');
   if(w){
@@ -3210,9 +3218,10 @@ document.addEventListener('DOMContentLoaded',function(){
   // ── Neuer Code-Flow: ?code= aus URL lesen ──
   const _query=new URLSearchParams(window.location.search);
   const _authCode=_query.get('code');
+  const _authState=_query.get('state'); // v119: Handoff-Code, den die App vor dem Login gesetzt hat
   if(_authCode){
     window.history.replaceState({},'',window.location.pathname);
-    _exchangeCodeForTokenMobile(_authCode);
+    _exchangeCodeForTokenMobile(_authCode,_authState);
     return;
   }
   // ── Legacy: access_token aus Hash (Fallback) ──
@@ -3230,7 +3239,7 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 });
 // ── Code gegen Tokens tauschen (via Cloud Function) ──
-async function _exchangeCodeForTokenMobile(authCode){
+async function _exchangeCodeForTokenMobile(authCode,handoffCode){
   try{
     const response=await fetch(CLOUD_FUNCTION_URL,{
       method:'POST',
@@ -3243,6 +3252,18 @@ async function _exchangeCodeForTokenMobile(authCode){
     // Refresh Token speichern
     if(data.refresh_token){
       try{localStorage.setItem('pam_gdrive_refresh_token',data.refresh_token);}catch(e){}
+      // v119: Dauer-Ticket zusätzlich ins Server-Schließfach legen. Dieser Login-Kontext hat
+      // einen ANDEREN localStorage als die installierte App – ohne diesen Umweg käme das
+      // Ticket dort nie an und die App fragte bei jedem Start neu nach Anmeldung.
+      if(handoffCode){
+        try{
+          await fetch(CLOUD_FUNCTION_URL,{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({action:'stash',handoff_code:handoffCode,refresh_token:data.refresh_token}),
+          });
+        }catch(e){console.warn('[Handoff] stash fehlgeschlagen:',e);}
+      }
     }
     // Token für PWA-Handoff ablegen (iOS: Safari → PWA)
     try{localStorage.setItem(_OAUTH_HANDOFF_KEY,JSON.stringify({token:data.access_token,exp:data.expires_in||3600,ts:Date.now()}));}catch(e){}
@@ -3255,9 +3276,47 @@ async function _exchangeCodeForTokenMobile(authCode){
   }
 }
 
+// ── v119: Einmal-Code für das Server-Schließfach erzeugen (32 Zeichen, zufällig) ──
+function _mobNewHandoffCode(){
+  const a=new Uint8Array(24);crypto.getRandomValues(a);
+  return btoa(String.fromCharCode.apply(null,a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+// ── v119: Dauer-Ticket aus dem Server-Schließfach holen (Handoff) ──
+// HINTERGRUND: Die installierte App (Homescreen/standalone) und der Login-Browser haben
+// GETRENNTE localStorage-Speicher – auf iOS hart von Apple, auf Android ebenso beobachtet.
+// Beim Login landet das Dauer-Ticket deshalb im Browser-Kontext, die App sah es nie und
+// verlangte bei JEDEM Start eine Neuanmeldung. Lösung: Der Login legt das Ticket zusätzlich
+// unter einem Einmal-Code beim Server ab (action:'stash'); dieser Code liegt im APP-Speicher
+// (gesetzt in gdriveLogin/_openOAuthNewTab) und wird hier eingelöst. Der Server löscht das
+// Fach beim Abholen sofort; nach 5 Minuten verfällt es ohnehin.
+async function _mobClaimHandoff(){
+  try{
+    if(localStorage.getItem('pam_gdrive_refresh_token'))return false; // schon vorhanden – nichts zu tun
+    const hcode=localStorage.getItem(HANDOFF_CODE_KEY);
+    if(!hcode)return false;
+    const r=await fetch(CLOUD_FUNCTION_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'claim',handoff_code:hcode}),
+    });
+    const d=await r.json().catch(()=>({}));
+    if(r.ok&&d.refresh_token){
+      try{localStorage.setItem('pam_gdrive_refresh_token',d.refresh_token);}catch(e){}
+      try{localStorage.removeItem(HANDOFF_CODE_KEY);}catch(e){} // Einmal-Code verbraucht
+      console.log('[Handoff] Dauer-Ticket aus dem Schliessfach uebernommen.');
+      return true;
+    }
+    // 404 = nicht (mehr) vorhanden, 410 = abgelaufen → Code ist wertlos, aufräumen
+    if(r.status===404||r.status===410){try{localStorage.removeItem(HANDOFF_CODE_KEY);}catch(e){}}
+    return false;
+  }catch(e){console.warn('[Handoff] claim fehlgeschlagen:',e);return false;}
+}
 // ── Token im Hintergrund erneuern (via Cloud Function) ──
 async function _renewTokenViaCloud(){
-  const refreshToken=localStorage.getItem('pam_gdrive_refresh_token');
+  let refreshToken=localStorage.getItem('pam_gdrive_refresh_token');
+  // v119: Kein lokales Dauer-Ticket? Einmal im Server-Schließfach nachsehen (PWA-Handoff).
+  // Bewusst HIER eingehängt – so greift es automatisch überall (Start, Visibility, Refresh-Timer).
+  if(!refreshToken&&await _mobClaimHandoff())refreshToken=localStorage.getItem('pam_gdrive_refresh_token');
   if(!refreshToken)return false;
   try{
     const response=await fetch(CLOUD_FUNCTION_URL,{
