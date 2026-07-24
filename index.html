@@ -1511,10 +1511,17 @@ function logout(){
     Object.keys(localStorage).filter(k=>k.startsWith('ptpm_sb_')).forEach(k=>localStorage.removeItem(k));
     // Fix v76: gecachte Schnellnotiz-Ordner-ID löschen → nach Konto-Wechsel kein alter Cache
     localStorage.removeItem(QUICK_PARENT_KEY);
+    // v122: Dauer-Ticket + Handoff-Code MIT abmelden – sie blieben sonst als
+    // „Leiche" liegen und verhinderten beim Neu-Login prompt=consent (kein
+    // frisches Dauer-Ticket mehr möglich)
+    localStorage.removeItem('pam_gdrive_refresh_token');
+    localStorage.removeItem(HANDOFF_CODE_KEY);
   }catch(e){console.warn('[PTP-Mobile] localStorage löschen:',e);}
-  const tokenToRevoke=gdriveToken;
   gdriveToken=null;gdriveTokenExpires=0;fileId=null;boards={};statuses=[];
-  try{if(window.google&&google.accounts&&google.accounts.oauth2&&tokenToRevoke)google.accounts.oauth2.revoke(tokenToRevoke,()=>{});}catch(e){}
+  // v122: KEIN google.accounts.oauth2.revoke() mehr – das widerrief den GESAMTEN
+  // Google-Zugriff des Clients und tötete damit die Dauer-Tickets ALLER
+  // Geräte/Kontexte (wahrscheinliche Ursache des Dauer-Balkens „Verbindung läuft ab").
+  // Abmelden heißt jetzt nur noch: dieses Gerät vergisst seine Tickets.
   showLogin('Abgemeldet');
 }
 function showLogin(msg){
@@ -3421,7 +3428,9 @@ async function _renewTokenViaCloud(){
     if(!response.ok||!data.access_token){
       // Fix v59: ungültigen/widerrufenen Refresh-Token entfernen → nächster Login
       // fordert via prompt=consent automatisch einen neuen an
-      const errStr=JSON.stringify(data&&(data.error_description||data.error)||'');
+      // v122: GANZE Antwort prüfen statt nur error_description – die oauthBridge
+      // lieferte den Code invalid_grant bisher gar nicht bzw. an anderer Stelle
+      const errStr=JSON.stringify(data||{});
       if(errStr.includes('invalid_grant')){
         try{localStorage.removeItem('pam_gdrive_refresh_token');}catch(e){}
         console.warn('[Cloud-Refresh Mobile] Refresh-Token ungültig – entfernt.');
