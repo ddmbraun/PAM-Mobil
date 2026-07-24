@@ -7662,10 +7662,14 @@ function embedExifCaption(dataUrl,caption){
   try{
     if(!window.piexif)return dataUrl;
     let exifObj;
+    // v121: Bei unlesbarem EXIF NICHT mit leerem Satz überschreiben (würde GPS/Datum
+    // löschen) – dann lieber gar nicht einbetten, der Text steht ja in der Aufgabe.
     try{exifObj=piexif.load(dataUrl);}
-    catch(e){exifObj={'0th':{},'Exif':{},'GPS':{},'1st':{},'thumbnail':null};}
+    catch(e){return dataUrl;}
     if(!exifObj['0th'])exifObj['0th']={};
-    exifObj['0th'][piexif.ImageIFD.ImageDescription]=caption;
+    // v121: Text als UTF-8-Bytes – Emojis/Sonderzeichen (Zeichencode >255) zerstörten
+    // sonst die EXIF-Struktur der Datei (bewiesen 24.07.: „Wrong JPEG data").
+    exifObj['0th'][piexif.ImageIFD.ImageDescription]=unescape(encodeURIComponent(String(caption||'')));
     const exifBytes=piexif.dump(exifObj);
     return piexif.insert(exifBytes,dataUrl);
   }catch(e){console.warn('[PTP-Mobile] EXIF:',e);return dataUrl;}
@@ -7781,6 +7785,120 @@ async function _embedExifInDrive(driveId,caption){
     {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'image/jpeg'},body:newBlob});
   _fotoBlobCache.delete(driveId);
 }
+
+// ══════════ v121 FOTO-GPS-PAKET ══════════
+// Hintergrund (Befund Frank 24.07.): Text/Zeichnung AUF dem Foto erzeugt eine Canvas-Kopie
+// OHNE Aufnahmedaten (GPS/Datum/Kamera) – und die Kopie verdeckt ab dann überall das Original.
+// (1) _mobExifTransplant: Aufnahmedaten des Originals in die bemalte Kopie übernehmen
+//     (gleiche Technik + Ausnahmen wie die v118-Foto-Kompression).
+// (2) GPS fest in die Drive-JPEG schreiben (📍-Dialog in der Großansicht) – korrigiert
+//     falsche Koordinaten oder ergänzt fehlende, nachträglich und von jedem Gerät.
+function _mobBlobToDataUrl(blob){
+  return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(blob);});
+}
+async function _mobExifTransplant(f,editedDataUrl){
+  try{
+    if(!f||!f.driveId)return editedDataUrl;
+    if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+    if(!window.piexif)return editedDataUrl;
+    const blobUrl=await _fetchFotoBlob(f.driveId);
+    if(!blobUrl)return editedDataUrl;
+    const origUrl=await _mobBlobToDataUrl(await (await fetch(blobUrl)).blob());
+    if(!origUrl.startsWith('data:image/jpeg')&&!origUrl.startsWith('data:image/jpg'))return editedDataUrl;
+    const src=piexif.load(origUrl);
+    const dim=await new Promise(res=>{const i=new Image();i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight});i.onerror=()=>res(null);i.src=editedDataUrl;});
+    const z=src['0th']||{},ex=src['Exif']||{};
+    const keep={'0th':Object.assign({},z),'Exif':Object.assign({},ex),'GPS':src['GPS']||{},'1st':{},'thumbnail':null};
+    delete keep['0th'][piexif.ImageIFD.Orientation];   // Canvas-Bild ist schon aufrecht
+    delete keep['0th'][piexif.ImageIFD.ImageWidth];
+    delete keep['0th'][piexif.ImageIFD.ImageLength];
+    delete keep['Exif'][piexif.ExifIFD.MakerNote];     // Binärblock mit toten Offsets
+    if(dim){keep['Exif'][piexif.ExifIFD.PixelXDimension]=dim.w;keep['Exif'][piexif.ExifIFD.PixelYDimension]=dim.h;}
+    if(!Object.keys(keep['GPS']).length&&!Object.keys(keep['0th']).length&&!Object.keys(keep['Exif']).length)return editedDataUrl;
+    let bytes;
+    try{bytes=piexif.dump(keep);}
+    catch(eDump){ // exotische Tag-Typen → Minimalsatz wie v98 (GPS/Datum/Kamera)
+      const mini={'0th':{},'Exif':{},'GPS':src['GPS']||{},'1st':{},'thumbnail':null};
+      [piexif.ImageIFD.Make,piexif.ImageIFD.Model,piexif.ImageIFD.DateTime].forEach(t=>{if(z[t]!==undefined)mini['0th'][t]=z[t];});
+      [piexif.ExifIFD.DateTimeOriginal,piexif.ExifIFD.DateTimeDigitized].forEach(t=>{if(ex[t]!==undefined)mini['Exif'][t]=ex[t];});
+      bytes=piexif.dump(mini);
+    }
+    return piexif.insert(bytes,editedDataUrl);
+  }catch(e){console.warn('[EXIF-Transplant]',e);return editedDataUrl;}
+}
+// Dezimalgrad → EXIF-Rational [[Grad,1],[Min,1],[Sek*10000,10000]]
+function _gpsDecToRational(dec){
+  const a=Math.abs(dec);
+  const d=Math.floor(a),mFull=(a-d)*60,m=Math.floor(mFull),s=Math.round((mFull-m)*60*10000);
+  return [[d,1],[m,1],[s,10000]];
+}
+// GPS in eine JPEG-dataURL schreiben; übriges EXIF bleibt erhalten (Fallback: Minimalsatz)
+function _writeGpsIntoDataUrl(dataUrl,lat,lon){
+  let exifObj;
+  try{exifObj=piexif.load(dataUrl);}
+  catch(e){exifObj={'0th':{},'Exif':{},'GPS':{},'1st':{},'thumbnail':null};}
+  const gpsIfd={};
+  gpsIfd[piexif.GPSIFD.GPSVersionID]=[2,3,0,0];
+  gpsIfd[piexif.GPSIFD.GPSLatitudeRef]=lat>=0?'N':'S';
+  gpsIfd[piexif.GPSIFD.GPSLatitude]=_gpsDecToRational(lat);
+  gpsIfd[piexif.GPSIFD.GPSLongitudeRef]=lon>=0?'E':'W';
+  gpsIfd[piexif.GPSIFD.GPSLongitude]=_gpsDecToRational(lon);
+  exifObj['GPS']=gpsIfd;
+  exifObj['1st']={};exifObj['thumbnail']=null; // Thumbnail weglassen (spart KB, kann dump-Fehler auslösen)
+  let bytes;
+  try{bytes=piexif.dump(exifObj);}
+  catch(eDump){ // Alt-EXIF nicht schreibbar → Minimalsatz (Datum/Kamera) + neues GPS behalten
+    const z=exifObj['0th']||{},ex=exifObj['Exif']||{};
+    const mini={'0th':{},'Exif':{},'GPS':gpsIfd,'1st':{},'thumbnail':null};
+    [piexif.ImageIFD.Make,piexif.ImageIFD.Model,piexif.ImageIFD.DateTime].forEach(t=>{if(z[t]!==undefined)mini['0th'][t]=z[t];});
+    [piexif.ExifIFD.DateTimeOriginal,piexif.ExifIFD.DateTimeDigitized].forEach(t=>{if(ex[t]!==undefined)mini['Exif'][t]=ex[t];});
+    bytes=piexif.dump(mini);
+  }
+  return piexif.insert(bytes,dataUrl);
+}
+// GPS in eine Foto-Datei auf Drive schreiben (Download → EXIF ändern → zurücklegen)
+async function _mobWriteGpsToDriveFoto(driveId,lat,lon){
+  if(!driveId)throw new Error('keine Drive-ID');
+  if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+  if(!window.piexif)throw new Error('EXIF-Modul nicht geladen');
+  if(!(await ensureToken()))throw new Error('nicht angemeldet/offline');
+  _fotoBlobCache.delete(driveId); // frische Version holen, nicht den Cache
+  const blobUrl=await _fetchFotoBlob(driveId);
+  if(!blobUrl)throw new Error('Foto nicht ladbar');
+  const dataUrl=await _mobBlobToDataUrl(await (await fetch(blobUrl)).blob());
+  if(!dataUrl.startsWith('data:image/jpeg')&&!dataUrl.startsWith('data:image/jpg'))throw new Error('kein JPEG');
+  const out=_writeGpsIntoDataUrl(dataUrl,lat,lon);
+  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+encodeURIComponent(driveId)+'?uploadType=media',
+    {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'image/jpeg'},body:_dataUrlToBlob(out)});
+  if(!r.ok)throw new Error('Drive HTTP '+r.status);
+  _fotoBlobCache.delete(driveId);
+  return true;
+}
+// Adresse → Koordinaten (Photon, Fallback Nominatim) für den 📍-Dialog
+async function _forwardGeocodeMob(q){
+  q=String(q||'').trim();
+  if(!q)return null;
+  try{
+    const r=await _fetchTimeout('https://photon.komoot.io/api/?limit=1&lang=de&q='+encodeURIComponent(q),null,8000);
+    if(r.ok){
+      const d=await r.json();
+      const ft=d.features&&d.features[0];
+      if(ft&&ft.geometry&&ft.geometry.coordinates){
+        const p=ft.properties||{};
+        const label=[[p.street||p.name||'',p.housenumber||''].filter(Boolean).join(' '),[p.postcode||'',p.city||p.town||p.village||''].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+        return {lat:ft.geometry.coordinates[1],lon:ft.geometry.coordinates[0],label:label||q};
+      }
+    }
+  }catch(e){console.warn('[Geocode vorwärts Photon]',e);}
+  try{
+    const r=await _fetchTimeout('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=de&q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}},8000);
+    if(r.ok){
+      const d=await r.json();
+      if(d&&d[0])return {lat:parseFloat(d[0].lat),lon:parseFloat(d[0].lon),label:d[0].display_name||q};
+    }
+  }catch(e){console.warn('[Geocode vorwärts Nominatim]',e);}
+  return null;
+}
 </script>
 
 <script>
@@ -7823,6 +7941,7 @@ if ('serviceWorker' in navigator) {
       <span class="lb-text-view-label" id="lbTextViewLabel"></span>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbEditCaption()">📝 Text</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbStartDraw()" style="margin-left:4px">✏️ Malen</button>
+      <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbGpsDialog()" style="margin-left:4px">📍 GPS</button>
     </div>
     <div class="lb-text-edit-form">
       <textarea id="lbTextInput" placeholder="Kurze Beschreibung zum Foto…" rows="2" autocomplete="off"></textarea>
@@ -8128,6 +8247,124 @@ function lbSaveCaption(){
   if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){t.fotos[_lbFotoIdx].caption=text;scheduleSave();if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
 }
 function lbCancelCaption(){const bar=document.getElementById('lbTextbar');if(bar)bar.classList.remove('editing');}
+// ── v121: 📍-Dialog – Aufnahmeort im Foto ansehen/korrigieren ──────────────────
+let _lbGpsPending=null; // {lat,lon,label} nach erfolgreicher Prüfung
+function lbGpsDialog(){
+  if(_lbFotoIdx<0)return;
+  const t=currentTask();if(!t||!t.fotos||!t.fotos[_lbFotoIdx])return;
+  const f=t.fotos[_lbFotoIdx];
+  if(!f.driveId&&!f.editedDriveId){toast('Foto ist noch nicht zu Drive hochgeladen','error');return;}
+  _lbGpsPending=null;
+  const old=document.getElementById('lbGpsPopup');if(old)old.remove();
+  const ov=document.createElement('div');
+  ov.id='lbGpsPopup';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML='<div style="background:var(--bg2,#232326);color:var(--text,#fff);border:1px solid var(--border,#3d3d44);border-radius:14px;padding:18px;width:100%;max-width:460px;box-sizing:border-box;" onclick="event.stopPropagation()">'
+    +'<div style="font-size:17px;font-weight:700;margin-bottom:6px;">📍 Aufnahmeort im Foto</div>'
+    +'<div id="lbGpsCurrent" style="font-size:13px;color:var(--text2,#b5b5bd);margin-bottom:12px;">Lese aktuellen Stand…</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">'
+      +'<button onclick="_lbGpsUseHere()" style="flex:1;min-width:150px;padding:12px 8px;border-radius:9px;border:1px solid var(--accent2,#3a6adf);background:var(--bg3,#313138);color:var(--text,#fff);font-size:14px;font-weight:700;cursor:pointer;">📡 Mein Standort</button>'
+      +'<button onclick="_lbGpsUseTaskAdr()" style="flex:1;min-width:150px;padding:12px 8px;border-radius:9px;border:1px solid var(--accent2,#3a6adf);background:var(--bg3,#313138);color:var(--text,#fff);font-size:14px;font-weight:700;cursor:pointer;">🏠 Aus Objektadresse</button>'
+    +'</div>'
+    +'<input id="lbGpsInput" type="text" placeholder="Adresse oder Koordinaten (51.108, 10.653)…" style="width:100%;padding:11px;border-radius:9px;border:1px solid var(--border,#3d3d44);background:var(--bg3,#313138);color:var(--text,#fff);font-size:15px;box-sizing:border-box;">'
+    +'<div id="lbGpsResult" style="font-size:13px;color:var(--text2,#b5b5bd);margin:10px 0;min-height:18px;"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">'
+      +'<button onclick="document.getElementById(\'lbGpsPopup\').remove()" style="padding:11px 16px;border-radius:9px;border:1px solid var(--border,#3d3d44);background:var(--bg3,#313138);color:var(--text,#fff);font-size:14px;cursor:pointer;">Abbrechen</button>'
+      +'<button onclick="_lbGpsResolveInput()" style="padding:11px 16px;border-radius:9px;border:none;background:var(--accent,#2e4fc4);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🔍 Prüfen</button>'
+      +'<button id="lbGpsSaveBtn" onclick="_lbGpsSave()" disabled style="padding:11px 16px;border-radius:9px;border:none;background:#1a8a3c;color:#fff;font-size:14px;font-weight:700;opacity:.45;cursor:pointer;">💾 In Foto speichern</button>'
+    +'</div></div>';
+  ov.addEventListener('click',()=>ov.remove());
+  document.body.appendChild(ov);
+  // Aktuellen Stand aus dem ORIGINAL lesen (die bemalte Kopie hätte evtl. kein EXIF)
+  (async()=>{
+    try{
+      if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+      const id=f.driveId||f.editedDriveId;
+      const blobUrl=await _fetchFotoBlob(id);
+      if(!blobUrl)throw new Error('nicht ladbar');
+      const du=await _mobBlobToDataUrl(await (await fetch(blobUrl)).blob());
+      const gps=_readGpsFromDataUrl(du);
+      const el=document.getElementById('lbGpsCurrent');if(!el)return;
+      if(gps){
+        el.textContent='Aktuell im Foto: '+gps.lat.toFixed(5)+', '+gps.lon.toFixed(5);
+        _reverseGeocode(gps.lat,gps.lon).then(a=>{const e2=document.getElementById('lbGpsCurrent');if(e2&&a)e2.textContent='Aktuell im Foto: '+a;}).catch(()=>{});
+      } else el.textContent='Aktuell ist KEIN Aufnahmeort im Foto gespeichert.';
+    }catch(e){const el=document.getElementById('lbGpsCurrent');if(el)el.textContent='Aktueller Stand nicht lesbar.';}
+  })();
+}
+function _lbGpsSetPending(lat,lon,label){
+  _lbGpsPending={lat:lat,lon:lon,label:label||''};
+  const res=document.getElementById('lbGpsResult');
+  if(res)res.innerHTML='✅ Gefunden: <b>'+esc(label||(lat.toFixed(5)+', '+lon.toFixed(5)))+'</b><br>('+lat.toFixed(6)+', '+lon.toFixed(6)+') – jetzt „💾 In Foto speichern" antippen.';
+  const btn=document.getElementById('lbGpsSaveBtn');
+  if(btn){btn.disabled=false;btn.style.opacity='1';}
+}
+async function _lbGpsUseHere(){
+  const res=document.getElementById('lbGpsResult');
+  if(res)res.textContent='📡 Warte auf genauen GPS-Fix (bis 12 s)…';
+  try{
+    const pos=await _getAccuratePosition(30,12000);
+    const lat=pos.coords.latitude,lon=pos.coords.longitude,acc=Math.round(pos.coords.accuracy||0);
+    let label='Mein Standort (±'+acc+' m)';
+    try{const a=await _reverseGeocode(lat,lon);if(a)label=a+' (±'+acc+' m)';}catch(e){}
+    _lbGpsSetPending(lat,lon,label);
+  }catch(err){
+    const m={1:'Standort-Zugriff verweigert',2:'Standort nicht verfügbar',3:'Zeitüberschreitung'};
+    if(res)res.textContent='⚠ '+(m[err&&err.code]||'GPS-Fehler');
+  }
+}
+function _lbGpsUseTaskAdr(){
+  const t=currentTask();
+  const a=t&&t.adresse?String(t.adresse).trim():'';
+  if(!a){const res=document.getElementById('lbGpsResult');if(res)res.textContent='⚠ Im Auftrag ist keine Objektadresse hinterlegt.';return;}
+  const inp=document.getElementById('lbGpsInput');if(inp)inp.value=a;
+  _lbGpsResolveInput();
+}
+async function _lbGpsResolveInput(){
+  const inp=document.getElementById('lbGpsInput');
+  const res=document.getElementById('lbGpsResult');
+  const q=(inp&&inp.value||'').trim();
+  if(!q){if(res)res.textContent='Bitte Adresse eingeben oder einen der Knöpfe nutzen.';return;}
+  // Koordinaten direkt? (z.B. "51.108, 10.653" – auch aus Google Maps kopiert)
+  const m=q.match(/^\s*(-?\d{1,3}\.\d+)[,;\s]+(-?\d{1,3}\.\d+)\s*$/);
+  if(m){
+    const lat=parseFloat(m[1]),lon=parseFloat(m[2]);
+    if(lat>=-90&&lat<=90&&lon>=-180&&lon<=180){
+      let label=lat.toFixed(5)+', '+lon.toFixed(5);
+      try{const a=await _reverseGeocode(lat,lon);if(a)label=a;}catch(e){}
+      _lbGpsSetPending(lat,lon,label);
+      return;
+    }
+  }
+  if(res)res.textContent='🔍 Suche Adresse…';
+  const hit=await _forwardGeocodeMob(q);
+  if(hit)_lbGpsSetPending(hit.lat,hit.lon,hit.label);
+  else if(res)res.textContent='⚠ Adresse nicht gefunden – bitte genauer eingeben (Straße Nr, PLZ Ort).';
+}
+async function _lbGpsSave(){
+  if(!_lbGpsPending)return;
+  const t=currentTask();if(_lbFotoIdx<0||!t||!t.fotos||!t.fotos[_lbFotoIdx])return;
+  const f=t.fotos[_lbFotoIdx];
+  const btn=document.getElementById('lbGpsSaveBtn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Speichere…';}
+  const lat=_lbGpsPending.lat,lon=_lbGpsPending.lon;
+  let okCount=0,fail='';
+  // In BEIDE Dateien schreiben: Original + (falls vorhanden) bearbeitete Kopie
+  for(const id of [f.driveId,f.editedDriveId]){
+    if(!id)continue;
+    try{await _mobWriteGpsToDriveFoto(id,lat,lon);okCount++;}
+    catch(e){fail=e.message||String(e);console.warn('[GPS-Korrektur]',id,e);}
+  }
+  const ov=document.getElementById('lbGpsPopup');
+  if(okCount>0){
+    if(ov)ov.remove();
+    toast('📍 Aufnahmeort im Foto gespeichert'+(fail?' (eine Datei fehlgeschlagen)':''),'success',4000);
+  }else{
+    if(btn){btn.disabled=false;btn.textContent='💾 In Foto speichern';}
+    const res=document.getElementById('lbGpsResult');
+    if(res)res.textContent='⚠ Speichern fehlgeschlagen: '+fail;
+  }
+}
 function lbOpenOriginal(){if(_lbCurrentUrl)window.open(_lbCurrentUrl,'_blank');}
 function lbShareFoto(){
   if(_lbFotoIdx>=0){const t=currentTask();const f=t&&t.fotos&&t.fotos[_lbFotoIdx];
@@ -8203,6 +8440,9 @@ async function _uploadEditedFoto(t,f,dataUrl){
       ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
     if(!folderId){toast('Zeichnung nur lokal – kein Foto-Ordner im Task','info');return;}
     if(!(await ensureToken())){toast('Zeichnung nur lokal – nicht angemeldet/offline','info');return;}
+    // v121: Aufnahmedaten (GPS/Datum/Kamera) des ORIGINALS in die Kopie übernehmen –
+    // die Canvas-Kopie hätte sonst keinerlei EXIF und verdeckt das Original überall.
+    try{dataUrl=await _mobExifTransplant(f,dataUrl);}catch(e){console.warn('[EditedFoto-EXIF]',e);}
     const blob=await (await fetch(dataUrl)).blob();
     const file=new File([blob],f.editedName||'Foto_bearbeitet.jpg',{type:'image/jpeg'});
     const meta=await _uploadOneFotoToDrive(file,folderId);
