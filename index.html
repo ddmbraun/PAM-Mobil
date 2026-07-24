@@ -669,7 +669,7 @@ async function _restoreMobileBackupIfDirty(){
 // Offline-Start: Boards aus dem lokalen Backup laden, wenn Drive nicht erreichbar ist.
 // Nur wenn wirklich offline/kein gültiger Token – online hat Drive Vorrang. Read-only:
 // saveFile() blockt Drive-Writes solange _mobOfflineActive (kein Clobber neuerer Stände).
-function _mobRestoreBoardsOffline(){
+function _mobRestoreBoardsOffline(schnellstart){
   const reallyOffline=(typeof navigator!=='undefined'&&navigator.onLine===false)||!tokenValid();
   if(!reallyOffline)return false;
   const bk=_getMobileBackup();
@@ -679,7 +679,10 @@ function _mobRestoreBoardsOffline(){
     const bkeys=Object.keys(boards);
     if(!currentBoard||!boards[currentBoard])currentBoard=bkeys[0]||'';
     _mobOfflineActive=true;
-    try{toast('📴 Offline – lokaler Stand (nur ansehen)','info');}catch(e){}
+    // v120 (Geduld-Paket): Beim Schnellstart (Netz vorhanden, Verbindung läuft im
+    // Hintergrund an) passenderen Hinweis zeigen als „Offline".
+    const _txt=(schnellstart&&navigator.onLine!==false)?'⏳ Lokaler Stand – verbinde im Hintergrund…':'📴 Offline – lokaler Stand (nur ansehen)';
+    try{toast(_txt,'info');}catch(e){}
     return true;
   }catch(e){console.warn('[PTP-Mobile] Offline-Restore fehlgeschlagen:',e);return false;}
 }
@@ -1340,8 +1343,17 @@ function _scheduleGdriveRefresh(expiresIn){
         // Fallback: Silent-Refresh via GSI versuchen
         silentRefresh().then(ok2=>{
           if(!ok2){
-            _showMobDriveWarnBanner();
-            toast('⚠ Drive-Verbindung läuft ab – bitte oben erneuern','error');
+            // v120 (Geduld-Paket): Läuft dieser Timer im Hintergrund/ohne Netz ab,
+            // erschien sofort Balken + Fehlermeldung („versucht sich ständig
+            // anzumelden"). Mit vorhandenem Dauer-Ticket: still weiterprobieren,
+            // Hinweis erst nach gescheitertem Zweitversuch trotz Netz.
+            if(localStorage.getItem('pam_gdrive_refresh_token')||localStorage.getItem(HANDOFF_CODE_KEY)){
+              _mobArmOnlineRetry();
+              _mobRetrySoonThenWarn();
+            }else{
+              _showMobDriveWarnBanner();
+              toast('⚠ Drive-Verbindung läuft ab – bitte oben erneuern','error');
+            }
           }
         });
       }
@@ -1393,11 +1405,18 @@ async function _ensureTokenSilent(){
         if(tokenValid())return true;
       }
     }catch(e){}
-    // 2) Cloud-Refresh (nutzt Refresh-Token, ohne Nutzereingriff) – 1 Retry bei Transientfehler
+    // 2) Cloud-Refresh (nutzt Refresh-Token, ohne Nutzereingriff) – Retries bei Transientfehler.
+    // v120 (Geduld-Paket): dritter Versuch nach 4 s – das WLAN braucht nach dem Aufwachen
+    // oft länger als die bisherigen 1,5 s, und der Cloud-Server macht nach längerer Pause
+    // einen Kaltstart von mehreren Sekunden.
     if(await _renewTokenViaCloud())return true;
-    if(localStorage.getItem('pam_gdrive_refresh_token')){
+    if(localStorage.getItem('pam_gdrive_refresh_token')||localStorage.getItem(HANDOFF_CODE_KEY)){
       await new Promise(r=>setTimeout(r,1500));
       if(await _renewTokenViaCloud())return true;
+      if(navigator.onLine!==false){
+        await new Promise(r=>setTimeout(r,4000));
+        if(await _renewTokenViaCloud())return true;
+      }
     }
     // 3) Stiller GSI-Refresh (Desktop-Browser; scheitert auf Safari/iOS durch ITP)
     return await silentRefresh();
@@ -1407,9 +1426,65 @@ async function _ensureTokenSilent(){
 }
 async function ensureToken(){
   if(await _ensureTokenSilent())return true;
+  // v120 (Geduld-Paket): Ein Netz-Aussetzer ist KEIN Grund für eine neue Anmeldung.
+  // Solange ein Dauer-Ticket (oder ein noch nicht eingelöster Schließfach-Code) da ist,
+  // bleibt der Login-Screen weg – stattdessen probiert die App automatisch weiter,
+  // sobald das Netz zurück ist. Ist das Ticket wirklich ungültig (invalid_grant),
+  // hat _renewTokenViaCloud es bereits gelöscht → dann erscheint der Login-Screen.
+  if(localStorage.getItem('pam_gdrive_refresh_token')||localStorage.getItem(HANDOFF_CODE_KEY)){
+    _mobArmOnlineRetry();
+    // Wichtig: Der Cloud-Server meldet ein wirklich ungültiges Ticket nur als
+    // allgemeinen Fehler (kein „invalid_grant" im Text) – das Ticket wird dann NICHT
+    // automatisch gelöscht. Damit der Nutzer trotzdem einen Ausweg sieht: verzögerter
+    // Zweitversuch; scheitert der trotz Netz, kommt der orange Balken mit 🔑 Erneuern.
+    _mobRetrySoonThenWarn();
+    return false;
+  }
   // Erst nach vollständig ausgeschöpftem stillen Pfad den Login-Screen zeigen.
   showLogin('Bitte erneut anmelden');
   return false;
+}
+// ── v120 (Geduld-Paket): automatisches Weiterprobieren nach Netz-Aussetzern ──
+// „online"-Signal des Browsers nutzen: sobald das Netz zurückmeldet, still neu verbinden.
+// Zusätzlich _mobRetrySoonThenWarn(): ein verzögerter Zweitversuch (6 s) – erst wenn DER
+// auch scheitert, obwohl der Browser Netz meldet, erscheint der orange Hinweis-Balken.
+let _mobOnlineRetryArmed=false;
+let _mobWarnRetryTimer=null;
+function _mobArmOnlineRetry(){
+  if(_mobOnlineRetryArmed)return;
+  _mobOnlineRetryArmed=true;
+  // 800 ms warten: „online" feuert oft, bevor das WLAN wirklich Daten trägt
+  window.addEventListener('online',()=>{setTimeout(()=>{_mobOnlineRetryNow().catch(()=>{});},800);});
+}
+// Nach gelungenem stillem Reconnect: hing der Start noch (Login-Screen sichtbar,
+// Offline-Stand aktiv oder noch keine Datei) → normalen Anmelde-Abschluss nachholen;
+// sonst reicht ein Daten-Abgleich.
+let _mobReconnectFollowupTs=0; // verhindert doppelten afterLogin()-Lauf (online-Event + 6-s-Timer)
+function _mobAfterSilentReconnect(){
+  _hideMobDriveWarnBanner();
+  const loginVisible=!document.getElementById('loginScreen').classList.contains('hidden');
+  if(loginVisible||_mobOfflineActive||!fileId){
+    if(Date.now()-_mobReconnectFollowupTs<15000)return;
+    _mobReconnectFollowupTs=Date.now();
+    afterLogin();
+  }
+  else{try{pollForChanges();}catch(e){}}
+}
+async function _mobOnlineRetryNow(){
+  if(tokenValid()){_mobAfterSilentReconnect();return;}
+  if(!localStorage.getItem('pam_gdrive_refresh_token')&&!localStorage.getItem(HANDOFF_CODE_KEY))return;
+  const ok=await _ensureTokenSilent();
+  if(ok)_mobAfterSilentReconnect();
+}
+function _mobRetrySoonThenWarn(){
+  clearTimeout(_mobWarnRetryTimer);
+  _mobWarnRetryTimer=setTimeout(async()=>{
+    if(tokenValid()){_mobAfterSilentReconnect();return;}
+    if(!localStorage.getItem('pam_gdrive_refresh_token')&&!localStorage.getItem(HANDOFF_CODE_KEY))return;
+    const ok=await _ensureTokenSilent();
+    if(ok)_mobAfterSilentReconnect();
+    else if(navigator.onLine!==false)_showMobDriveWarnBanner();
+  },6000);
 }
 function forceAppUpdate(){
   if('serviceWorker' in navigator){
@@ -1808,7 +1883,14 @@ function startPolling(){
       if(!tokenValid()||msLeft<600000){
         const ok=await _ensureTokenSilent();
         if(ok)_hideMobDriveWarnBanner();
-        else if(localStorage.getItem('pam_gdrive_refresh_token'))_showMobDriveWarnBanner();
+        else if(localStorage.getItem('pam_gdrive_refresh_token')||localStorage.getItem(HANDOFF_CODE_KEY)){
+          // v120 (Geduld-Paket): Direkt nach dem Aufwachen ist das Netz oft noch nicht
+          // wieder da – das ist KEIN Grund für den orangen Hinweis. Automatisch
+          // weiterprobieren; der Hinweis kommt erst, wenn auch der verzögerte
+          // Zweitversuch trotz gemeldetem Netz scheitert.
+          _mobArmOnlineRetry();
+          _mobRetrySoonThenWarn();
+        }
       }
       pollForChanges();
     });
@@ -2022,7 +2104,15 @@ async function saveFile(){
         // Änderungen hier verworfen (dirty=false) → Schnellnotizen gingen verloren.
         // Nach Neu-Login speichert afterLogin() die ausstehenden Änderungen nach.
         _saveMobileBackup();
-        showLogin('Bitte erneut anmelden – ungespeicherte Änderungen bleiben erhalten');
+        // v120 (Geduld-Paket): Nur bei wirklich fehlendem Dauer-Ticket zum Login
+        // schicken – bei Netz-/Serverproblem lokal gesichert lassen + weiterprobieren.
+        if(localStorage.getItem('pam_gdrive_refresh_token')||localStorage.getItem(HANDOFF_CODE_KEY)){
+          setSaveInd('error','✗ Nicht verbunden – lokal gesichert');
+          _mobArmOnlineRetry();
+          _mobRetrySoonThenWarn();
+        }else{
+          showLogin('Bitte erneut anmelden – ungespeicherte Änderungen bleiben erhalten');
+        }
         return;
       }
     } else if(!r.ok){
@@ -3294,11 +3384,12 @@ async function _mobClaimHandoff(){
     if(localStorage.getItem('pam_gdrive_refresh_token'))return false; // schon vorhanden – nichts zu tun
     const hcode=localStorage.getItem(HANDOFF_CODE_KEY);
     if(!hcode)return false;
-    const r=await fetch(CLOUD_FUNCTION_URL,{
+    // v120: Zeitlimit 8 s wie beim Refresh – Startvorgang darf nicht am Netz hängenbleiben
+    const r=await _fetchTimeout(CLOUD_FUNCTION_URL,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'claim',handoff_code:hcode}),
-    });
+    },8000);
     const d=await r.json().catch(()=>({}));
     if(r.ok&&d.refresh_token){
       try{localStorage.setItem('pam_gdrive_refresh_token',d.refresh_token);}catch(e){}
@@ -3319,11 +3410,13 @@ async function _renewTokenViaCloud(){
   if(!refreshToken&&await _mobClaimHandoff())refreshToken=localStorage.getItem('pam_gdrive_refresh_token');
   if(!refreshToken)return false;
   try{
-    const response=await fetch(CLOUD_FUNCTION_URL,{
+    // v120 (Geduld-Paket): Zeitlimit 8 s – bei halbwachem Netz (Tablet kommt gerade aus dem
+    // Ruhezustand) hing dieser Aufruf sonst ohne Ende und die App stand auf „Verbinde automatisch…".
+    const response=await _fetchTimeout(CLOUD_FUNCTION_URL,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'refresh',refresh_token:refreshToken}),
-    });
+    },8000);
     const data=await response.json().catch(()=>({}));
     if(!response.ok||!data.access_token){
       // Fix v59: ungültigen/widerrufenen Refresh-Token entfernen → nächster Login
@@ -7463,6 +7556,11 @@ window.addEventListener('load',async()=>{
       afterLogin();return;
     }
   }catch(e){console.warn('[PTP-Mobile]',e);}
+  // v120 (Geduld-Paket): SOFORT den letzten lokalen Stand anzeigen (nur ansehen),
+  // während die Verbindung im Hintergrund aufgebaut wird – statt Warten auf dem
+  // Login-Screen mit „Verbinde automatisch…". Sobald die Verbindung steht, lädt
+  // afterLogin()/loadFile() frisch von Drive und hebt den Nur-Ansehen-Modus auf.
+  try{if(_mobRestoreBoardsOffline(true)){showList();renderList();}}catch(e){console.warn('[PTP-Mobile] Schnellstart lokal:',e);}
   // GIS initialisieren, dann silent refresh versuchen
   const tryAutoConnect = async () => {
     initTokenClient();
@@ -7480,6 +7578,13 @@ window.addEventListener('load',async()=>{
       if(ok){afterLogin();return;}
     }
     document.getElementById('loginStatus').textContent='';
+    // v120 (Geduld-Paket): Start-Verbindung gescheitert, aber Dauer-Ticket vorhanden
+    // (= nur Netz-/Serverproblem) → automatisch weiterprobieren, sobald Netz zurück
+    // ist bzw. nach 6 s. Der Nutzer sieht solange den lokalen Stand vom Schnellstart.
+    if(localStorage.getItem('pam_gdrive_refresh_token')||localStorage.getItem(HANDOFF_CODE_KEY)){
+      _mobArmOnlineRetry();
+      _mobRetrySoonThenWarn();
+    }
   };
   // Wenn Google bereits geladen → sofort versuchen, sonst auf onGsiLoaded warten
   if(window.google&&window.google.accounts){
