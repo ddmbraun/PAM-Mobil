@@ -8943,6 +8943,11 @@ window.Dachplan=(function(){
   +'.dpb{min-height:52px;padding:0 14px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:16px;font-weight:600;cursor:pointer}' /* v116: Kopfleiste größer (42/14 → 52/16, Wunsch Frank) */
   +'.dpb.on{background:#153a6b;border-color:#3b82f6}.dpb.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}'
   +'#dpMap{flex:1;min-height:0;background:#0d0f14}#dpImap{flex:1;min-height:0;background:#0d0f14}'
+  /* v127: ⋯-Menü, Handy-Kompaktleiste, „Kein Bild"-Hinweis */
+  +'#dpMoreMenu{position:absolute;top:calc(100% + 4px);right:6px;background:#171a21;border:1px solid #2a2f3a;border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:6px;z-index:1600;box-shadow:0 6px 24px rgba(0,0,0,.55);min-width:230px}'
+  +'#dpMoreMenu .dpb{width:100%;text-align:left}'
+  +'#dpNoImg{position:absolute;left:16px;right:16px;top:36%;display:flex;flex-direction:column;align-items:center;gap:12px;z-index:1100;color:#9aa3b2;font-size:15px;text-align:center}'
+  +'@media (max-width:520px){#dpBar .dpb{min-height:44px;padding:0 10px;font-size:14px}#dpBar #dpSearch{order:99;flex-basis:100%;min-height:44px;font-size:14px}}'
   +'.dpMk{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}'
   +'.dpMk span{transform:rotate(45deg);color:#fff;font-weight:800;font-size:12px}'
   +'#dpListPanel{position:absolute;top:58px;left:0;right:0;bottom:0;background:#0f1115;z-index:1300;overflow:auto;padding:12px}'
@@ -8969,22 +8974,32 @@ window.Dachplan=(function(){
     d.innerHTML=
      '<div id="dpBar">'
       +'<button class="dpb" id="dpBack">←</button>'
-      +'<button class="dpb" id="dpMode" title="Karte / eigenes Bild">🗺️</button>'
       +'<input id="dpSearch" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:90px;min-height:52px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;padding:0 12px;font-size:16px">'
       +'<button class="dpb" id="dpDach" title="Karte auf die Auftragsadresse springen">🏠 Dach</button>'
-      +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild</button>'
-      +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kal.</button>'
       +'<button class="dpb" id="dpLoc" title="Mein Standort">📍</button>'
       +'<button class="dpb" id="dpPinHere" title="Pin an meinem Standort setzen">📍➕</button>'
       +'<button class="dpb" id="dpLive" title="Live-Standort: Punkt wandert mit, ±m-Anzeige, Blickrichtung">📡 Live</button>'
       +'<button class="dpb" id="dpAdd">➕ Pin</button>'
       +'<button class="dpb" id="dpList" title="Pin-Liste">☰</button>'
       +'<button class="dpb" id="dpFilter">Alle</button>'
-      +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen">🗑</button>'
+      // v127 (Wunsch Frank, Handy-Aufräumen): Selten-Funktionen ins ⋯-Menü –
+      // Karte↔Bild, Bild laden, Kalibrieren, Zurücksetzen. Ids/Handler unverändert.
+      +'<button class="dpb" id="dpMore" title="Weitere Funktionen">⋯</button>'
+      +'<div id="dpMoreMenu" class="dp-hidden">'
+        +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">🖼️ Zum Bild wechseln</button>'
+        +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild laden</button>'
+        +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kalibrieren</button>'
+        +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen" style="color:#e5484d;border-color:#e5484d">🗑 Zurücksetzen</button>'
+      +'</div>'
       +'<input type="file" id="dpBildInput" accept="image/*" style="display:none">'
      +'</div>'
      +'<div id="dpMap"></div>'
      +'<div id="dpImap" class="dp-hidden"></div>'
+     +'<div id="dpNoImg" class="dp-hidden">' // v127: dauerhafter Hinweis statt schwarzer Fläche im Bild-Modus ohne Bild
+      +'<div>Kein eigenes Bild geladen.</div>'
+      +'<button class="dpb" id="dpNoImgLoad" style="border-color:#3b82f6;color:#7db4ff">📷 Bild laden</button>'
+      +'<button class="dpb" id="dpNoImgMap">🗺️ Zur Luftbild-Karte wechseln</button>'
+     +'</div>'
      +'<div id="dpListPanel" class="dp-hidden"></div>'
      +'<div id="dpMsg" class="dp-hidden"></div>'
      +'<div id="dpSheet">'
@@ -9019,6 +9034,10 @@ window.Dachplan=(function(){
     q('#dpBildInput').onchange=e=>{if(e.target.files[0])loadBild(e.target.files[0]);e.target.value='';};
     q('#dpCalib').onclick=startCalib;
     q('#dpReset').onclick=resetPlan;
+    q('#dpMore').onclick=ev=>{ev.stopPropagation();q('#dpMoreMenu').classList.toggle('dp-hidden');}; // v127: ⋯-Menü
+    q('#dpMoreMenu').addEventListener('click',()=>setTimeout(()=>{try{q('#dpMoreMenu').classList.add('dp-hidden');}catch(_){}},60)); // v127: nach Auswahl zuklappen
+    q('#dpNoImgLoad').onclick=()=>q('#dpBildInput').click(); // v127: Hinweis-Knöpfe im leeren Bild-Modus
+    q('#dpNoImgMap').onclick=()=>setBase('map');
     q('#dpSearch').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();doSearch(q('#dpSearch').value);}});
     q('#dpAdd').onclick=()=>{addMode=!addMode;q('#dpAdd').classList.toggle('on',addMode);q('#dpAdd').textContent=addMode?'➕ Pin ✓':'➕ Pin';};
     q('#dpFilter').onclick=()=>{filter=filter==='alle'?'schaden':'alle';q('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';renderPins();};
@@ -9298,13 +9317,23 @@ window.Dachplan=(function(){
       ov.remove();say('Foto-Text gespeichert');
     };
   }
+  let adrM=null; // v128: 🏠-Marker auf der gefundenen Adresse (reine Anzeige, kein Pin)
   async function doSearch(qstr){
     qstr=(qstr||'').trim();if(!qstr||!map)return;
     say('Suche „'+qstr+'"…');
     try{
       const r=await fetch('https://photon.komoot.io/api/?limit=1&lang=de&q='+encodeURIComponent(qstr));
       const j=await r.json();
-      if(j&&j.features&&j.features.length){const c=j.features[0].geometry.coordinates;map.setView([c[1],c[0]],18);}
+      if(j&&j.features&&j.features.length){
+        const c=j.features[0].geometry.coordinates;
+        map.setView([c[1],c[0]],18);
+        // v128 (Befund Frank: „warum hab ich da keinen Punkt auf dem Objekt?"):
+        // gefundene Adresse sichtbar markieren – 🏠-Symbol, nicht anklickbar,
+        // wird nicht gespeichert, wandert bei jeder neuen Suche mit.
+        try{if(adrM)map.removeLayer(adrM);}catch(_){}
+        adrM=L.marker([c[1],c[0]],{icon:L.divIcon({className:'',html:'<div style="font-size:32px;line-height:1;text-shadow:0 2px 6px rgba(0,0,0,.65)">🏠</div>',iconSize:[32,32],iconAnchor:[16,28]}),interactive:false,zIndexOffset:-100}).addTo(map);
+        say('🏠 = gefundene Adresse');
+      }
       else say('Adresse nicht gefunden','error');
     }catch(e){say('Suche fehlgeschlagen (offline?)','error');}
   }
@@ -9372,6 +9401,7 @@ window.Dachplan=(function(){
     const sc=await scaleImg(file,2600,0.85);
     const key='dpbase_'+t.id;try{await _mobPhotoSave(key,sc.url);}catch(_){}
     dp.imgKey=key;dp.imgW=sc.w;dp.imgH=sc.h;
+    try{E.screen.querySelector('#dpNoImg').classList.add('dp-hidden');}catch(_){} // v127
     showBaseImg(sc.url);try{imap.fitBounds(bnd());}catch(_){}renderImgPins();save();say('Basisbild gesetzt');
     const folderId=resolveFolder();
     if(folderId){try{if(typeof ensureToken==='function')await ensureToken();const f=await dataUrlToFile(sc.url,'dachplan_basis.jpg');const meta=await _uploadOneFotoToDrive(f,folderId);dp.imgDriveId=meta.id;save();}catch(e){say('Bild lokal gesichert – Drive-Upload später');}}
@@ -9388,17 +9418,19 @@ window.Dachplan=(function(){
   function setBase(mode){
     dp.base=mode;const isB=(mode==='bild');
     if(isB)try{liveStop();}catch(_){} // v105: Live-Standort gilt nur im Karten-Modus
-    try{E.screen.querySelector('#dpMode').textContent=isB?'🖼️':'🗺️';}catch(_){}
+    try{E.screen.querySelector('#dpMode').textContent=isB?'🗺️ Zur Luftbild-Karte wechseln':'🖼️ Zum Bild wechseln';}catch(_){} // v127: sprechende Beschriftung im ⋯-Menü
     try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';}catch(_){}
     E.mapEl.classList.toggle('dp-hidden',isB);E.imapEl.classList.toggle('dp-hidden',!isB);
     Object.keys(markers).forEach(k=>{try{if(map)map.removeLayer(markers[k]);}catch(_){}try{if(imap)imap.removeLayer(markers[k]);}catch(_){}delete markers[k];});
     if(isB){
       if(!ensureImap())return;
+      try{E.screen.querySelector('#dpNoImg').classList.toggle('dp-hidden',!!dp.imgKey);}catch(_){} // v127: Hinweis statt schwarzer Fläche
       setTimeout(()=>{try{imap.invalidateSize();}catch(e){}
         if(dp.imgKey){_mobPhotoGet(dp.imgKey).then(url=>{if(url){showBaseImg(url);}try{if(dp.imgC&&dp.imgZ!=null)imap.setView(dp.imgC,dp.imgZ);else imap.fitBounds(bnd());}catch(_){}renderImgPins();});}
         else{say('Kein Bild – oben „📷 Bild" antippen');}
       },60);
     }else{
+      try{E.screen.querySelector('#dpNoImg').classList.add('dp-hidden');}catch(_){} // v127
       setTimeout(()=>{try{map.invalidateSize();}catch(e){}
         let c=dp.center,z=dp.zoom;
         if(!c&&t.lat&&t.lon){c=[+t.lat,+t.lon];z=19;}
