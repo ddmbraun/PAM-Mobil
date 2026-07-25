@@ -6347,6 +6347,22 @@ function downloadAttachMob(i){
 }
 // ── E-Mail Originale: Vorschau / Download / Ordner ───────────────────────────
 // Fix 2026-05-24: Alte doppelte Definitionen entfernt. Aktive Versionen stehen weiter unten (async _mobOpenEmailPreview, _mobDownloadEml, _mobOpenEmailFolder).
+// ── v123 Paket 1 (Bautagebuch-Vorbereitung): Aufnahme-Zeitstempel f.ts ──
+// Jedes Task-Foto bekommt ein ISO-Aufnahmedatum: beim Aufnehmen/Hochladen aus der
+// Datei (lastModified = Aufnahmezeit bei Kamera-Dateien), beim Ordner-Picker aus
+// den Drive-Metadaten (imageMediaMetadata.time = EXIF-Datum, sonst createdTime).
+// Alt-Bestand trägt der DESKTOP einmalig nach (b514) und synct ihn über workboard.json her.
+function _fotoExifToIso(t){
+  if(!t)return'';
+  const m=/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(t));
+  if(!m)return'';
+  const d=new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]);
+  return isNaN(d)?'':d.toISOString();
+}
+function _fotoTsFromFile(file){
+  try{if(file&&file.lastModified){const d=new Date(file.lastModified);if(!isNaN(d)&&d.getFullYear()>2000)return d.toISOString();}}catch(e){}
+  return new Date().toISOString();
+}
 // ── DRIVE-ORDNER-LADER ──
 async function loadFotosFromDriveFolder(){
   if(!gdriveToken){toast('Bitte zuerst mit Google Drive verbinden','error');return;}
@@ -6358,7 +6374,7 @@ async function loadFotosFromDriveFolder(){
   try{
     const url='https://www.googleapis.com/drive/v3/files'
       +'?q='+encodeURIComponent("'"+folderId+"' in parents and (mimeType contains 'image/') and trashed=false")
-      +'&fields='+encodeURIComponent('files(id,name,mimeType,thumbnailLink,createdTime)')
+      +'&fields='+encodeURIComponent('files(id,name,mimeType,thumbnailLink,createdTime,imageMediaMetadata(time))')
       +'&orderBy=createdTime+desc&pageSize=100';
     const r=await fetch(url,{headers:{Authorization:'Bearer '+gdriveToken}});
     if(!r.ok){
@@ -6384,7 +6400,7 @@ function _showMobileFolderPicker(files,task){
     const already=fotos.find(t=>t.driveId===f.id)?'1':'0';
     const borderCol=already==='1'?'#6a8aff':'transparent';
     const checkDisp=already==='1'?'flex':'none';
-    return '<div class="mfp-item" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-mime="'+esc(f.mimeType||'image/jpeg')+'" data-selected="'+already+'" onclick="_mfpToggle(this)" style="position:relative;width:calc(33% - 4px);aspect-ratio:1;border-radius:8px;overflow:hidden;cursor:pointer;border:3px solid '+borderCol+';background:#222;flex-shrink:0;">'
+    return '<div class="mfp-item" data-id="'+esc(f.id)+'" data-name="'+esc(f.name)+'" data-mime="'+esc(f.mimeType||'image/jpeg')+'" data-ts="'+esc(_fotoExifToIso(f.imageMediaMetadata&&f.imageMediaMetadata.time)||f.createdTime||'')+'" data-selected="'+already+'" onclick="_mfpToggle(this)" style="position:relative;width:calc(33% - 4px);aspect-ratio:1;border-radius:8px;overflow:hidden;cursor:pointer;border:3px solid '+borderCol+';background:#222;flex-shrink:0;">'
       +(thumb?'<img src="'+esc(thumb)+'" style="width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display=\'none\'">'
              :'<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:32px;">🖼️</div>')
       +'<div style="position:absolute;bottom:0;left:0;right:0;font-size:9px;padding:2px 4px;background:rgba(0,0,0,.65);color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.name)+'</div>'
@@ -6424,7 +6440,7 @@ function _mfpConfirm(){
   let added=0;
   selected.forEach(el=>{
     if(!task.fotos.find(f=>f.driveId===el.dataset.id)){
-      task.fotos.push({driveId:el.dataset.id,name:el.dataset.name,mimeType:el.dataset.mime||'image/jpeg',caption:'',thumbnail:'https://drive.google.com/thumbnail?id='+el.dataset.id+'&sz=w400'});
+      task.fotos.push({driveId:el.dataset.id,name:el.dataset.name,mimeType:el.dataset.mime||'image/jpeg',caption:'',thumbnail:'https://drive.google.com/thumbnail?id='+el.dataset.id+'&sz=w400',ts:el.dataset.ts||''});
       added++;
     }
   });
@@ -6517,6 +6533,7 @@ async function uploadFoto(files){
       driveId:null,
       _uploading:true,
       uploadedAt:new Date().toISOString(),
+      ts:_fotoTsFromFile(file), // v123: Aufnahmedatum (Kamera-Datei = Aufnahmezeit)
       source:'mobile'
     };
     t.fotos.push(fo);
