@@ -433,11 +433,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   </div>
   <div class="detail-tab-bar" id="detailTabBar">
     <button class="detail-tab-btn active" id="tabInfoBtn" onclick="switchDetailTab('info')">📋 Task-Info</button>
+    <button class="detail-tab-btn" id="tabTagebuchBtn" onclick="switchDetailTab('tagebuch')">📔 Tagebuch</button>
     <button class="detail-tab-btn" id="tabBauBtn" onclick="switchDetailTab('bau')">🏗 Baudoku</button>
-    <button class="detail-tab-btn" id="tabSkizzeBtn" onclick="switchDetailTab('skizze')" style="color:var(--text2);">✏️ Skizze</button>
     <button class="detail-tab-btn schnell-tab" id="tabSchnellBtn" onclick="switchDetailTab('schnell')">⚡ Schnell</button>
   </div>
+  <!-- v124 Paket 3: ✏️-Skizze-REITER entfällt – Skizzen-Knopf sitzt jetzt in Schnell + Tagebuch,
+       gespeicherte Skizzen erscheinen als Foto im Tagebuch-Tagesblock (landen eh in t.fotos). -->
   <div class="detail-body" id="detailBody"></div>
+  <div class="detail-body" id="detailBodyTagebuch" style="display:none"></div>
   <div class="detail-body" id="detailBodyBau" style="display:none"></div>
   <div class="detail-body" id="detailBodySkizze" style="display:none"></div>
   <div class="detail-body" id="detailBodySchnell" style="display:none"></div>
@@ -996,7 +999,7 @@ function setMobileScale(pct){
   const v=Math.max(70,Math.min(200,parseInt(pct,10)||100));
   const scale=(v/100).toFixed(2);
   // Alle 4 Tab-Bodies bekommen denselben Maßstab
-  ['detailBody','detailBodyBau','detailBodySkizze','detailBodySchnell'].forEach(id=>{
+  ['detailBody','detailBodyBau','detailBodySkizze','detailBodySchnell','detailBodyTagebuch'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.setProperty('--m-scale',scale);
   });
@@ -3697,29 +3700,31 @@ function formatDate(iso){try{const d=new Date(iso);if(isNaN(d))return iso;return
 // ══════════════════════════════════════════════
 //  BAUDOKU-TAB  –  Tab-Switch + Render-Funktionen
 // ══════════════════════════════════════════════
-let _currentDetailTab='info'; // 'info' | 'bau' | 'schnell'
+let _currentDetailTab='info'; // 'info' | 'tagebuch' | 'bau' | 'schnell' (v124: 'skizze' entfällt → tagebuch)
 
 function switchDetailTab(tab){
   // Baudoku für Aufgaben-Boards (notiz) sperren
   const _sct=currentTask();
   const _stb=_sct?(findBoardByTaskId(_sct.id)||currentBoard):currentBoard;
   if(tab==='bau'&&(boardTypes[_stb]||'baustelle')==='notiz')tab='info';
+  if(tab==='skizze')tab='tagebuch'; // v124: alter Skizze-Reiter → Tagebuch (Skizzen stehen dort im Tagesblock)
   _currentDetailTab=tab;
   const isBau=tab==='bau';
   const isSchnell=tab==='schnell';
-  const isSkizze=tab==='skizze';
+  const isTagebuch=tab==='tagebuch';
   document.getElementById('tabInfoBtn').classList.toggle('active',tab==='info');
   document.getElementById('tabBauBtn').classList.toggle('active',isBau);
   document.getElementById('tabSchnellBtn').classList.toggle('active',isSchnell);
-  document.getElementById('tabSkizzeBtn').classList.toggle('active',isSkizze);
+  const _tgb=document.getElementById('tabTagebuchBtn');if(_tgb)_tgb.classList.toggle('active',isTagebuch);
   document.getElementById('detailBody').style.display=(tab==='info')?'':'none';
   document.getElementById('detailBodyBau').style.display=isBau?'':'none';
   document.getElementById('detailBodySchnell').style.display=isSchnell?'':'none';
-  document.getElementById('detailBodySkizze').style.display=isSkizze?'':'none';
+  const _tgbody=document.getElementById('detailBodyTagebuch');if(_tgbody)_tgbody.style.display=isTagebuch?'':'none';
+  const _skbody=document.getElementById('detailBodySkizze');if(_skbody)_skbody.style.display='none'; // v124: Reiter entfällt, Body bleibt (harmlos)
   if(tab==='info'){const t=currentTask();if(t)renderDetail(t);}
   if(isSchnell){const t=currentTask();if(t)renderSchnellTab(t);}
   if(isBau){const t=currentTask();if(t)renderBaudokuTab(t);}
-  if(isSkizze){const t=currentTask();if(t)renderSkizzeTab(t);}
+  if(isTagebuch){const t=currentTask();if(t)renderTagebuchTab(t);}
 }
 
 // ══════════════════════════════════════════════
@@ -3780,6 +3785,7 @@ function renderSchnellTab(t){
         +'<div style="display:flex;gap:8px;">'
         +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
         +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
+        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="_skizzeOpen()">✏️ Skizze</button>' // v124: ersetzt den weggefallenen Skizze-Reiter
         +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-height:46px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
         +'</div>'
         // Archiv eingeklappt
@@ -5113,18 +5119,20 @@ function renderDetail(t){
   }
   // ── TAB-ZUSTAND beibehalten (Reset nur in openDetail) ──
   try{
-    const tab=_currentDetailTab||'info';
+    let tab=_currentDetailTab||'info';
+    if(tab==='skizze')tab='tagebuch'; // v124
     document.getElementById('tabInfoBtn').classList.toggle('active',tab==='info');
     document.getElementById('tabBauBtn').classList.toggle('active',tab==='bau');
     document.getElementById('tabSchnellBtn').classList.toggle('active',tab==='schnell');
-    document.getElementById('tabSkizzeBtn').classList.toggle('active',tab==='skizze');
+    const _tgb=document.getElementById('tabTagebuchBtn');if(_tgb)_tgb.classList.toggle('active',tab==='tagebuch');
     document.getElementById('detailBody').style.display=(tab==='info')?'':'none';
     document.getElementById('detailBodyBau').style.display=(tab==='bau')?'':'none';
     document.getElementById('detailBodySchnell').style.display=(tab==='schnell')?'':'none';
-    document.getElementById('detailBodySkizze').style.display=(tab==='skizze')?'':'none';
+    const _tgbody=document.getElementById('detailBodyTagebuch');if(_tgbody)_tgbody.style.display=(tab==='tagebuch')?'':'none';
+    const _skbody=document.getElementById('detailBodySkizze');if(_skbody)_skbody.style.display='none';
     if(tab==='bau')renderBaudokuTab(t);
     else if(tab==='schnell')renderSchnellTab(t);
-    else if(tab==='skizze')renderSkizzeTab(t);
+    else if(tab==='tagebuch')renderTagebuchTab(t);
   }catch(e){console.warn('[TabRestore]',e);}
 }
 
@@ -6545,6 +6553,7 @@ async function uploadFoto(files){
     renderSchnellTab(t);
     if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs[fotoObjs.length-1].fo,t);
   }
+  if(_currentDetailTab==='tagebuch'){try{renderTagebuchTab(t);}catch(e){console.warn('[MTB]',e);}} // v124: frisches Foto sofort im Tagesblock
   // v109: EIN neues Foto (Kamera) → direkt Vollbild mit aufgeklapptem Textfeld öffnen
   // (Wunsch Frank – vorher musste man das Foto erst in der Foto-Sektion suchen).
   // Nicht im Schnell-Tab (der hat seine eigene Vorschau + Notizfeld). Upload läuft im Hintergrund weiter.
@@ -6729,6 +6738,153 @@ let _skizzePenSeen=false;      // v111: sobald der S-Pen einmal gemalt hat → F
 let _skizzeFingerPan=null;     // v111: Ein-Finger-Verschieben im Stift-Modus
 let _skizzeHand=false;         // v112: ✋-Werkzeug – Stift verschiebt statt zu malen
 let _skizzePointerPan=null;    // v112: Verschieben per Stift/Maus (Hand-Modus oder S-Pen-Seitentaste)
+
+// ══ v124 Paket 3: 📔 TAGEBUCH-REITER – Tagesblöcke wie PAM Desktop b515–b522 ══
+// Notizen + Fotos (inkl. Skizzen, die liegen eh in t.fotos) nach Tagen gruppiert,
+// neuester Tag oben; Fotos hängen unter der zeitlich passenden Notiz (letzte echte
+// Notiz vor der Aufnahmezeit, System-Zeilen sind keine Anker); Filter-Chips
+// Alles|Notizen|Fotos + ⚙ (System-Einträge, Standard AUS wie Desktop b521,
+// localStorage ptpm_btb_sys); unten Schnell-Aktionen (Foto/Galerie/Skizze + Notiz).
+function _mtbParseTs(ts){
+  if(!ts)return null;
+  if(/^\d{4}-\d{2}-\d{2}T/.test(ts)){const d=new Date(ts);return isNaN(d)?null:d;}
+  const m=/(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ ,]+(\d{1,2})[:.](\d{2}))?/.exec(String(ts));
+  if(m){const d=new Date(+m[3],+m[2]-1,+m[1],(m[4]!=null?+m[4]:12),(m[5]!=null?+m[5]:0));return isNaN(d)?null:d;}
+  return null;
+}
+function _mtbDayKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function _mtbDayLabel(key){
+  const p=key.split('-');
+  const d=new Date(+p[0],+p[1]-1,+p[2]);
+  return (['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()]||'')+', '+p[2]+'.'+p[1]+'.'+p[0];
+}
+function _mtbZeit(d){return d?String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'):'';}
+function _mtbIsSys(text){const t=String(text||'');return /^✓ /.test(t)||/ entfernt: /.test(t);}
+let _mtbFilter='alle';
+const _mtbMoreOpen=new Set();
+function _mtbSetFilter(f){_mtbFilter=f;const t=currentTask();if(t)renderTagebuchTab(t);}
+function _mtbToggleMore(key){if(_mtbMoreOpen.has(key))_mtbMoreOpen.delete(key);else _mtbMoreOpen.add(key);const t=currentTask();if(t)renderTagebuchTab(t);}
+function _mtbSysVisible(){try{return localStorage.getItem('ptpm_btb_sys')==='1';}catch(e){return false;}}
+function _mtbToggleSys(){
+  try{localStorage.setItem('ptpm_btb_sys',_mtbSysVisible()?'0':'1');}catch(e){}
+  const t=currentTask();if(t)renderTagebuchTab(t);
+}
+function _mtbAddNotiz(){
+  const inp=document.getElementById('mtbNotizInput');
+  const txt=(inp&&inp.value||'').trim();
+  if(!txt){if(inp)inp.focus();return;}
+  addNotiz(txt); // schreibt in t.notizVerlauf + forceSave (bestehende Funktion)
+  if(inp)inp.value='';
+  const t=currentTask();if(t)renderTagebuchTab(t);
+}
+function _mtbNotizCard(x){
+  const done=!!x.n.done;
+  return '<div class="notiz-entry" onclick="openNotizPopup('+x.i+')" style="cursor:pointer;'+(done?'opacity:.55;':'')+'">'
+    +'<div style="font-size:11px;color:var(--text2);margin-bottom:2px;">'+_mtbZeit(x.d)+'</div>'
+    +'<div style="font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.4;">'+(done?'<s>':'')+esc(x.n.text||'')+(done?'</s>':'')+'</div>'
+    +'</div>';
+}
+function _mtbSysZeile(x){
+  return '<div style="font-size:11px;color:var(--text2);opacity:.75;padding:2px 4px;">⚙ '+(_mtbZeit(x.d)?_mtbZeit(x.d)+' — ':'')+esc(x.n.text||'')+'</div>';
+}
+function _mtbFotoTile(x){
+  const f=x.f;
+  const id=(f.editedDriveId||f.driveId)||'';
+  const cached=id?_fotoBlobCache.get(id):null;
+  const thumb=f.thumbnail||f.thumbnailLink||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
+  const src=cached||f.localUrl||thumb||'';
+  const zeit=_mtbZeit(x.d);
+  const cap=f.caption||'';
+  const isVid=String(f.mimeType||'').indexOf('video/')===0;
+  const inner=isVid
+    ?'<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#1a1a2e;color:#fff;"><span style="font-size:26px;">▶</span></div>'
+    :'<img id="mtbImg_'+x.i+'" '+(src?'src="'+escAttr(src)+'" ':'')+'loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">';
+  return '<div onclick="openFotoFullscreen('+x.i+')" style="position:relative;width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);flex-shrink:0;cursor:pointer;">'
+    +inner
+    +((zeit||cap)?'<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:2px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+zeit+(cap?(zeit?' · ':'')+esc(cap):'')+'</div>':'')
+    +'</div>';
+}
+function renderTagebuchTab(t){
+  const body=document.getElementById('detailBodyTagebuch');
+  if(!body)return;
+  const showSys=_mtbSysVisible();
+  let notizen=(t.notizVerlauf||[]).map((n,i)=>({n,i,d:_mtbParseTs(n.ts)}));
+  if(!showSys)notizen=notizen.filter(x=>!_mtbIsSys(x.n.text));
+  const fotos=(t.fotos||[]).map((f,i)=>({f,i,d:f?_mtbParseTs(f.ts):null})).filter(x=>x.f);
+  const chip=(lbl,f)=>{const on=_mtbFilter===f;return '<button onclick="_mtbSetFilter(\''+f+'\')" style="flex:1;padding:9px 4px;border-radius:8px;border:1px solid '+(on?'var(--accent)':'var(--border)')+';background:'+(on?'var(--accent)':'transparent')+';color:'+(on?'#fff':'var(--text2)')+';font-size:13px;font-weight:700;cursor:pointer;">'+lbl+'</button>';};
+  let html='<div style="display:flex;gap:6px;margin-bottom:12px;align-items:stretch;">'
+    +chip('Alles','alle')+chip('Notizen','notiz')+chip('Fotos','foto')
+    +'<button onclick="_mtbToggleSys()" title="System-Einträge (Termin erledigt/entfernt) ein-/ausblenden" style="padding:9px 12px;border-radius:8px;border:1px solid '+(showSys?'var(--accent)':'var(--border)')+';background:'+(showSys?'var(--accent)':'transparent')+';color:'+(showSys?'#fff':'var(--text2)')+';font-size:14px;cursor:pointer;flex-shrink:0;">⚙</button>'
+    +'</div>';
+  const days={};
+  const add=(key,kind,item)=>{if(!days[key])days[key]={notiz:[],foto:[]};days[key][kind].push(item);};
+  if(_mtbFilter!=='foto')notizen.forEach(x=>add(x.d?_mtbDayKey(x.d):'','notiz',x));
+  if(_mtbFilter!=='notiz')fotos.forEach(x=>add(x.d?_mtbDayKey(x.d):'','foto',x));
+  const keys=Object.keys(days).sort((a,b)=>a===''?1:(b===''?-1:(a<b?1:-1)));
+  const asc=(a,b)=>((a.d?a.d.getTime():0)-(b.d?b.d.getTime():0))||(a.i-b.i);
+  if(!keys.length)html+='<div style="color:var(--text2);font-size:14px;padding:14px 4px;">Noch keine Einträge — unten Notiz schreiben oder Foto aufnehmen.</div>';
+  keys.forEach(key=>{
+    const g=days[key];
+    if(!g.notiz.length&&!g.foto.length)return;
+    g.notiz.sort(asc);g.foto.sort(asc);
+    const nc=g.notiz.filter(x=>!_mtbIsSys(x.n.text)).length,fc=g.foto.length;
+    const teile=[];
+    if(nc)teile.push(nc+(nc===1?' Notiz':' Notizen'));
+    if(fc)teile.push(fc+(fc===1?' Foto':' Fotos'));
+    html+='<div style="display:flex;align-items:center;gap:8px;margin:12px 0 6px;">'
+      +'<span style="font-size:calc(13px * var(--m-scale,1));font-weight:700;color:var(--accent2);white-space:nowrap;">'+(key?_mtbDayLabel(key):'Ohne Datum')+'</span>'
+      +'<span style="font-size:11px;color:var(--text2);white-space:nowrap;">'+teile.join(' · ')+'</span>'
+      +'<span style="flex:1;height:1px;background:var(--border);"></span>'
+      +'</div>';
+    // Fotos den Notiz-Ankern zuordnen (wie Desktop b518)
+    const anker=g.notiz.filter(x=>!_mtbIsSys(x.n.text)&&x.d);
+    const fGrp=new Map();
+    g.foto.forEach(x=>{
+      let gi=-1;const ft=x.d?x.d.getTime():0;
+      for(let a=0;a<anker.length;a++){if(anker[a].d.getTime()<=ft)gi=a;else break;}
+      if(!fGrp.has(gi))fGrp.set(gi,[]);
+      fGrp.get(gi).push(x);
+    });
+    const strip=(list,gKey)=>{
+      if(!list||!list.length)return'';
+      const open=_mtbMoreOpen.has(gKey);
+      const show=open?list:list.slice(0,6);
+      let s='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px;">';
+      show.forEach(x=>{s+=_mtbFotoTile(x);});
+      if(!open&&list.length>6){
+        s+='<div onclick="_mtbToggleMore(\''+gKey+'\')" style="width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;border:1.5px dashed var(--accent2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent2);font-size:13px;font-weight:700;flex-shrink:0;">+'+(list.length-6)+' mehr</div>';
+      }else if(open&&list.length>6){
+        s+='<div onclick="_mtbToggleMore(\''+gKey+'\')" style="width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;border:1.5px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:13px;font-weight:600;flex-shrink:0;">− weniger</div>';
+      }
+      return s+'</div>';
+    };
+    html+=strip(fGrp.get(-1),key+'#vor');
+    let ai=0;
+    g.notiz.forEach(x=>{
+      if(_mtbIsSys(x.n.text)){html+=_mtbSysZeile(x);return;}
+      html+=_mtbNotizCard(x);
+      if(x.d){html+=strip(fGrp.get(ai),key+'#'+ai);ai++;}
+    });
+  });
+  // Schnell-Aktionen unten (Baustellen-Bedienung)
+  html+='<div style="display:flex;gap:8px;margin-top:16px;">'
+    +'<button class="inline-btn" style="flex:1;min-height:48px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Foto</button>'
+    +'<button class="inline-btn" style="flex:1;min-height:48px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
+    +'<button class="inline-btn" style="flex:1;min-height:48px;" onclick="_skizzeOpen()">✏️ Skizze</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;margin-top:8px;">'
+    +'<input type="text" id="mtbNotizInput" placeholder="Kurze Notiz mit Zeitstempel…" style="flex:1;padding:11px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_mtbAddNotiz();}" autocomplete="off">'
+    +'<button class="add-btn" style="width:52px;flex-shrink:0;font-size:20px;padding:0;" onclick="_mtbAddNotiz()">+</button>'
+    +'</div>';
+  body.innerHTML=html;
+  // Nur-lokale Bilder (Skizzen/frische Fotos ohne Drive) aus IndexedDB nachladen
+  fotos.forEach(x=>{
+    const f=x.f;
+    if(f.localKey&&!f.localUrl&&!(f.editedDriveId||f.driveId)){
+      _mobPhotoGet(f.localKey).then(d=>{const el=document.getElementById('mtbImg_'+x.i);if(d&&el){el.src=d;el.style.display='';}}).catch(e=>{});
+    }
+  });
+}
 
 function renderSkizzeTab(t){
   const body=document.getElementById('detailBodySkizze');
@@ -6981,12 +7137,13 @@ async function _skizzeSave(){
   if(!t.fotos)t.fotos=[];
   const stamp=now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate())+'_'+pad(now.getHours())+pad(now.getMinutes());
   const fname='Skizze_'+stamp+'.jpg';
-  const fo={name:fname,mimeType:'image/jpeg',localKey,driveId:null,source:'mobile-skizze',uploadedAt:now.toISOString()};
+  const fo={name:fname,mimeType:'image/jpeg',localKey,driveId:null,source:'mobile-skizze',uploadedAt:now.toISOString(),ts:now.toISOString()}; // v124: ts → Skizze erscheint im Tagebuch-Tagesblock
   t.fotos.push(fo);
   scheduleSave();
   _skizzeClose();
   toast('✓ Skizze gespeichert','success');
-  renderSkizzeTab(t);
+  if(_currentDetailTab==='tagebuch'){try{renderTagebuchTab(t);}catch(e){}} // v124: Skizze-Reiter entfällt
+  else{try{renderSkizzeTab(t);}catch(e){}}
   // ── Hintergrund-Upload zu Google Drive ───────────────────────────────────
   const folderId=extractDriveFolderId(t.gdrive||'')
     ||extractDriveFolderId(t.gdriveOrdner||'')
