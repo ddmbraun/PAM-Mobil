@@ -6804,6 +6804,20 @@ function _mtbFotoTile(x){
     +((zeit||cap)?'<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:2px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+zeit+(cap?(zeit?' · ':'')+esc(cap):'')+'</div>':'')
     +'</div>';
 }
+// v125 Paket 6: Dachplan-Pin als Zeile im Tagesblock (Ampelfarbe, Nummer, Titel/Notiz,
+// Foto-Zähler). Antippen → Dachplan.openPin = Karte springt auf den Pin.
+function _mtbPinZeile(p){
+  const col=({rot:'#e5484d',gelb:'#f5a623',gruen:'#30a46c'})[p.status||'rot']||'#e5484d';
+  const lbl=({rot:'Schaden',gelb:'Prüfen',gruen:'OK'})[p.status||'rot']||'';
+  const txt=String(p.title||p.note||'').trim();
+  const fn=(p.fotos||[]).length;
+  return '<div onclick="Dachplan.openPin(\''+esc(String(p.id||''))+'\')" style="display:flex;align-items:center;gap:8px;padding:9px 10px;margin:4px 0;background:var(--bg3);border:1px solid var(--border);border-left:4px solid '+col+';border-radius:0 8px 8px 0;cursor:pointer;">'
+    +'<span style="width:24px;height:24px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+esc(String(p.nr||'?'))+'</span>'
+    +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--m-scale,1));color:var(--text);">🏠 Dachplan-Pin · '+lbl+(txt?' — '+esc(txt):'')+'</span>'
+    +(fn?'<span style="font-size:11px;color:var(--text2);flex-shrink:0;">📷 '+fn+'</span>':'')
+    +'<span style="color:var(--text2);flex-shrink:0;">›</span>'
+    +'</div>';
+}
 function renderTagebuchTab(t){
   const body=document.getElementById('detailBodyTagebuch');
   if(!body)return;
@@ -6811,26 +6825,29 @@ function renderTagebuchTab(t){
   let notizen=(t.notizVerlauf||[]).map((n,i)=>({n,i,d:_mtbParseTs(n.ts)}));
   if(!showSys)notizen=notizen.filter(x=>!_mtbIsSys(x.n.text));
   const fotos=(t.fotos||[]).map((f,i)=>({f,i,d:f?_mtbParseTs(f.ts):null})).filter(x=>x.f);
+  const pins=(_mtbFilter==='alle'&&t.dachplan&&t.dachplan.pins?t.dachplan.pins:[]).map((p,i)=>({p,i,d:_mtbParseTs(p.ts)})); // v125: nur im „Alles"-Filter
   const chip=(lbl,f)=>{const on=_mtbFilter===f;return '<button onclick="_mtbSetFilter(\''+f+'\')" style="flex:1;padding:9px 4px;border-radius:8px;border:1px solid '+(on?'var(--accent)':'var(--border)')+';background:'+(on?'var(--accent)':'transparent')+';color:'+(on?'#fff':'var(--text2)')+';font-size:13px;font-weight:700;cursor:pointer;">'+lbl+'</button>';};
   let html='<div style="display:flex;gap:6px;margin-bottom:12px;align-items:stretch;">'
     +chip('Alles','alle')+chip('Notizen','notiz')+chip('Fotos','foto')
     +'<button onclick="_mtbToggleSys()" title="System-Einträge (Termin erledigt/entfernt) ein-/ausblenden" style="padding:9px 12px;border-radius:8px;border:1px solid '+(showSys?'var(--accent)':'var(--border)')+';background:'+(showSys?'var(--accent)':'transparent')+';color:'+(showSys?'#fff':'var(--text2)')+';font-size:14px;cursor:pointer;flex-shrink:0;">⚙</button>'
     +'</div>';
   const days={};
-  const add=(key,kind,item)=>{if(!days[key])days[key]={notiz:[],foto:[]};days[key][kind].push(item);};
+  const add=(key,kind,item)=>{if(!days[key])days[key]={notiz:[],foto:[],pin:[]};days[key][kind].push(item);};
   if(_mtbFilter!=='foto')notizen.forEach(x=>add(x.d?_mtbDayKey(x.d):'','notiz',x));
   if(_mtbFilter!=='notiz')fotos.forEach(x=>add(x.d?_mtbDayKey(x.d):'','foto',x));
+  pins.forEach(x=>add(x.d?_mtbDayKey(x.d):'','pin',x)); // v125: Pins ohne ts landen bei „Ohne Datum" (Desktop-Nachtrag b525 datiert Alt-Pins über ihre Fotos)
   const keys=Object.keys(days).sort((a,b)=>a===''?1:(b===''?-1:(a<b?1:-1)));
   const asc=(a,b)=>((a.d?a.d.getTime():0)-(b.d?b.d.getTime():0))||(a.i-b.i);
   if(!keys.length)html+='<div style="color:var(--text2);font-size:14px;padding:14px 4px;">Noch keine Einträge — unten Notiz schreiben oder Foto aufnehmen.</div>';
   keys.forEach(key=>{
     const g=days[key];
-    if(!g.notiz.length&&!g.foto.length)return;
+    if(!g.notiz.length&&!g.foto.length&&!(g.pin&&g.pin.length))return;
     g.notiz.sort(asc);g.foto.sort(asc);
-    const nc=g.notiz.filter(x=>!_mtbIsSys(x.n.text)).length,fc=g.foto.length;
+    const nc=g.notiz.filter(x=>!_mtbIsSys(x.n.text)).length,fc=g.foto.length,pc=(g.pin||[]).length;
     const teile=[];
     if(nc)teile.push(nc+(nc===1?' Notiz':' Notizen'));
     if(fc)teile.push(fc+(fc===1?' Foto':' Fotos'));
+    if(pc)teile.push(pc+(pc===1?' Pin':' Pins'));
     html+='<div style="display:flex;align-items:center;gap:8px;margin:12px 0 6px;">'
       +'<span style="font-size:calc(13px * var(--m-scale,1));font-weight:700;color:var(--accent2);white-space:nowrap;">'+(key?_mtbDayLabel(key):'Ohne Datum')+'</span>'
       +'<span style="font-size:11px;color:var(--text2);white-space:nowrap;">'+teile.join(' · ')+'</span>'
@@ -6865,6 +6882,10 @@ function renderTagebuchTab(t){
       html+=_mtbNotizCard(x);
       if(x.d){html+=strip(fGrp.get(ai),key+'#'+ai);ai++;}
     });
+    if(g.pin&&g.pin.length){ // v125: Dachplan-Pins am Ende des Tagesblocks
+      g.pin.sort(asc);
+      g.pin.forEach(x=>{html+=_mtbPinZeile(x.p);});
+    }
   });
   // Schnell-Aktionen unten (Baustellen-Bedienung)
   html+='<div style="display:flex;gap:8px;margin-top:16px;">'
@@ -9057,7 +9078,7 @@ window.Dachplan=(function(){
       m.on('dragend',ev=>{const ll=ev.target.getLatLng();p.lat=ll.lat;p.lng=ll.lng;if(cur()===p)setCoord(p);save();});
       m.addTo(map);markers[p.id]=m;});
   }
-  function addPin(lat,lng){const p={id:'dp'+Date.now(),nr:dp.nextNr++,lat,lng,status:'rot',title:'',note:'',fotos:[]};
+  function addPin(lat,lng){const p={id:'dp'+Date.now(),nr:dp.nextNr++,lat,lng,status:'rot',title:'',note:'',fotos:[],ts:new Date().toISOString()}; // v125: ts → Pin erscheint im Tagebuch-Tagesblock
     dp.pins.push(p);sel=p.id;renderPins();openSheet(p);save();}
 
   function markStat(p){E.sheet.querySelectorAll('#dpStat button').forEach(b=>b.classList.toggle('sel',b.dataset.s===p.status));}
@@ -9447,7 +9468,29 @@ window.Dachplan=(function(){
     if(map){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();}catch(e){}}
     if(E.screen)E.screen.classList.add('dp-hidden');save();
   }
-  return {open,close};
+  // v125 Paket 6: Dachplan direkt auf einem Pin öffnen (Aufruf aus dem 📔-Tagebuch).
+  // Wartet bis Karte+Marker stehen (Erst-Aufbau dauert), zoomt hin und öffnet das
+  // Pin-Fenster; im Bild-Modus (keine Marker) nach Timeout wenigstens das Fenster.
+  let _focusTimer=null;
+  function openPin(pinId){
+    open();
+    let tries=0;
+    clearInterval(_focusTimer);
+    _focusTimer=setInterval(()=>{
+      tries++;
+      try{
+        const p=dp&&(dp.pins||[]).find(x=>x.id===pinId);
+        if(p&&map&&p.lat&&markers[p.id]){
+          clearInterval(_focusTimer);
+          map.setView([p.lat,p.lng],Math.max(map.getZoom()||19,20));
+          sel=p.id;openSheet(p);
+          return;
+        }
+        if(tries>12){clearInterval(_focusTimer);if(p){sel=p.id;openSheet(p);}}
+      }catch(e){clearInterval(_focusTimer);}
+    },400);
+  }
+  return {open,close,openPin};
 })();
 </script>
 </body>
