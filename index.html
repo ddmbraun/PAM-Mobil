@@ -3593,7 +3593,15 @@ function renderList(resetScroll){
       ?'<a href="https://maps.google.com/?q='+encodeURIComponent(cardAdr)+'" target="_blank" onclick="event.stopPropagation()" '
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#2e7d32;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PIN+'</a>'
       :'';
-    const showCardActions=!!(cardTelBtn||cardMapsBtn);
+    // v130 (Wunsch Frank): Stoppuhr direkt aus der Liste starten – kleines Icon VOR dem
+    // Maps-Knopf. Läuft die Uhr, wird er orange und stoppt beim Antippen; die laufende Zeit
+    // steht weiterhin oben im ⏱-Badge der Karte. Die Knopfzeile erscheint jetzt IMMER,
+    // sonst fehlte der Uhr-Knopf bei Tasks ohne Telefon/Adresse.
+    const cardUhrBtn='<span onclick="event.stopPropagation();_cardTimerToggle(\''+escAttr(t.id)+'\')" '
+      +'title="'+(isRunning?'Stoppuhr stoppen':'Stoppuhr starten')+'" '
+      +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:'+(isRunning?'#e8791a':'#5b6472')+';display:inline-flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;">'
+      +(isRunning?'⏹':'⏱')+'</span>';
+    const showCardActions=true;
     // Foto-Thumbnail für Karte
     const _fotoCount=(t.fotos||[]).length;
     const _fotoThumbHtml=_fotoCount>0
@@ -3653,7 +3661,7 @@ function renderList(resetScroll){
           +(cardTelK&&cardTelK.name
             ?'<span style="flex:1;font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(cardTelK.name)+'</span>'
             :'<span style="flex:1"></span>')
-          +cardTelBtn+cardMapsBtn
+          +cardUhrBtn+cardTelBtn+cardMapsBtn // v130: Uhr vor Telefon/Maps
           +'</div>'
         :'')
       +'</div>'  // .task-card-body
@@ -4846,6 +4854,7 @@ function openDetail(id){
   currentTaskId=id;
   _currentDetailTab='info'; // Neuer Task → immer auf Task-Info starten
   _setTimerCollapsed(true); // v117: Uhr startet in jedem Task eingeklappt (Zustand hing sonst dauerhaft am letzten Task)
+  _mtbResetAufklapper(); // v130: Tagebuch-Aufklapper (Foto-Streifen „+X mehr", Pin-Vorschauen) gelten nur im jeweiligen Task
   document.getElementById('listScreen').classList.add('hidden');
   document.getElementById('detailScreen').classList.remove('hidden');
   renderDetail(t);
@@ -4864,6 +4873,7 @@ async function closeDetail(){
   // Sektionen beim Zurückgehen alle zuklappen — beim nächsten Öffnen beginnen alle frisch
   _mOpenSections={};
   _mOpenSectionsForTask=null;
+  _mtbResetAufklapper(); // v130: dasselbe für die Tagebuch-Aufklapper (Fotos/Pins)
   _stopTickLoop();
   document.getElementById('detailScreen').classList.add('hidden');
   document.getElementById('listScreen').classList.remove('hidden');
@@ -5396,6 +5406,25 @@ function _startTickLoop(){
 function _stopTickLoop(){
   if(mobileTimerInterval){clearInterval(mobileTimerInterval);mobileTimerInterval=null;}
 }
+// v130 (Wunsch Frank): Stoppuhr vom Uhr-Knopf auf der Taskkarte starten/stoppen, ohne den
+// Task zu öffnen. Keine Nachfrage nach der Tätigkeit (Baustelle, Handschuhe) – die trägt
+// Frank später im Task nach. Läuft die Uhr schon woanders, wird EINMAL nachgefragt, statt
+// sie wie bisher stillschweigend „auto-gestoppt" umzuhängen.
+function _cardTimerToggle(taskId){
+  const s=_loadTimerState();
+  if(s&&s.taskId&&s.taskId!==taskId){
+    const other=findTaskById(s.taskId);
+    const nm=(other&&other.title)?other.title:'einem anderen Task';
+    if(!confirm('Die Stoppuhr läuft noch bei „'+nm+'".\n\nDort stoppen und hier starten?'))return;
+  }
+  toggleMobileTimer(taskId);
+}
+// v130: Nach Start/Stopp die richtige Ansicht auffrischen – aus der Liste heraus gibt es
+// keinen offenen Task, renderDetail liefe dort ins Leere.
+function _afterTimerToggle(t){
+  if(typeof currentTaskId!=='undefined'&&currentTaskId===t.id)renderDetail(t);
+  else{try{renderList();}catch(e){console.warn('[timer-karte]',e);}}
+}
 function toggleMobileTimer(taskId){
   const t=findTaskById(taskId);if(!t){toast('Task nicht gefunden','error');return;}
   const s=_loadTimerState();
@@ -5422,7 +5451,7 @@ function toggleMobileTimer(taskId){
     clearTimeout(_bauTimerInterval);_bauTimerInterval=null;
     _mOpenSections['Zeiterfassung']=true;
     forceSave();
-    renderDetail(t);
+    _afterTimerToggle(t); // v130
     toast('⏹ '+entry.von+' – '+entry.bis+' | '+beschreibung,'success');
   }else{
     // STARTEN → Beschreibung aus Eingabefeld lesen (Task-Info oder Baudoku-Tab)
@@ -5447,7 +5476,7 @@ function toggleMobileTimer(taskId){
     _saveTimerState({taskId,startMs:now,beschreibung});
     _startTickLoop();
     forceSave();
-    renderDetail(t);
+    _afterTimerToggle(t); // v130
     toast('▶ Stoppuhr läuft'+(beschreibung?' – '+beschreibung:''),'success');
   }
 }
@@ -6815,6 +6844,9 @@ function _mtbZeit(d){return d?String(d.getHours()).padStart(2,'0')+':'+String(d.
 function _mtbIsSys(text){const t=String(text||'');return /^✓ /.test(t)||/ entfernt: /.test(t);}
 let _mtbFilter='alle';
 const _mtbMoreOpen=new Set();
+// v130 (Wunsch Frank): Aufklapper im Tagebuch gehören zum jeweiligen Task – beim Öffnen und
+// beim Zurückgehen zurücksetzen, sonst standen sie beim nächsten Task schon offen.
+function _mtbResetAufklapper(){try{_mtbMoreOpen.clear();_mtbPinOpen.clear();}catch(e){}}
 function _mtbSetFilter(f){_mtbFilter=f;const t=currentTask();if(t)renderTagebuchTab(t);}
 function _mtbToggleMore(key){if(_mtbMoreOpen.has(key))_mtbMoreOpen.delete(key);else _mtbMoreOpen.add(key);const t=currentTask();if(t)renderTagebuchTab(t);}
 function _mtbSysVisible(){try{return localStorage.getItem('ptpm_btb_sys')==='1';}catch(e){return false;}}
