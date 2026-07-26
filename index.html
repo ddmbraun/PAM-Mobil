@@ -2764,8 +2764,9 @@ function _openWartungsprotokollMobil(existingIdx){
               img.style.cssText='width:100%;height:100%;object-fit:cover;';
               if(f.localUrl)img.src=f.localUrl;
               else if(f.driveId){
-                if(f.thumbnail){img.src=f.thumbnail;}
-                else{_mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;scheduleSave();}});}
+                const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen ignorieren
+                if(_ts){img.src=_ts;}
+                else{_mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;if(_thumbMerken(f,u))scheduleSave();}});}
               }
               th.appendChild(img);
             }
@@ -2892,10 +2893,11 @@ function _wpMobRenderFotos(bericht,grid){
     }else if(f.driveId){
       const img=document.createElement('img');img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
       // Gecachte thumbnailLink nutzen (kein API-Call nötig) – sonst live holen und cachen.
-      if(f.thumbnail){
-        img.src=f.thumbnail;
+      const _ts=_thumbGespeichert(f); // v129: nur haltbare Adressen (kein totes blob:)
+      if(_ts){
+        img.src=_ts;
       }else{
-        _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;scheduleSave();}});
+        _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;if(_thumbMerken(f,u))scheduleSave();}});
       }
       cell.appendChild(img);
     }
@@ -2958,7 +2960,8 @@ function _wpMobOpenFoto(bericht,startIdx){
       });
     }else if(f.driveId){
       // Sofort Thumbnail zeigen – dann Vollbild nachladen
-      if(f.thumbnail){imgEl.src=f.thumbnail;}
+      const _ts=_thumbGespeichert(f); // v129
+      if(_ts){imgEl.src=_ts;}
       else if(typeof _mobThumbCache!=='undefined'&&_mobThumbCache.has(f.driveId)){imgEl.src=_mobThumbCache.get(f.driveId);}
       if(typeof gdriveToken!=='undefined'&&gdriveToken){
         fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}})
@@ -3595,7 +3598,7 @@ function renderList(resetScroll){
     const _fotoCount=(t.fotos||[]).length;
     const _fotoThumbHtml=_fotoCount>0
       ?'<div class="card-foto-wrap">'
-        +'<img id="cfoto_'+escAttr(t.id)+'" src="" alt="" onerror="this.style.display=\'none\'">'
+        +'<img id="cfoto_'+escAttr(t.id)+'" alt="" onerror="this.style.display=\'none\'">' // v129: ohne leeres src (löste sofort einen Ladefehler aus)
         +(_fotoCount>1?'<div class="card-foto-cnt">'+_fotoCount+'&#x1F4F7;</div>':'')
         +'</div>'
       :'';
@@ -3662,6 +3665,12 @@ function renderList(resetScroll){
   // Foto-Thumbnails asynchron nachladen
   // v117: nicht nur Foto 1 – ist das erste Foto nicht ladbar (kein Drive/localKey, Upload-Leiche,
   // Video), werden die nächsten Fotos probiert (max. 6), inkl. Weiterschalten bei Ladefehler.
+  // v129 (Befund Frank, Board „geschlossene Tasks"): drei Ursachen fürs Flackern/Fehlen –
+  //  (1) gespeicherte blob:-Adressen sind nach Neustart tot → _thumbGespeichert räumt sie weg,
+  //  (2) schlägt ein Bild trotzdem fehl, wird es EINMAL mit Anmeldung nachgeladen
+  //      (_fetchFotoBlob) statt sofort zum nächsten Foto zu springen (das war das Flackern),
+  //  (3) geladen wird nur, was gerade sichtbar ist – sonst hunderte Drive-Anfragen auf
+  //      einmal, Drive bremst aus und die späteren Karten bleiben leer.
   (async()=>{
     const _srcFor=async f=>{
       try{
@@ -3671,27 +3680,54 @@ function renderList(resetScroll){
           const _ok=f.editedDriveId||f.driveId;
           const _off=await _mobOfflineGet(_ok);
           if(_off&&_off.blob)return URL.createObjectURL(_off.blob);
-          if(f.thumbnail)return f.thumbnail;
-          const u=await _mobFetchThumb(f.driveId);if(u){f.thumbnail=u;return u;}
+          const _ts=_thumbGespeichert(f);
+          if(_ts)return _ts;
+          const u=await _mobFetchThumb(_ok);if(u){_thumbMerken(f,u);return u;}
         }
       }catch(e){}
       return '';
     };
+    const _authSrc=async f=>{ // Rettungsanker: Bild mit Token als Blob holen
+      try{const _ok=f.editedDriveId||f.driveId;if(!_ok)return '';return (await _fetchFotoBlob(_ok))||'';}catch(e){return '';}
+    };
+    const _fill=async(t,img)=>{
+      const cands=(t.fotos||[]).slice(0,6);
+      let ci=0,akt=null,retry=false;
+      const tryNext=async()=>{
+        while(ci<cands.length){
+          akt=cands[ci++];retry=false;
+          const src=await _srcFor(akt);
+          if(src){img.style.display='';img.src=src;return;}
+        }
+        akt=null;img.style.display='none';
+      };
+      img.onerror=async()=>{
+        if(!img.getAttribute('src'))return; // leeres src ist kein echter Fehler
+        if(akt&&!retry){
+          retry=true;
+          if(akt.thumbnail)akt.thumbnail=null; // abgelaufene Vorschau-Adresse verwerfen
+          const u=await _authSrc(akt);
+          if(u){img.style.display='';img.src=u;return;}
+        }
+        tryNext();
+      };
+      try{await tryNext();}catch(e){console.warn('[card-foto]',t.id,e);}
+    };
+    const _io=('IntersectionObserver' in window)?new IntersectionObserver((es,ob)=>{
+      es.forEach(en=>{
+        if(!en.isIntersecting)return;
+        ob.unobserve(en.target);
+        const tt=filtered.find(x=>x.id===en.target.getAttribute('data-tid'));
+        if(tt)_fill(tt,en.target);
+      });
+    },{rootMargin:'400px 0px'}):null;
     for(const t of filtered){
       if(!(t.fotos&&t.fotos.length))continue;
       const img=document.getElementById('cfoto_'+t.id);
       if(!img)continue;
-      const cands=t.fotos.slice(0,6);
-      let ci=0;
-      const tryNext=async()=>{
-        while(ci<cands.length){
-          const src=await _srcFor(cands[ci++]);
-          if(src){img.style.display='';img.src=src;return;}
-        }
-        img.style.display='none';
-      };
-      img.onerror=()=>{tryNext();};
-      try{await tryNext();}catch(e){console.warn('[card-foto]',t.id,e);}
+      img.setAttribute('data-tid',t.id);
+      if(_io)_io.observe(img);
+      else await _fill(t,img);
     }
   })();
 }
@@ -4130,7 +4166,7 @@ function _renderBauFotoGrid(t){
     img.onerror=()=>{};
     if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
     else if(f.localKey){_mobPhotoGet(f.localKey).then(u=>{if(u){f.localUrl=u;img.src=u;}});}
-    else if(f.driveId){if(f.thumbnail)img.src=f.thumbnail;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;f.thumbnail=u;}});}
+    else if(f.driveId){const _ts=_thumbGespeichert(f);if(_ts)img.src=_ts;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;_thumbMerken(f,u);}});} // v129: tote blob:-Adressen ignorieren
     cell.appendChild(img);
     grid.appendChild(cell);
   });
@@ -6111,6 +6147,23 @@ async function _fetchFotoBlob(driveId){
 // Lightbox nutzt weiterhin _fetchFotoBlob für volle Auflösung.
 const _mobThumbCache = new Map(); // driveId → blobUrl (nur aktuelle Sitzung)
 
+// ── v129: haltbare vs. tote Vorschau-Adressen ────────────────────────────────
+// Befund Frank („im Board mit den geschlossenen Tasks ist das Vorschaubild mal da,
+// mal nicht, und es flackert"): _mobFetchThumb liefert meist eine blob:-Adresse aus
+// URL.createObjectURL – die gilt NUR für die laufende Sitzung. Bisher wurde sie als
+// f.thumbnail gespeichert und sogar mitsynchronisiert; nach App-Neustart (oder auf dem
+// zweiten Gerät) zeigt sie ins Leere → Bild lädt nicht.
+// Ab jetzt: nur http(s)-Adressen dauerhaft merken, blob: bleibt Sitzungssache und wird
+// beim Antreffen aus den Daten geräumt (ohne extra Speichern – geht beim nächsten Save mit).
+function _thumbHaltbar(u){return !!u&&typeof u==='string'&&u.slice(0,5)!=='blob:';}
+function _thumbGespeichert(f){
+  if(!f)return '';
+  if(f.thumbnail&&!_thumbHaltbar(f.thumbnail))f.thumbnail=null; // tote Sitzungs-Adresse verwerfen
+  if(f.thumbnailLink&&!_thumbHaltbar(f.thumbnailLink))f.thumbnailLink=null;
+  return f.thumbnail||f.thumbnailLink||'';
+}
+function _thumbMerken(f,u){if(f&&_thumbHaltbar(u)){f.thumbnail=u;return true;}return false;}
+
 async function _mobFetchThumb(driveId) {
   if (!driveId) return null;
   // 1. In-Memory-Cache (Sitzung)
@@ -6208,7 +6261,7 @@ function renderFotos(list){
     const cached=id?_fotoBlobCache.get(id):null;
     // COMPAT-FIX: Desktop speichert 'thumbnailLink', Mobile speichert 'thumbnail' –
     // beide Feldnamen prüfen, damit Fotos aus beiden Apps korrekt angezeigt werden.
-    const thumbSrc=f.thumbnail||f.thumbnailLink||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
+    const thumbSrc=_thumbGespeichert(f)||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':''); // v129: tote blob:-Adressen ignorieren
     // localUrl als Sofort-Vorschau wenn kein Cache und keine Drive-ID (Upload läuft noch)
     const localFallback=(!cached&&!id&&f.localUrl)?f.localUrl:'';
     // localKey für IndexedDB-Fallback nach Reload (localUrl wird beim Speichern entfernt)
@@ -6791,7 +6844,7 @@ function _mtbFotoTile(x){
   const f=x.f;
   const id=(f.editedDriveId||f.driveId)||'';
   const cached=id?_fotoBlobCache.get(id):null;
-  const thumb=f.thumbnail||f.thumbnailLink||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':'');
+  const thumb=_thumbGespeichert(f)||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':''); // v129: tote blob:-Adressen ignorieren
   const src=cached||f.localUrl||thumb||'';
   const zeit=_mtbZeit(x.d);
   const cap=f.caption||'';
@@ -6805,18 +6858,88 @@ function _mtbFotoTile(x){
     +'</div>';
 }
 // v125 Paket 6: Dachplan-Pin als Zeile im Tagesblock (Ampelfarbe, Nummer, Titel/Notiz,
-// Foto-Zähler). Antippen → Dachplan.openPin = Karte springt auf den Pin.
+// Foto-Zähler).
+// v129 (Wunsch Frank): Die Zeile bleibt schmal, damit die Liste bei vielen Pins kurz
+// bleibt. Antippen springt NICHT mehr sofort in den Dachplan, sondern klappt die Fotos
+// als kleine Vorschau auf; erst der 📍-Knopf öffnet den Dachplan. Pins ohne Foto öffnen
+// beim Antippen weiterhin direkt den Dachplan (da gäbe es nichts aufzuklappen).
+const _mtbPinOpen=new Set(); // v129: aufgeklappte Pin-Zeilen (Pin-Id)
+function _mtbTogglePinFotos(id){
+  if(_mtbPinOpen.has(id))_mtbPinOpen.delete(id);else _mtbPinOpen.add(id);
+  const t=currentTask();if(t)renderTagebuchTab(t);
+}
+function _mtbPinFotoStreifen(p){
+  const fs=(p.fotos||[]);
+  if(!fs.length)return '';
+  let s='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 0 8px 34px;">';
+  fs.forEach((fo,i)=>{
+    s+='<div onclick="_mtbPinFotoOpen(\''+esc(String(p.id||''))+'\','+i+')" style="position:relative;width:78px;height:78px;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);cursor:pointer;flex-shrink:0;">'
+      +'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;opacity:.35;">📷</span>'
+      +'<img data-pinfoto="1" data-pkey="'+escAttr(fo.key||'')+'" data-pdrive="'+escAttr(fo.driveId||'')+'" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">'
+      +(fo.caption?'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:9px;line-height:1.3;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(fo.caption)+'</span>':'')
+      +'</div>';
+  });
+  return s+'</div>';
+}
 function _mtbPinZeile(p){
   const col=({rot:'#e5484d',gelb:'#f5a623',gruen:'#30a46c'})[p.status||'rot']||'#e5484d';
   const lbl=({rot:'Schaden',gelb:'Prüfen',gruen:'OK'})[p.status||'rot']||'';
   const txt=String(p.title||p.note||'').trim();
   const fn=(p.fotos||[]).length;
-  return '<div onclick="Dachplan.openPin(\''+esc(String(p.id||''))+'\')" style="display:flex;align-items:center;gap:8px;padding:9px 10px;margin:4px 0;background:var(--bg3);border:1px solid var(--border);border-left:4px solid '+col+';border-radius:0 8px 8px 0;cursor:pointer;">'
+  const pid=esc(String(p.id||''));
+  const auf=_mtbPinOpen.has(String(p.id||''));
+  const tap=fn?('_mtbTogglePinFotos(\''+pid+'\')'):('Dachplan.openPin(\''+pid+'\')');
+  let s='<div onclick="'+tap+'" style="display:flex;align-items:center;gap:8px;padding:9px 10px;margin:4px 0;background:var(--bg3);border:1px solid var(--border);border-left:4px solid '+col+';border-radius:0 8px 8px 0;cursor:pointer;">'
     +'<span style="width:24px;height:24px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+esc(String(p.nr||'?'))+'</span>'
     +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--m-scale,1));color:var(--text);">🏠 Dachplan-Pin · '+lbl+(txt?' — '+esc(txt):'')+'</span>'
     +(fn?'<span style="font-size:11px;color:var(--text2);flex-shrink:0;">📷 '+fn+'</span>':'')
-    +'<span style="color:var(--text2);flex-shrink:0;">›</span>'
+    +'<span onclick="event.stopPropagation();Dachplan.openPin(\''+pid+'\')" title="Im Dachplan zeigen" style="flex-shrink:0;padding:4px 8px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;">📍</span>'
+    +'<span style="color:var(--text2);flex-shrink:0;">'+(fn?(auf?'▾':'›'):'›')+'</span>'
     +'</div>';
+  if(fn&&auf)s+=_mtbPinFotoStreifen(p);
+  return s;
+}
+// v129: Pin-Foto groß ansehen (eigenes Overlay – die Lightbox arbeitet mit t.fotos-Indexen,
+// Pin-Fotos hängen aber am Pin). Quelle: erst lokale Ablage, dann Drive.
+function _mtbPinFotoOpen(pinId,idx){
+  const t=currentTask();if(!t)return;
+  const p=((t.dachplan&&t.dachplan.pins)||[]).find(x=>String(x.id)===String(pinId));
+  const fo=p&&(p.fotos||[])[idx];
+  if(!fo)return;
+  const old=document.getElementById('mtbPinFotoOv');if(old)old.remove();
+  const ov=document.createElement('div');
+  ov.id='mtbPinFotoOv';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.95);display:flex;align-items:center;justify-content:center;';
+  ov.innerHTML='<span style="position:absolute;top:12px;right:18px;font-size:32px;color:#fff;cursor:pointer;" id="mtbPinFotoX">✕</span>'
+    +'<img id="mtbPinFotoImg" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">'
+    +'<div style="position:absolute;left:12px;top:14px;color:#fff;background:rgba(0,0,0,.5);border-radius:8px;padding:6px 10px;font-size:13px;">Pin '+esc(String(p.nr||'?'))+' · Foto '+(idx+1)+'/'+(p.fotos||[]).length+'</div>'
+    +(fo.caption?'<div style="position:absolute;left:12px;right:12px;bottom:18px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:15px;">'+esc(fo.caption)+'</div>':'');
+  ov.onclick=ev=>{if(ev.target===ov||ev.target.id==='mtbPinFotoX')ov.remove();};
+  document.body.appendChild(ov);
+  const img=ov.querySelector('#mtbPinFotoImg');
+  (async()=>{
+    let src='';
+    try{if(fo.key)src=await _mobPhotoGet(fo.key)||'';}catch(_){}
+    if(!src&&fo.driveId){try{src=await _fetchFotoBlob(fo.driveId)||'';}catch(_){}}
+    if(!src&&fo.driveId)src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w1600';
+    if(src)img.src=src;
+  })();
+}
+// v129: Vorschaubilder der aufgeklappten Pin-Zeilen nachziehen (HTML wird als String gebaut)
+function _mtbPinFotosLaden(){
+  document.querySelectorAll('#detailBodyTagebuch img[data-pinfoto]').forEach(img=>{
+    if(img.dataset.geladen==='1')return;
+    img.dataset.geladen='1';
+    const key=img.getAttribute('data-pkey')||'';
+    const did=img.getAttribute('data-pdrive')||'';
+    (async()=>{
+      let src='';
+      try{if(key)src=await _mobPhotoGet(key)||'';}catch(_){}
+      if(!src&&did){try{src=await _mobFetchThumb(did)||'';}catch(_){}}
+      if(!src&&did)src='https://drive.google.com/thumbnail?id='+did+'&sz=w400';
+      if(src)img.src=src;
+    })();
+  });
 }
 function renderTagebuchTab(t){
   const body=document.getElementById('detailBodyTagebuch');
@@ -6898,6 +7021,7 @@ function renderTagebuchTab(t){
     +'<button class="add-btn" style="width:52px;flex-shrink:0;font-size:20px;padding:0;" onclick="_mtbAddNotiz()">+</button>'
     +'</div>';
   body.innerHTML=html;
+  _mtbPinFotosLaden(); // v129: Vorschaubilder der aufgeklappten Pin-Zeilen
   // Nur-lokale Bilder (Skizzen/frische Fotos ohne Drive) aus IndexedDB nachladen
   fotos.forEach(x=>{
     const f=x.f;
@@ -8932,6 +9056,26 @@ window.Dachplan=(function(){
   const markers={},E={};
   const say=(m,k)=>{try{if(E.msg){E.msg.textContent=m;E.msg.classList.remove('dp-hidden');clearTimeout(E._mt);E._mt=setTimeout(()=>{try{E.msg.classList.add('dp-hidden');}catch(_){}},3600);}}catch(e){}try{toast(m,k||'success');}catch(e){}};
   let imap=null,imgLayer=null,locMi=null,locCi=null;
+  let layObjs=null,layName=''; // v129: Kartenebenen + aktive Ebene (Auswahl steckt im ⋯-Menü)
+  // v129: Ebene umschalten (ersetzt den Leaflet-Umschalter im Bild)
+  function setLayer(name){
+    if(!layObjs||!layObjs[name])return;
+    if(!map){say('Die Ansicht gilt für die Luftbild-Karte','error');return;}
+    Object.keys(layObjs).forEach(k=>{try{if(map.hasLayer(layObjs[k]))map.removeLayer(layObjs[k]);}catch(_){}});
+    layObjs[name].addTo(map);
+    layName=name;
+    try{localStorage.setItem('ptpm_dp_layer',name);}catch(_){}
+    markLayer();say(name);
+  }
+  function markLayer(){try{E.screen.querySelectorAll('.dpLay').forEach(b=>b.classList.toggle('on',b.dataset.lay===layName));}catch(_){}}
+  // v129: kleiner Knopf oben rechts, wenn ein Pin ohne Pin-Fenster angesprungen wurde
+  function pinBtnShow(p){try{const b=E.screen.querySelector('#dpPinBtn');if(b){
+    b.textContent='📋 Pin '+(p&&p.nr!=null?p.nr:'')+' öffnen';
+    // Leiste bricht auf schmalen Handys auf zwei Zeilen um – Knopf immer DARUNTER setzen
+    const bar=E.screen.querySelector('#dpBar');
+    b.style.top=((bar?bar.offsetHeight:58)+8)+'px';
+    b.style.display='';}}catch(_){}}
+  function pinBtnHide(){try{const b=E.screen.querySelector('#dpPinBtn');if(b)b.style.display='none';}catch(_){}}
   const resolveFolder=()=>{try{return extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');}catch(e){return null;}};
   const save=()=>{try{if(typeof forceSave==='function')forceSave();}catch(e){}};
   let _vsT=null;const saveViewSoon=()=>{clearTimeout(_vsT);_vsT=setTimeout(()=>save(),800);};
@@ -8986,6 +9130,14 @@ window.Dachplan=(function(){
       // Karte↔Bild, Bild laden, Kalibrieren, Zurücksetzen. Ids/Handler unverändert.
       +'<button class="dpb" id="dpMore" title="Weitere Funktionen">⋯</button>'
       +'<div id="dpMoreMenu" class="dp-hidden">'
+        // v129 (Wunsch Frank): Ebenen-Auswahl sitzt nicht mehr als Leaflet-Kästchen IM Bild,
+        // sondern hier im Menü – die Karte bleibt frei. Namen = Schlüssel aus _lays.
+        +'<div style="font-size:12px;color:#9aa3b2;font-weight:700;padding:2px 4px 0;">Kartenansicht</div>'
+        +'<button class="dpb dpLay" data-lay="Luftbild amtlich (TH)">🛰 Luftbild amtlich (TH)</button>'
+        +'<button class="dpb dpLay" data-lay="Luftbild Welt (Esri)">🌍 Luftbild Welt (Esri)</button>'
+        +'<button class="dpb dpLay" data-lay="Luftbild Google">🟩 Luftbild Google</button>'
+        +'<button class="dpb dpLay" data-lay="Karte">🗺 Karte (OpenStreetMap)</button>'
+        +'<div style="height:1px;background:#2a2f3a;margin:4px 0;"></div>'
         +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">🖼️ Zum Bild wechseln</button>'
         +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild laden</button>'
         +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kalibrieren</button>'
@@ -9001,6 +9153,10 @@ window.Dachplan=(function(){
       +'<button class="dpb" id="dpNoImgMap">🗺️ Zur Luftbild-Karte wechseln</button>'
      +'</div>'
      +'<div id="dpListPanel" class="dp-hidden"></div>'
+     // v129 (Wunsch Frank): Aus dem Tagebuch geöffnete Pins zeigen nur noch die Karte –
+     // das Pin-Fenster nimmt auf dem Handy zu viel Platz weg. Dieser kleine Knopf oben
+     // rechts holt es bei Bedarf hervor.
+     +'<button class="dpb" id="dpPinBtn" style="position:absolute;top:64px;right:8px;z-index:1350;border-color:#3b82f6;color:#7db4ff;display:none;">📋 Pin öffnen</button>'
      +'<div id="dpMsg" class="dp-hidden"></div>'
      +'<div id="dpSheet">'
       +'<div style="display:flex;justify-content:space-between;align-items:center"><b id="dpSheetTitle">Pin</b><button class="dpb" id="dpSheetClose">Schließen</button></div>'
@@ -9035,6 +9191,8 @@ window.Dachplan=(function(){
     q('#dpCalib').onclick=startCalib;
     q('#dpReset').onclick=resetPlan;
     q('#dpMore').onclick=ev=>{ev.stopPropagation();q('#dpMoreMenu').classList.toggle('dp-hidden');}; // v127: ⋯-Menü
+    q('#dpMoreMenu').querySelectorAll('.dpLay').forEach(b=>{b.onclick=()=>setLayer(b.dataset.lay);}); // v129: Ebenen-Auswahl im Menü
+    q('#dpPinBtn').onclick=()=>{const p=cur();pinBtnHide();if(p)openSheet(p);}; // v129: Pin-Fenster auf Wunsch
     q('#dpMoreMenu').addEventListener('click',()=>setTimeout(()=>{try{q('#dpMoreMenu').classList.add('dp-hidden');}catch(_){}},60)); // v127: nach Auswahl zuklappen
     q('#dpNoImgLoad').onclick=()=>q('#dpBildInput').click(); // v127: Hinweis-Knöpfe im leeren Bild-Modus
     q('#dpNoImgMap').onclick=()=>setBase('map');
@@ -9078,11 +9236,12 @@ window.Dachplan=(function(){
     const gsat=L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{maxZoom:21,maxNativeZoom:20,subdomains:['mt0','mt1','mt2','mt3'],attribution:'Luftbild © Google'});
     const _lays={'Luftbild amtlich (TH)':dopTH,'Luftbild Welt (Esri)':esri,'Luftbild Google':gsat,'Karte':osm};
     const _inTH=(la,lo)=>la>=50.15&&la<=51.75&&lo>=9.80&&lo<=12.75;
-    let _startLay=(t&&t.lat&&t.lon&&!_inTH(Number(t.lat),Number(t.lon)))?esri:dopTH;
-    try{const _sav=localStorage.getItem('ptpm_dp_layer');if(_sav&&_lays[_sav])_startLay=_lays[_sav];}catch(e){} // v126: gewählte Ebene gemerkt
-    _startLay.addTo(map);
-    L.control.layers(_lays,null,{position:'topright'}).addTo(map);
-    map.on('baselayerchange',e=>{try{localStorage.setItem('ptpm_dp_layer',e.name);}catch(_){}}); // v126
+    // v129: kein Leaflet-Umschalter mehr im Bild – Auswahl steckt im ⋯-Menü (setLayer)
+    let _startName=(t&&t.lat&&t.lon&&!_inTH(Number(t.lat),Number(t.lon)))?'Luftbild Welt (Esri)':'Luftbild amtlich (TH)';
+    try{const _sav=localStorage.getItem('ptpm_dp_layer');if(_sav&&_lays[_sav])_startName=_sav;}catch(e){} // v126: gewählte Ebene gemerkt
+    layObjs=_lays;layName=_startName;
+    _lays[_startName].addTo(map);
+    markLayer();
     map.on('click',e=>{if(addMode)addPin(e.latlng.lat,e.latlng.lng);else say('Zum Setzen erst „➕ Pin" oben antippen');});
     map.on('moveend',()=>{if(dp&&dp.base!=='bild'){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();saveViewSoon();}catch(_){}}});
     map.on('locationfound',e=>{if(locM)map.removeLayer(locM);if(locC)map.removeLayer(locC);
@@ -9114,7 +9273,7 @@ window.Dachplan=(function(){
     E.sheet.querySelector('#dpSheetTitle').textContent='Pin '+p.nr+' · '+(LBL[p.status]||'');
     E.sheet.querySelector('#dpTitle').value=p.title||'';
     E.sheet.querySelector('#dpNote').value=p.note||'';
-    setCoord(p);markStat(p);drawThumbs(p);E.sheet.classList.add('show');}
+    setCoord(p);markStat(p);drawThumbs(p);pinBtnHide();E.sheet.classList.add('show');} // v129: Knopf weg, sobald das Fenster offen ist
   function closeSheet(){E.sheet.classList.remove('show');}
 
   async function addPhotos(files){
@@ -9156,7 +9315,7 @@ window.Dachplan=(function(){
     E.screen.querySelector('#dpAdd').classList.remove('on');
     E.screen.querySelector('#dpAdd').textContent='➕ Pin';
     E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');
-    closeSheet();
+    closeSheet();pinBtnHide(); // v129
     E.screen.classList.remove('dp-hidden');
     if(!ensureMap())return;
     setBase(dp.base||'map');
@@ -9503,14 +9662,16 @@ window.Dachplan=(function(){
     closeSheet();setBase('map');save();say('Dachplan zurückgesetzt');
   }
   function close(){
+    pinBtnHide(); // v129
     try{guideStop();}catch(_){} // v116: Führung beim Schließen beenden
     try{liveStop();}catch(_){} // v105: GPS/Kompass nicht im Hintergrund weiterlaufen lassen (Akku)
     if(map){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();}catch(e){}}
     if(E.screen)E.screen.classList.add('dp-hidden');save();
   }
   // v125 Paket 6: Dachplan direkt auf einem Pin öffnen (Aufruf aus dem 📔-Tagebuch).
-  // Wartet bis Karte+Marker stehen (Erst-Aufbau dauert), zoomt hin und öffnet das
-  // Pin-Fenster; im Bild-Modus (keine Marker) nach Timeout wenigstens das Fenster.
+  // Wartet bis Karte+Marker stehen (Erst-Aufbau dauert) und zoomt hin.
+  // v129 (Wunsch Frank): Das Pin-Fenster geht NICHT mehr von selbst auf – es verdeckt auf
+  // dem Handy die halbe Karte. Stattdessen erscheint oben rechts „📋 Pin N öffnen".
   let _focusTimer=null;
   function openPin(pinId){
     open();
@@ -9523,10 +9684,10 @@ window.Dachplan=(function(){
         if(p&&map&&p.lat&&markers[p.id]){
           clearInterval(_focusTimer);
           map.setView([p.lat,p.lng],Math.max(map.getZoom()||19,20));
-          sel=p.id;openSheet(p);
+          sel=p.id;pinBtnShow(p);
           return;
         }
-        if(tries>12){clearInterval(_focusTimer);if(p){sel=p.id;openSheet(p);}}
+        if(tries>12){clearInterval(_focusTimer);if(p){sel=p.id;pinBtnShow(p);say('Pin '+p.nr+' – Menü oben rechts');}}
       }catch(e){clearInterval(_focusTimer);}
     },400);
   }
