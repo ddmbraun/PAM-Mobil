@@ -1183,6 +1183,9 @@ async function afterLogin(){
   try{await _restoreMobileBackupIfDirty();}catch(e){console.warn('[PTP-Mobile] Backup-Restore:',e);}
   // Timer-State prüfen: jetzt sind Boards geladen, Timer kann sicher wiederhergestellt werden
   resumeMobileTimerIfNeeded();
+  // v131 (Wunsch Frank): App startet direkt in der Heute-Ansicht (Tagesplan) statt in der Liste.
+  // Nur beim ersten Laden pro Sitzung – ein späterer Token-Refresh wirft Frank nicht aus der Liste.
+  if(!window._heuteAutoShown){window._heuteAutoShown=true;try{switchMobView('heute');}catch(e){console.warn('[PTP-Mobile] Heute-Start:',e);}}
   // Ausstehende Foto-Uploads aus vorherigen Sessions nachholen
   setTimeout(()=>{_mobRetryPendingUploads().catch(()=>{});},4000);
   // Artikelliste im Hintergrund vorladen (für Material-Suche)
@@ -1560,30 +1563,53 @@ function renderHeuteMobil(){
   var el=document.getElementById('heuteList');if(!el)return;
   var today=new Date().toISOString().split('T')[0];
   var in3=new Date(Date.now()+3*864e5).toISOString().split('T')[0];
-  var ueberfaellig=[],heuteFaellig=[],bald=[];
-  // Bereits hinzugefügte Task-IDs verhindern Doppeleinträge (due + ausfuehrungstermin)
-  var _addedIds=new Set();
-  function _pushItem(t,bName,date){
-    var key=t.id+'|'+(date==='due'?'due':'ausf');
-    if(_addedIds.has(key))return;
-    _addedIds.add(key);
-    var d=(date==='due')?t.due:t.ausfuehrungstermin;
-    var item={t:t,board:bName,dateType:date,dateVal:d};
-    if(d<today)ueberfaellig.push(item);
-    else if(d===today)heuteFaellig.push(item);
-    else if(d<=in3)bald.push(item);
+  // v131 (Wunsch Frank): „Heute" = Tagesplan zum ANSEHEN, als Kacheln. Oben die heutigen
+  // Außer-Haus-Termine mit Uhrzeit + Fahrzeit („Heute unterwegs"), darunter die Fälligkeiten –
+  // jetzt wie am Desktop inkl. Desktop-Aufgaben (aufgaben[]) und freien Terminen (freieTermine[]).
+  // Jede Kachel: ⏱ Uhr-Knopf (Stoppuhr), Telefon, Maps; Antippen öffnet den Task. Kein Bearbeiten.
+  var timerState=_loadTimerState();
+  var runningTaskId=timerState?timerState.taskId:null;
+  var ueberfaellig=[],heuteFaellig=[],bald=[],unterwegs=[];
+  // Termin-Quellen je Task: Fälligkeit, Ausführungstermin, Desktop-Aufgaben, freie Termine
+  function _alleTermine(t){
+    var dd=[];
+    if(t.due)dd.push({d:t.due,typ:'faellig'});
+    if(t.ausfuehrungstermin)dd.push({d:t.ausfuehrungstermin,typ:'ausf'});
+    (t.aufgaben||[]).forEach(function(a){if(a.datum&&!a.erledigt)dd.push({d:a.datum,typ:'aufgabe',text:a.typ||a.text||'Aufgabe'});});
+    var ft=(t.freieTermine&&t.freieTermine.length)?t.freieTermine:((t.freierTermin&&t.freierTermin.datum)?[t.freierTermin]:[]);
+    ft.forEach(function(f){if(f.datum&&!f.erledigt)dd.push({d:f.datum,typ:'frei',text:f.text||'Termin'});});
+    return dd;
   }
   Object.keys(boards).forEach(function(bName){
     if(bName.startsWith('_'))return;
     (boards[bName]||[]).forEach(function(t){
-      if(t.due)_pushItem(t,bName,'due');
-      if(t.ausfuehrungstermin)_pushItem(t,bName,'ausf');
+      if(t.archiviert||t.spaeterBearbeiten)return; // wie am Desktop: nicht in der Heute-Ansicht
+      // Heutige Außer-Haus-Termine → Abschnitt „Heute unterwegs"
+      (t.ausserhausTermine||[]).forEach(function(tm){
+        if(tm.date===today)unterwegs.push({t:t,board:bName,tm:tm});
+      });
+      var dd=_alleTermine(t);
+      if(!dd.length)return;
+      // je Kategorie EINE Kachel pro Task, angezeigt wird der früheste Treffer
+      var cats={ueb:null,heu:null,bald:null};
+      dd.forEach(function(e){
+        if(e.d<today){if(!cats.ueb||e.d<cats.ueb.d)cats.ueb=e;}
+        else if(e.d===today){if(!cats.heu)cats.heu=e;}
+        else if(e.d<=in3){if(!cats.bald||e.d<cats.bald.d)cats.bald=e;}
+      });
+      if(cats.ueb)ueberfaellig.push({t:t,board:bName,e:cats.ueb});
+      if(cats.heu)heuteFaellig.push({t:t,board:bName,e:cats.heu});
+      if(cats.bald)bald.push({t:t,board:bName,e:cats.bald});
     });
   });
-  ueberfaellig.sort(function(a,b){return a.t.due<b.t.due?-1:1;});
-  bald.sort(function(a,b){return a.t.due<b.t.due?-1:1;});
+  unterwegs.sort(function(a,b){return (a.tm.von||'99')<(b.tm.von||'99')?-1:1;});
+  ueberfaellig.sort(function(a,b){return a.e.d<b.e.d?-1:1;});
+  bald.sort(function(a,b){return a.e.d<b.e.d?-1:1;});
   function fmtDue(due){var p=due.split('-');return p[2]+'.'+p[1]+'.';}
   function diffDays(due){return Math.round((new Date(today)-new Date(due))/(864e5));}
+  // Fahrzeit lesen wie am Desktop (_kalFahrt/_kalFahrtR): fahrt (Altfeld: anfahrt) je Richtung
+  function _fahrtHin(tm){var v=(tm&&(tm.fahrt!=null?tm.fahrt:tm.anfahrt));var n=parseInt(v||0,10);return(isNaN(n)||n<0)?0:n;}
+  function _fahrtRueck(tm){var v=tm&&tm.fahrtRueck;if(v==null||v==='')return _fahrtHin(tm);var n=parseInt(v,10);return(isNaN(n)||n<0)?0:n;}
 
   var HZKEY='ptp_heute_mob_zoom';
   var zoom=115;
@@ -1592,77 +1618,105 @@ function renderHeuteMobil(){
   var phoneIcon=_SVG_PHONE;
   var pinIcon=_SVG_PIN;
 
+  function uhrBtn(t){
+    var isRunning=t.id===runningTaskId;
+    return'<span onclick="event.stopPropagation();_cardTimerToggle(\''+escAttr(t.id)+'\')" '
+      +'title="'+(isRunning?'Stoppuhr stoppen':'Stoppuhr starten')+'" '
+      +'style="flex-shrink:0;width:40px;height:40px;border-radius:50%;background:'+(isRunning?'#e8791a':'#5b6472')+';display:inline-flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;">'
+      +(isRunning?'⏹':'⏱')+'</span>';
+  }
+  // v131: Knopfzeile IMMER sichtbar – ⏱ Uhr vor Telefon/Maps (wie die Taskkarte der Liste seit v130)
   function actionLine(t){
-    var isAnruf=t.aktivitaet==='anruf';
-    var isBesicht=t.aktivitaet==='besichtigung';
-    var k=(t.kontakte||[]).find(function(c){return c.anrufKontakt&&c.tel;});
+    var k=(t.kontakte||[]).find(function(c){return c.tel;});
     var adr=(t.adresse||'').trim();
-    var showTel=k&&k.tel&&(isAnruf||(isBesicht&&k));
-    var showMaps=adr&&isBesicht;
-    if(!showTel&&!showMaps)return'';
-    var telBtn=showTel
+    var telBtn=k
       ?'<a href="tel:'+encodeURIComponent(k.tel)+'" onclick="event.stopPropagation()" '
         +'style="width:40px;height:40px;border-radius:50%;background:#1a6fc4;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+phoneIcon+'</a>'
       :'';
-    var mapsBtn=showMaps
+    var mapsBtn=adr
       ?'<a href="https://maps.google.com/?q='+encodeURIComponent(adr)+'" target="_blank" onclick="event.stopPropagation()" '
         +'style="width:40px;height:40px;border-radius:50%;background:#2e7d32;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+pinIcon+'</a>'
       :'';
-    var mainText='';
-    if(showTel&&k.name)mainText='<span style="font-size:13px;color:var(--text);flex:1;min-width:0;">'+esc(k.name)+'</span>';
-    else if(showMaps&&!showTel)mainText='<span style="font-size:11px;color:var(--text2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(adr)+'</span>';
-    else if(showTel&&showMaps)
-      mainText='<div style="flex:1;min-width:0;">'
-        +'<div style="font-size:13px;color:var(--text);">'+(k.name?esc(k.name):'')+'</div>'
-        +'<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(adr)+'</div>'
-        +'</div>';
+    var mainText='<div style="flex:1;min-width:0;">'
+      +(k&&k.name?'<div style="font-size:13px;color:var(--text);">'+esc(k.name)+'</div>':'')
+      +(adr?'<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(adr)+'</div>':'')
+      +'</div>';
     return'<div style="display:flex;align-items:center;gap:8px;padding:5px 10px 8px;border-top:0.5px solid var(--border);">'
-      +mainText+telBtn+mapsBtn+'</div>';
+      +mainText+uhrBtn(t)+telBtn+mapsBtn+'</div>';
+  }
+  function timerBadge(t){
+    return t.id===runningTaskId
+      ?'<span class="task-timer-badge" style="color:var(--text);font-size:12px;font-weight:600;flex-shrink:0;">⏱ '+formatTimerFor(t.id)+'</span>'
+      :'';
   }
 
-  function taskRow(item,borderColor){
-    var t=item.t;
-    var isBesicht=t.aktivitaet==='besichtigung';
-    var isAnruf=t.aktivitaet==='anruf';
-    var k=(t.kontakte||[]).find(function(c){return c.anrufKontakt&&c.tel;});
-    var badges='';
-    if(isBesicht)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#2e7d3222;color:#2e7d32;font-weight:600;white-space:nowrap;">Besichtigung</span>';
-    if(isAnruf)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a6fc422;color:#1a6fc4;font-weight:600;white-space:nowrap;">Anruf</span>';
-    if(isBesicht&&k)badges+=' <span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a6fc422;color:#1a6fc4;font-weight:600;white-space:nowrap;">+ Anruf</span>';
-    var _dateVal=item.dateType==='ausf'?t.ausfuehrungstermin:t.due;
-    var isOverdue=_dateVal<today;
-    var isToday=_dateVal===today;
-    var dcol=isOverdue?'#E24B4A':isToday?'#EF9F27':'#639922';
-    var dlabel;
-    if(item.dateType==='ausf'){
-      dlabel='Ausf. '+fmtDue(_dateVal);
-    }else if(isOverdue){
-      var d=diffDays(_dateVal);
-      dlabel='Überfällig: '+fmtDue(_dateVal)+' ('+d+(d===1?' Tag':' Tage')+')';
-    }else if(isToday){
-      dlabel='Heute fällig: '+fmtDue(_dateVal);
-    }else{
-      dlabel='Fällig: '+fmtDue(_dateVal);
+  // Kachel „Heute unterwegs": Außer-Haus-Termin mit Uhrzeit, Betreff/Beschreibung, Fahrzeit
+  function terminRow(item){
+    var t=item.t,tm=item.tm;
+    var zeit=(tm.von||'')+(tm.bis?'–'+tm.bis:'');
+    var titel=((tm.betreff||tm.beschreibung)||'').trim();
+    var hin=_fahrtHin(tm),rueck=_fahrtRueck(tm);
+    var fahrtTxt='';
+    if(hin>0||rueck>0){
+      fahrtTxt='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#8a5a2422;color:#c98a3d;font-weight:600;white-space:nowrap;">🚗 '
+        +(hin===rueck?hin+' min je Richtung':hin+' min hin / '+rueck+' min zurück')+'</span>';
     }
-    badges+=(badges?' ':'')+' <span style="font-size:11px;color:'+dcol+';font-weight:600;white-space:nowrap;">'+dlabel+'</span>';
-    var al=actionLine(t);
     return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
-      +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:3px solid '+borderColor
-      +';border-radius:0 8px 8px 0;margin-bottom:7px;overflow:hidden;cursor:pointer;">'
-      +'<div style="padding:9px 10px 3px;font-size:14px;font-weight:600;color:var(--text);line-height:1.3;word-break:break-word;">'+esc(t.title)+'</div>'
-      +'<div style="padding:3px 10px 6px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;">'+badges+'</div>'
-      +al
+      +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:4px solid #2e6fc4;border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
+      +'<div style="padding:9px 10px 3px;display:flex;align-items:center;gap:8px;">'
+      +(zeit?'<span style="font-size:15px;font-weight:700;color:var(--accent2);white-space:nowrap;">'+esc(zeit)+'</span>':'')
+      +'<span style="flex:1;font-size:14px;font-weight:600;color:var(--text);line-height:1.3;word-break:break-word;">'+esc(t.title)+'</span>'
+      +timerBadge(t)
+      +'</div>'
+      +(titel?'<div style="padding:0 10px 3px;font-size:13px;color:var(--text2);word-break:break-word;">'+esc(titel)+'</div>':'')
+      +(fahrtTxt?'<div style="padding:2px 10px 6px;">'+fahrtTxt+'</div>':'')
+      +actionLine(t)
       +'</div>';
   }
 
-  function section(label,color,items,borderColor){
+  function taskRow(item,borderColor){
+    var t=item.t,e=item.e;
+    var isBesicht=t.aktivitaet==='besichtigung';
+    var isAnruf=t.aktivitaet==='anruf';
+    var badges='';
+    if(isBesicht)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#2e7d3222;color:#2e7d32;font-weight:600;white-space:nowrap;">Besichtigung</span>';
+    if(isAnruf)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a6fc422;color:#1a6fc4;font-weight:600;white-space:nowrap;">Anruf</span>';
+    var isOverdue=e.d<today;
+    var isToday=e.d===today;
+    var dcol=isOverdue?'#E24B4A':isToday?'#EF9F27':'#639922';
+    var quelle='';
+    if(e.typ==='ausf')quelle='Ausführung';
+    else if(e.typ==='aufgabe'||e.typ==='frei')quelle=e.text||'Termin';
+    var dlabel;
+    if(isOverdue){
+      var dgap=diffDays(e.d);
+      dlabel='Überfällig: '+fmtDue(e.d)+' ('+dgap+(dgap===1?' Tag':' Tage')+')';
+    }else if(isToday){
+      dlabel='Heute'+(quelle?': '+quelle:' fällig');
+    }else{
+      dlabel=fmtDue(e.d)+(quelle?': '+quelle:'');
+    }
+    badges+=(badges?' ':'')+'<span style="font-size:11px;color:'+dcol+';font-weight:600;white-space:nowrap;">'+dlabel+'</span>';
+    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
+      +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:4px solid '+borderColor
+      +';border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
+      +'<div style="padding:9px 10px 3px;display:flex;align-items:center;gap:6px;">'
+      +'<span style="flex:1;font-size:14px;font-weight:600;color:var(--text);line-height:1.3;word-break:break-word;">'+esc(t.title)+'</span>'
+      +timerBadge(t)
+      +'</div>'
+      +'<div style="padding:3px 10px 6px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;">'+badges+'</div>'
+      +actionLine(t)
+      +'</div>';
+  }
+
+  function section(label,color,items,rowFn){
     if(!items.length)return'';
     return'<div style="margin-bottom:12px;">'
       +'<div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:'+color
       +';margin-bottom:6px;display:flex;align-items:center;gap:6px;">'
       +'<span style="width:6px;height:6px;border-radius:50%;background:'+color+';display:inline-block;"></span>'
       +label+' <span style="padding:1px 7px;border-radius:10px;background:'+color+'22;color:'+color+';font-weight:700;">'+items.length+'</span></div>'
-      +items.map(function(i){return taskRow(i,borderColor);}).join('')
+      +items.map(rowFn).join('')
       +'</div>';
   }
 
@@ -1678,15 +1732,18 @@ function renderHeuteMobil(){
     +'</div>';
   var html=zoomBar+'<div id="heuteZoomContent" style="zoom:'+zoom+'%;">'
     +'<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;">📅 '+ds+'</div>';
-  if(!ueberfaellig.length&&!heuteFaellig.length&&!bald.length){
-    html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Keine fälligen Aufgaben 🎉</div>';
+  if(!unterwegs.length&&!ueberfaellig.length&&!heuteFaellig.length&&!bald.length){
+    html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Keine Termine und nichts fällig 🎉</div>';
   }else{
-    html+=section('Überfällig','#E24B4A',ueberfaellig,'#E24B4A');
-    html+=section('Heute','#EF9F27',heuteFaellig,'#EF9F27');
-    html+=section('Nächste 3 Tage','#639922',bald,'#639922');
+    html+=section('Heute unterwegs','#5a86f5',unterwegs,function(i){return terminRow(i);});
+    html+=section('Überfällig','#E24B4A',ueberfaellig,function(i){return taskRow(i,'#E24B4A');});
+    html+=section('Heute','#EF9F27',heuteFaellig,function(i){return taskRow(i,'#EF9F27');});
+    html+=section('Nächste 3 Tage','#639922',bald,function(i){return taskRow(i,'#639922');});
   }
   html+='</div>';
   el.innerHTML=html;
+  // v131: laufende Stoppuhr auch in den Heute-Kacheln mitticken lassen (gleiche Badge-Klasse wie die Liste)
+  if(runningTaskId)_startListTickLoop();else _stopListTickLoop();
 }
 // ── TOKEN-KEY MIGRATION (von altem ptpm_token auf ptp_gdrive_token_v1) ──
 function migrateTokenKey(){
@@ -5423,7 +5480,7 @@ function _cardTimerToggle(taskId){
 // keinen offenen Task, renderDetail liefe dort ins Leere.
 function _afterTimerToggle(t){
   if(typeof currentTaskId!=='undefined'&&currentTaskId===t.id)renderDetail(t);
-  else{try{renderList();}catch(e){console.warn('[timer-karte]',e);}}
+  else{try{renderList();if(_mobView==='heute')renderHeuteMobil();}catch(e){console.warn('[timer-karte]',e);}} // v131: auch Heute-Kacheln auffrischen
 }
 function toggleMobileTimer(taskId){
   const t=findTaskById(taskId);if(!t){toast('Task nicht gefunden','error');return;}
