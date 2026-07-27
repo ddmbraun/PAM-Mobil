@@ -679,8 +679,7 @@ function _mobRestoreBoardsOffline(schnellstart){
   if(!bk||!bk.data)return false;
   try{
     _applyMobileFilter(bk.data);
-    const bkeys=Object.keys(boards);
-    if(!currentBoard||!boards[currentBoard])currentBoard=bkeys[0]||'';
+    if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
     _mobOfflineActive=true;
     // v120 (Geduld-Paket): Beim Schnellstart (Netz vorhanden, Verbindung läuft im
     // Hintergrund an) passenderen Hinweis zeigen als „Offline".
@@ -922,6 +921,16 @@ let mobileStatusFilter={}; // Aus _mobileStatusFilter; leer = alle Spalten
 let _mobileFilteredOut={}; // Tasks die durch Spaltenfilter ausgeblendet wurden — beim Speichern wiederherstellen
 let statuses=[];
 let currentBoard='';
+// v132: Board-Wahl merken – die Liste startete sonst bei JEDEM App-Start im ERSTEN
+// freigegebenen Board (bei Frank „Kalender" mit 0 Tasks → „Liste zeigt nichts an").
+// Fallback ohne gemerktes Board: erstes Board, das auch Tasks hat.
+const BOARD_KEY='ptp_mob_board_v1';
+function _mobSaveBoard(){try{localStorage.setItem(BOARD_KEY,currentBoard||'');}catch(e){}}
+function _mobDefaultBoard(){
+  try{const s=localStorage.getItem(BOARD_KEY);if(s&&boards[s])return s;}catch(e){}
+  const bk=Object.keys(boards);
+  return bk.find(function(k){return (boards[k]||[]).length>0;})||bk[0]||'';
+}
 let currentStatus=''; // leer = alle Spalten
 let currentTaskId=null;
 let saveTimer=null;
@@ -1562,14 +1571,14 @@ function switchMobView(view){
 function renderHeuteMobil(){
   var el=document.getElementById('heuteList');if(!el)return;
   var today=new Date().toISOString().split('T')[0];
-  var in3=new Date(Date.now()+3*864e5).toISOString().split('T')[0];
   // v131 (Wunsch Frank): „Heute" = Tagesplan zum ANSEHEN, als Kacheln. Oben die heutigen
-  // Außer-Haus-Termine mit Uhrzeit + Fahrzeit („Heute unterwegs"), darunter die Fälligkeiten –
-  // jetzt wie am Desktop inkl. Desktop-Aufgaben (aufgaben[]) und freien Terminen (freieTermine[]).
+  // Außer-Haus-Termine mit Uhrzeit + Fahrzeit („Heute unterwegs"), darunter die Fälligkeiten
+  // (inkl. Desktop-Aufgaben aufgaben[] und freien Terminen freieTermine[]).
   // Jede Kachel: ⏱ Uhr-Knopf (Stoppuhr), Telefon, Maps; Antippen öffnet den Task. Kein Bearbeiten.
+  // v132 (Wunsch Frank): NUR der heutige Tag – „Überfällig" und „Nächste 3 Tage" sind raus.
   var timerState=_loadTimerState();
   var runningTaskId=timerState?timerState.taskId:null;
-  var ueberfaellig=[],heuteFaellig=[],bald=[],unterwegs=[];
+  var heuteFaellig=[],unterwegs=[];
   // Termin-Quellen je Task: Fälligkeit, Ausführungstermin, Desktop-Aufgaben, freie Termine
   function _alleTermine(t){
     var dd=[];
@@ -1588,25 +1597,13 @@ function renderHeuteMobil(){
       (t.ausserhausTermine||[]).forEach(function(tm){
         if(tm.date===today)unterwegs.push({t:t,board:bName,tm:tm});
       });
-      var dd=_alleTermine(t);
-      if(!dd.length)return;
-      // je Kategorie EINE Kachel pro Task, angezeigt wird der früheste Treffer
-      var cats={ueb:null,heu:null,bald:null};
-      dd.forEach(function(e){
-        if(e.d<today){if(!cats.ueb||e.d<cats.ueb.d)cats.ueb=e;}
-        else if(e.d===today){if(!cats.heu)cats.heu=e;}
-        else if(e.d<=in3){if(!cats.bald||e.d<cats.bald.d)cats.bald=e;}
-      });
-      if(cats.ueb)ueberfaellig.push({t:t,board:bName,e:cats.ueb});
-      if(cats.heu)heuteFaellig.push({t:t,board:bName,e:cats.heu});
-      if(cats.bald)bald.push({t:t,board:bName,e:cats.bald});
+      // v132: EINE Kachel pro Task, nur wenn HEUTE wirklich etwas dransteht
+      var heuteE=null;
+      _alleTermine(t).forEach(function(e){if(e.d===today&&!heuteE)heuteE=e;});
+      if(heuteE)heuteFaellig.push({t:t,board:bName,e:heuteE});
     });
   });
   unterwegs.sort(function(a,b){return (a.tm.von||'99')<(b.tm.von||'99')?-1:1;});
-  ueberfaellig.sort(function(a,b){return a.e.d<b.e.d?-1:1;});
-  bald.sort(function(a,b){return a.e.d<b.e.d?-1:1;});
-  function fmtDue(due){var p=due.split('-');return p[2]+'.'+p[1]+'.';}
-  function diffDays(due){return Math.round((new Date(today)-new Date(due))/(864e5));}
   // Fahrzeit lesen wie am Desktop (_kalFahrt/_kalFahrtR): fahrt (Altfeld: anfahrt) je Richtung
   function _fahrtHin(tm){var v=(tm&&(tm.fahrt!=null?tm.fahrt:tm.anfahrt));var n=parseInt(v||0,10);return(isNaN(n)||n<0)?0:n;}
   function _fahrtRueck(tm){var v=tm&&tm.fahrtRueck;if(v==null||v==='')return _fahrtHin(tm);var n=parseInt(v,10);return(isNaN(n)||n<0)?0:n;}
@@ -1681,22 +1678,12 @@ function renderHeuteMobil(){
     var badges='';
     if(isBesicht)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#2e7d3222;color:#2e7d32;font-weight:600;white-space:nowrap;">Besichtigung</span>';
     if(isAnruf)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a6fc422;color:#1a6fc4;font-weight:600;white-space:nowrap;">Anruf</span>';
-    var isOverdue=e.d<today;
-    var isToday=e.d===today;
-    var dcol=isOverdue?'#E24B4A':isToday?'#EF9F27':'#639922';
+    // v132: es gibt nur noch Heute-Kacheln – Beschriftung nennt die Quelle (z.B. „Heute: Ortstermin")
     var quelle='';
     if(e.typ==='ausf')quelle='Ausführung';
     else if(e.typ==='aufgabe'||e.typ==='frei')quelle=e.text||'Termin';
-    var dlabel;
-    if(isOverdue){
-      var dgap=diffDays(e.d);
-      dlabel='Überfällig: '+fmtDue(e.d)+' ('+dgap+(dgap===1?' Tag':' Tage')+')';
-    }else if(isToday){
-      dlabel='Heute'+(quelle?': '+quelle:' fällig');
-    }else{
-      dlabel=fmtDue(e.d)+(quelle?': '+quelle:'');
-    }
-    badges+=(badges?' ':'')+'<span style="font-size:11px;color:'+dcol+';font-weight:600;white-space:nowrap;">'+dlabel+'</span>';
+    var dlabel='Heute'+(quelle?': '+quelle:' fällig');
+    badges+=(badges?' ':'')+'<span style="font-size:11px;color:#EF9F27;font-weight:600;white-space:nowrap;">'+dlabel+'</span>';
     return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
       +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:4px solid '+borderColor
       +';border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
@@ -1732,13 +1719,11 @@ function renderHeuteMobil(){
     +'</div>';
   var html=zoomBar+'<div id="heuteZoomContent" style="zoom:'+zoom+'%;">'
     +'<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;">📅 '+ds+'</div>';
-  if(!unterwegs.length&&!ueberfaellig.length&&!heuteFaellig.length&&!bald.length){
-    html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Keine Termine und nichts fällig 🎉</div>';
+  if(!unterwegs.length&&!heuteFaellig.length){
+    html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Heute keine Termine und nichts fällig 🎉</div>';
   }else{
     html+=section('Heute unterwegs','#5a86f5',unterwegs,function(i){return terminRow(i);});
-    html+=section('Überfällig','#E24B4A',ueberfaellig,function(i){return taskRow(i,'#E24B4A');});
-    html+=section('Heute','#EF9F27',heuteFaellig,function(i){return taskRow(i,'#EF9F27');});
-    html+=section('Nächste 3 Tage','#639922',bald,function(i){return taskRow(i,'#639922');});
+    html+=section('Heute fällig','#EF9F27',heuteFaellig,function(i){return taskRow(i,'#EF9F27');});
   }
   html+='</div>';
   el.innerHTML=html;
@@ -1869,8 +1854,7 @@ async function loadFile(){
     if(_mLoadETag)mobETag=_mLoadETag;
     const data=await r.json();
     _applyMobileFilter(data);
-    const bk=Object.keys(boards);
-    if(!currentBoard||!boards[currentBoard])currentBoard=bk[0]||'';
+    if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
     // modifiedTime und parent-Ordner-ID für Poll-Vergleich aktualisieren
     try{
       const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime,parents&_='+Date.now(),
@@ -1925,7 +1909,7 @@ async function pollForChanges(){
     if(!r.ok)return;
     const data=await r.json();
     _applyMobileFilter(data);
-    if(currentBoard && !boards[currentBoard]){const bk=Object.keys(boards);currentBoard=bk[0]||'';}
+    if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
     currentStatus=''; // Filter zurücksetzen damit alle Änderungen sichtbar sind
     fileLastModified=meta.modifiedTime;
     if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
@@ -3579,7 +3563,7 @@ function renderBoardBar(){
     else{lbl.textContent='Aktuelles Board: '+currentBoard+'  ·  '+names.length+' verfügbar';}
   }
 }
-function switchBoard(n){currentBoard=n;currentStatus='';renderList(true);}
+function switchBoard(n){currentBoard=n;currentStatus='';_mobSaveBoard();renderList(true);} // v132: Wahl merken
 function switchStatus(s){currentStatus=(currentStatus===s?'':s);renderList(true);}
 function renderStatusBar(){
   const sec=document.getElementById('statusSection');
