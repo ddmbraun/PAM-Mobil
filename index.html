@@ -1556,17 +1556,27 @@ function showList(){
 }
 
 let _mobView='liste';
-function switchMobView(view){
-  _mobView=view;
-  const isHeute=(view==='heute');
-  document.getElementById('taskList').style.display=isHeute?'none':'';
-  document.getElementById('heuteList').style.display=isHeute?'block':'none';
-  document.getElementById('fabBtn').style.display=isHeute?'none':'';
+// v133: EINE Stelle entscheidet, was sichtbar ist. Im Heute-Modus verschwindet das
+// KOMPLETTE Listen-Zubehör (Board-Zeile, Board-Chips, Status-Chips, Suchfeld) – vorher
+// blieb alles stehen und die Heute-Kacheln hingen darunter (Befund Frank, Screenshot).
+function _mobApplyViewChrome(){
+  const isHeute=(_mobView==='heute');
+  const bs=document.querySelector('.board-section');if(bs)bs.style.display=isHeute?'none':'';
+  const ss=document.getElementById('statusSection');if(ss&&isHeute)ss.style.display='none'; // Liste: renderStatusBar entscheidet
+  const sb=document.querySelector('.search-toggle-row .search-bar');if(sb)sb.style.display=isHeute?'none':'';
+  const tl=document.getElementById('taskList');if(tl)tl.style.display=isHeute?'none':'';
+  const hl=document.getElementById('heuteList');if(hl)hl.style.display=isHeute?'block':'none';
+  const fab=document.getElementById('fabBtn');if(fab)fab.style.display=isHeute?'none':'';
   const btnL=document.getElementById('tabListeBtn');
   const btnH=document.getElementById('tabHeuteBtn');
   if(btnL){btnL.style.background=isHeute?'var(--bg3)':'var(--accent)';btnL.style.color=isHeute?'var(--text2)':'#fff';}
   if(btnH){btnH.style.background=isHeute?'var(--accent)':'var(--bg3)';btnH.style.color=isHeute?'#fff':'var(--text2)';}
-  if(isHeute)renderHeuteMobil();
+}
+function switchMobView(view){
+  _mobView=view;
+  _mobApplyViewChrome();
+  if(view==='heute')renderHeuteMobil();
+  else renderList(); // baut auch Status-Leiste/Board-Chips wieder auf
 }
 function renderHeuteMobil(){
   var el=document.getElementById('heuteList');if(!el)return;
@@ -1607,10 +1617,6 @@ function renderHeuteMobil(){
   // Fahrzeit lesen wie am Desktop (_kalFahrt/_kalFahrtR): fahrt (Altfeld: anfahrt) je Richtung
   function _fahrtHin(tm){var v=(tm&&(tm.fahrt!=null?tm.fahrt:tm.anfahrt));var n=parseInt(v||0,10);return(isNaN(n)||n<0)?0:n;}
   function _fahrtRueck(tm){var v=tm&&tm.fahrtRueck;if(v==null||v==='')return _fahrtHin(tm);var n=parseInt(v,10);return(isNaN(n)||n<0)?0:n;}
-
-  var HZKEY='ptp_heute_mob_zoom';
-  var zoom=115;
-  try{var z=parseInt(localStorage.getItem(HZKEY)||'115',10);if(z>=80&&z<=160)zoom=z;}catch(e){}
 
   var phoneIcon=_SVG_PHONE;
   var pinIcon=_SVG_PIN;
@@ -1709,16 +1715,9 @@ function renderHeuteMobil(){
 
   var d=new Date();
   var ds=d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
-  var zoomBar='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg3);border-radius:8px;margin-bottom:10px;">'
-    +'<span style="font-size:11px;color:var(--text2);flex-shrink:0;">A</span>'
-    +'<input type="range" min="80" max="160" step="5" value="'+zoom+'" style="flex:1;accent-color:var(--accent);" '
-    +'oninput="(function(v){var c=document.getElementById(\'heuteZoomContent\');if(c)c.style.zoom=v+\'%\';'
-    +'var lbl=document.getElementById(\'heuteZoomVal\');if(lbl)lbl.textContent=v+\'%\';'
-    +'try{localStorage.setItem(\'ptp_heute_mob_zoom\',v);}catch(e){}}).call(null,this.value)">'
-    +'<span id="heuteZoomVal" style="font-size:11px;color:var(--text);min-width:32px;text-align:right;flex-shrink:0;">'+zoom+'%</span>'
-    +'</div>';
-  var html=zoomBar+'<div id="heuteZoomContent" style="zoom:'+zoom+'%;">'
-    +'<div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px;">📅 '+ds+'</div>';
+  // v133: eigener Zoom-Regler raus – die App-Größe regelt der „Aa"-Knopf in der Kopfzeile
+  var html='<div id="heuteZoomContent">'
+    +'<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:12px;">📅 '+ds+'</div>';
   if(!unterwegs.length&&!heuteFaellig.length){
     html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Heute keine Termine und nichts fällig 🎉</div>';
   }else{
@@ -3573,7 +3572,7 @@ function renderStatusBar(){
   // Board-spezifische Spalten nutzen (analog PC), Fallback auf globale statuses
   const boardSts=(_remoteBoardStatuses[currentBoard]&&_remoteBoardStatuses[currentBoard].length)?_remoteBoardStatuses[currentBoard]:statuses;
   if(!boardSts.length){sec.style.display='none';return;}
-  sec.style.display='';
+  sec.style.display=(_mobView==='heute')?'none':''; // v133: im Heute-Modus nie einblenden
   // Zähle Tasks pro Status
   const counts={};
   tasks.forEach(t=>{const s=t.status||'';counts[s]=(counts[s]||0)+1;});
@@ -3587,9 +3586,10 @@ function renderStatusBar(){
     }).join('');
 }
 function renderList(resetScroll){
-  // Sicherstellen dass taskList sichtbar ist (z.B. nach Heute-View)
+  // v133: Sichtbarkeit richtet sich nach der aktiven Ansicht – vorher wurde die Liste hier
+  // ZWANGSWEISE eingeblendet und stand nach jedem Desktop-Sync ÜBER den Heute-Kacheln.
   const _tl=document.getElementById('taskList');
-  if(_tl&&_tl.style.display==='none')_tl.style.display='';
+  if(_tl)_tl.style.display=(_mobView==='heute')?'none':'';
   renderBoardBar();
   renderStatusBar();
   const rawQ=(document.getElementById('searchInput')?.value||'');
