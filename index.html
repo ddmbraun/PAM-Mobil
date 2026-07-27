@@ -927,7 +927,9 @@ let currentBoard='';
 const BOARD_KEY='ptp_mob_board_v1';
 function _mobSaveBoard(){try{localStorage.setItem(BOARD_KEY,currentBoard||'');}catch(e){}}
 function _mobDefaultBoard(){
-  try{const s=localStorage.getItem(BOARD_KEY);if(s&&boards[s])return s;}catch(e){}
+  // v134: gemerktes Board nur übernehmen, wenn es auch Tasks hat – Frank stand sonst nach
+  // einem einmaligen Tipp auf „Kalender (0)" bei jedem Start wieder im leeren Board.
+  try{const s=localStorage.getItem(BOARD_KEY);if(s&&boards[s]&&(boards[s]||[]).length>0)return s;}catch(e){}
   const bk=Object.keys(boards);
   return bk.find(function(k){return (boards[k]||[]).length>0;})||bk[0]||'';
 }
@@ -9165,6 +9167,20 @@ window.Dachplan=(function(){
   +'#dpMoreMenu .dpb{width:100%;text-align:left}'
   +'#dpNoImg{position:absolute;left:16px;right:16px;top:36%;display:flex;flex-direction:column;align-items:center;gap:12px;z-index:1100;color:#9aa3b2;font-size:15px;text-align:center}'
   +'@media (max-width:520px){#dpBar .dpb{min-height:44px;padding:0 10px;font-size:14px}#dpBar #dpSearch{order:99;flex-basis:100%;min-height:44px;font-size:14px}}'
+  /* v135 (Wunsch Frank, iPhone): Kompakt-Modus – Vollbild-Karte, schwebende Elemente statt
+     Knopfleiste. dp-compact setzt open() bei Bildschirmbreite ≤520px. Der Kopfbalken bleibt
+     als 0-Hoch-Anker bestehen (das ⋯-Menü hängt absolut in ihm), nur seine Knöpfe verschwinden. */
+  +'#dpScreen.dp-compact #dpBar{padding:0;border:none;background:transparent;min-height:0}'
+  +'#dpScreen.dp-compact #dpBar>.dpb,#dpScreen.dp-compact #dpBar>#dpSearch{display:none}'
+  +'#dpScreen.dp-compact #dpMoreMenu{top:64px;right:8px}'
+  +'#dpScreen.dp-compact #dpListPanel{top:0;left:auto;width:84%;max-width:380px;border-left:1px solid #2a2f3a;box-shadow:-10px 0 28px rgba(0,0,0,.6);z-index:1500}'
+  +'#dpCTop{position:absolute;top:8px;left:8px;right:8px;z-index:1450;display:flex;gap:8px;align-items:center}'
+  +'#dpCTop .dpc{min-height:46px;border:1px solid #2a2f3a;background:rgba(23,26,33,.92);color:#e7eaf0;font-size:16px;font-weight:600;cursor:pointer}'
+  +'#dpFab{position:absolute;right:12px;bottom:18px;z-index:1460;width:58px;height:58px;border-radius:50%;border:none;background:#2b4fc4;color:#fff;font-size:24px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.5)}'
+  +'#dpFab.on{background:#e8791a}'
+  +'#dpFabMenu{position:absolute;right:12px;bottom:88px;z-index:1460;display:flex;flex-direction:column;gap:10px;align-items:flex-end}'
+  +'#dpFabMenu .dpb{min-height:50px;box-shadow:0 4px 14px rgba(0,0,0,.5)}'
+  +'#dpCSearchRow{position:absolute;top:62px;left:8px;right:8px;z-index:1450}'
   +'.dpMk{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}'
   +'.dpMk span{transform:rotate(45deg);color:#fff;font-weight:800;font-size:12px}'
   +'#dpListPanel{position:absolute;top:58px;left:0;right:0;bottom:0;background:#0f1115;z-index:1300;overflow:auto;padding:12px}'
@@ -9230,6 +9246,23 @@ window.Dachplan=(function(){
      // das Pin-Fenster nimmt auf dem Handy zu viel Platz weg. Dieser kleine Knopf oben
      // rechts holt es bei Bedarf hervor.
      +'<button class="dpb" id="dpPinBtn" style="position:absolute;top:64px;right:8px;z-index:1350;border-color:#3b82f6;color:#7db4ff;display:none;">📋 Pin öffnen</button>'
+     // v135 (Wunsch Frank, iPhone): schwebende Kompakt-Bedienung – oben ← / Adresse / 🔍,
+     // unten rechts EIN Menü-Knopf (FAB) mit Aufklapp-Auswahl. Nur sichtbar im dp-compact-Modus.
+     +'<div id="dpCTop" class="dp-hidden">'
+      +'<button class="dpc" id="dpCBack" style="width:46px;border-radius:50%;padding:0;flex:none;">←</button>'
+      +'<button class="dpc" id="dpCAddr" title="Karte auf die Auftragsadresse springen" style="flex:1;min-width:0;border-radius:23px;padding:0 14px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;">🏠</button>'
+      +'<button class="dpc" id="dpCSearch" title="Adresse suchen" style="width:46px;border-radius:50%;padding:0;flex:none;">🔍</button>'
+     +'</div>'
+     +'<div id="dpCSearchRow" class="dp-hidden">'
+      +'<input id="dpCSearchInput" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="width:100%;min-height:46px;border-radius:23px;border:1px solid #2a2f3a;background:rgba(23,26,33,.95);color:#e7eaf0;padding:0 16px;font-size:15px;box-sizing:border-box">'
+     +'</div>'
+     +'<div id="dpFabMenu" class="dp-hidden">'
+      +'<button class="dpb" id="dpCPin">➕ Pin setzen</button>'
+      +'<button class="dpb" id="dpCList">☰ Pin-Liste</button>'
+      +'<button class="dpb" id="dpCLive">📡 Live-Standort</button>'
+      +'<button class="dpb" id="dpCMore">⋯ Mehr</button>'
+     +'</div>'
+     +'<button id="dpFab" class="dp-hidden">☰</button>'
      +'<div id="dpMsg" class="dp-hidden"></div>'
      +'<div id="dpSheet">'
       +'<div style="display:flex;justify-content:space-between;align-items:center"><b id="dpSheetTitle">Pin</b><button class="dpb" id="dpSheetClose">Schließen</button></div>'
@@ -9287,7 +9320,32 @@ window.Dachplan=(function(){
     q('#dpGuide').onclick=()=>{const p=cur();if(p)guideStart(p.id);}; // v116
     q('#dpPhotoText').onclick=()=>{if(window._dpPhotoFo)dpFotoText(window._dpPhotoFo);}; // v116
     E.photo.onclick=ev=>{if(ev.target===E.photo)E.photo.classList.add('dp-hidden');};
+    // v135: Kompakt-Bedienung (iPhone) – die neuen Knöpfe rufen die BESTEHENDEN Handler auf,
+    // damit alle Funktionen exakt gleich arbeiten (kein zweiter Code-Pfad).
+    q('#dpCBack').onclick=close;
+    q('#dpCAddr').onclick=searchDach;
+    q('#dpCSearch').onclick=()=>{const r=q('#dpCSearchRow');r.classList.toggle('dp-hidden');if(!r.classList.contains('dp-hidden')){try{q('#dpCSearchInput').focus();}catch(_){}}};
+    q('#dpCSearchInput').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();doSearch(q('#dpCSearchInput').value);q('#dpCSearchRow').classList.add('dp-hidden');}});
+    q('#dpFab').onclick=()=>{q('#dpFabMenu').classList.toggle('dp-hidden');};
+    q('#dpCPin').onclick=()=>{q('#dpAdd').click();_updFab();q('#dpFabMenu').classList.add('dp-hidden');say(addMode?'➕ Pin-Modus AN – auf die Karte tippen':'Pin-Modus aus');};
+    q('#dpCList').onclick=()=>{q('#dpFabMenu').classList.add('dp-hidden');openList();};
+    q('#dpCLive').onclick=()=>{q('#dpFabMenu').classList.add('dp-hidden');q('#dpLive').click();};
+    q('#dpCMore').onclick=ev=>{ev.stopPropagation();q('#dpFabMenu').classList.add('dp-hidden');q('#dpMoreMenu').classList.toggle('dp-hidden');};
+    // Tipp auf die Karte klappt das FAB-Menü zu (zusätzlich zum FAB selbst)
+    E.mapEl.addEventListener('click',()=>{try{q('#dpFabMenu').classList.add('dp-hidden');}catch(_){}},true);
     built=true;
+  }
+  // v135: Filter-Knopf der breiten Leiste mit dem Chip-Zustand der Liste synchron halten
+  function _syncFilterBtn(){
+    try{E.screen.querySelector('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';}catch(_){}
+  }
+  // v135: FAB spiegelt den Pin-Modus – orange ➕ solange addMode an ist, sonst blaues ☰
+  function _updFab(){
+    try{
+      const f=E.screen.querySelector('#dpFab');if(!f)return;
+      f.classList.toggle('on',!!addMode);
+      f.textContent=addMode?'➕':'☰';
+    }catch(_){}
   }
 
   function ensureMap(){
@@ -9389,9 +9447,24 @@ window.Dachplan=(function(){
     E.screen.querySelector('#dpAdd').textContent='➕ Pin';
     E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');
     closeSheet();pinBtnHide(); // v129
+    // v135: Kompakt-Modus fürs iPhone (schmale Bildschirme) – Vollbild-Karte, schwebende
+    // Bedienung. Tablet/Desktop (>520px) behalten die bewährte Knopfleiste unverändert.
+    const _compact=window.innerWidth<=520;
+    E.screen.classList.toggle('dp-compact',_compact);
+    E.screen.querySelector('#dpCTop').classList.toggle('dp-hidden',!_compact);
+    E.screen.querySelector('#dpFab').classList.toggle('dp-hidden',!_compact);
+    E.screen.querySelector('#dpFabMenu').classList.add('dp-hidden');
+    E.screen.querySelector('#dpCSearchRow').classList.add('dp-hidden');
+    if(_compact){
+      const _adr=((t&&t.adresse)||'').trim();
+      E.screen.querySelector('#dpCAddr').textContent='🏠 '+(_adr||(t&&t.title)||'Objekt');
+    }
+    _updFab();
     E.screen.classList.remove('dp-hidden');
     if(!ensureMap())return;
     setBase(dp.base||'map');
+    // v135: nach dem Umschalten der Leisten die Kartengröße nachziehen (Leaflet)
+    setTimeout(()=>{try{if(map)map.invalidateSize();}catch(_){}try{if(imap)imap.invalidateSize();}catch(_){}},120);
   }
   function locate(){
     if(dp.base==='bild')return locateBild();
@@ -9598,9 +9671,15 @@ window.Dachplan=(function(){
   }
   function openList(){
     const panel=E.screen.querySelector('#dpListPanel');
-    const arr=(dp.pins||[]).slice().sort((a,b)=>a.nr-b.nr);
-    let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Pins ('+arr.length+')</b><button class="dpb" id="dpListClose">Schließen</button></div>';
-    if(!arr.length)h+='<div style="color:#9aa3b2;line-height:1.5">Noch keine Pins. Oben „➕ Pin" aktivieren und auf die Karte tippen.</div>';
+    // v135: Filter „Alle | Nur Schaden" sitzt jetzt als Chips IN der Liste und filtert auch die
+    // Zeilen – gleiche Variable wie der dpFilter-Knopf der breiten Leiste (renderPins teilt sie).
+    const all=(dp.pins||[]).slice().sort((a,b)=>a.nr-b.nr);
+    const arr=filter==='schaden'?all.filter(p=>(p.status||'rot')==='rot'):all;
+    let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Pins ('+arr.length+(filter==='schaden'?' von '+all.length:'')+')</b><button class="dpb" id="dpListClose" style="background:#2b4fc4;border-color:#2b4fc4;color:#fff">✕ Schließen</button></div>';
+    h+='<div style="display:flex;gap:6px;margin-bottom:10px">'
+      +'<button class="dpb" id="dpLiFAlle" style="border-radius:20px'+(filter==='alle'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Alle</button>'
+      +'<button class="dpb" id="dpLiFSchad" style="border-radius:20px'+(filter==='schaden'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Nur Schaden</button></div>';
+    if(!arr.length)h+='<div style="color:#9aa3b2;line-height:1.5">'+(all.length?'Keine Schaden-Pins vorhanden.':'Noch keine Pins. „➕ Pin" aktivieren und auf die Karte tippen.')+'</div>';
     // v116: Titel → sonst Notiz als Hauptzeile; Notiz zusätzlich als zweite Zeile (Wunsch Frank – Notizen waren in der Liste unsichtbar)
     arr.forEach(p=>{const _e=s=>String(s||'').replace(/</g,'&lt;');
       const note=String(p.note||'').replace(/\s+/g,' ').trim();
@@ -9609,6 +9688,9 @@ window.Dachplan=(function(){
       h+='<div class="dpLi" data-id="'+p.id+'"><div class="b" style="background:'+COL[p.status||'rot']+'">'+p.nr+'</div><div class="tx"><b>'+ti+'</b>'+sub+'<span>'+(LBL[p.status]||'')+' · '+((p.fotos||[]).length)+' Foto(s)</span></div></div>';});
     panel.innerHTML=h;panel.classList.remove('dp-hidden');
     panel.querySelector('#dpListClose').onclick=()=>panel.classList.add('dp-hidden');
+    // v135: Filter-Chips – Zustand mit dem Leisten-Knopf synchron halten
+    panel.querySelector('#dpLiFAlle').onclick=()=>{filter='alle';_syncFilterBtn();renderPins();openList();};
+    panel.querySelector('#dpLiFSchad').onclick=()=>{filter='schaden';_syncFilterBtn();renderPins();openList();};
     panel.querySelectorAll('.dpLi').forEach(row=>{row.onclick=()=>{const p=dp.pins.find(x=>x.id===row.dataset.id);if(!p)return;panel.classList.add('dp-hidden');sel=p.id;try{if(dp.base==='bild'&&imap&&p.nx!=null)imap.setView(frToLatLng(p.nx,p.ny),Math.max(imap.getZoom()||0,1));else if(map&&p.lat!=null)map.setView([p.lat,p.lng],Math.max(map.getZoom()||19,19));}catch(_){}openSheet(p);};});
   }
   // ════ Bild-Modus (zweite Ebene, CRS.Simple) ════
