@@ -9173,6 +9173,11 @@ window.Dachplan=(function(){
   +'#dpScreen.dp-compact #dpBar{padding:0;border:none;background:transparent;min-height:0}'
   +'#dpScreen.dp-compact #dpBar>.dpb,#dpScreen.dp-compact #dpBar>#dpSearch{display:none}'
   +'#dpScreen.dp-compact #dpMoreMenu{top:64px;right:8px}'
+  /* v136: iPhone – Leaflet-Zoomknöpfe (+/−) raus (Zwei-Finger-Zoom reicht, sie klebten unterm ←) */
+  +'#dpScreen.dp-compact .leaflet-control-zoom{display:none}'
+  /* v136: Standort-Einträge im ⋯-Menü nur im Kompakt-Modus (Tablet hat sie in der Leiste) */
+  +'.dpCOnly{display:none}'
+  +'#dpScreen.dp-compact #dpMoreMenu .dpCOnly{display:block}'
   +'#dpScreen.dp-compact #dpListPanel{top:0;left:auto;width:84%;max-width:380px;border-left:1px solid #2a2f3a;box-shadow:-10px 0 28px rgba(0,0,0,.6);z-index:1500}'
   +'#dpCTop{position:absolute;top:8px;left:8px;right:8px;z-index:1450;display:flex;gap:8px;align-items:center}'
   +'#dpCTop .dpc{min-height:46px;border:1px solid #2a2f3a;background:rgba(23,26,33,.92);color:#e7eaf0;font-size:16px;font-weight:600;cursor:pointer}'
@@ -9227,6 +9232,12 @@ window.Dachplan=(function(){
         +'<button class="dpb dpLay" data-lay="Luftbild Google">🟩 Luftbild Google</button>'
         +'<button class="dpb dpLay" data-lay="Karte">🗺 Karte (OpenStreetMap)</button>'
         +'<div style="height:1px;background:#2a2f3a;margin:4px 0;"></div>'
+        // v136: im Kompakt-Modus (iPhone) fehlten Standort-Funktionen der alten Leiste
+        // komplett (Befund Frank) – hier nur bei dp-compact sichtbar, Tablet hat sie in der Leiste
+        +'<div class="dpCOnly" style="font-size:12px;color:#9aa3b2;font-weight:700;padding:2px 4px 0;">Standort</div>'
+        +'<button class="dpb dpCOnly" id="dpCLoc">📍 Mein Standort zeigen</button>'
+        +'<button class="dpb dpCOnly" id="dpCPinHere">📍➕ Pin an meinem Standort</button>'
+        +'<div class="dpCOnly" style="height:1px;background:#2a2f3a;margin:4px 0;"></div>'
         +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">🖼️ Zum Bild wechseln</button>'
         +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild laden</button>'
         +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kalibrieren</button>'
@@ -9331,8 +9342,15 @@ window.Dachplan=(function(){
     q('#dpCList').onclick=()=>{q('#dpFabMenu').classList.add('dp-hidden');openList();};
     q('#dpCLive').onclick=()=>{q('#dpFabMenu').classList.add('dp-hidden');q('#dpLive').click();};
     q('#dpCMore').onclick=ev=>{ev.stopPropagation();q('#dpFabMenu').classList.add('dp-hidden');q('#dpMoreMenu').classList.toggle('dp-hidden');};
-    // Tipp auf die Karte klappt das FAB-Menü zu (zusätzlich zum FAB selbst)
-    E.mapEl.addEventListener('click',()=>{try{q('#dpFabMenu').classList.add('dp-hidden');}catch(_){}},true);
+    // Tipp auf die Karte klappt offene Menüs zu – FAB-Auswahl UND das „Kartenansicht"-Menü
+    // (v136, Befund Frank: das ⋯-Menü hatte im Kompakt-Modus keinen offensichtlichen Zu-Weg;
+    // der ←-Knopf wäre der falsche, der verlässt den ganzen Dachplan). Gilt für Karte UND Bild-Modus.
+    const _dpTapClose=()=>{try{q('#dpFabMenu').classList.add('dp-hidden');}catch(_){}try{q('#dpMoreMenu').classList.add('dp-hidden');}catch(_){}};
+    // v136: Standort-Einträge im ⋯-Menü rufen die bestehenden Leisten-Handler auf
+    q('#dpCLoc').onclick=()=>q('#dpLoc').click();
+    q('#dpCPinHere').onclick=()=>q('#dpPinHere').click();
+    E.mapEl.addEventListener('click',_dpTapClose,true);
+    if(E.imapEl)E.imapEl.addEventListener('click',_dpTapClose,true);
     built=true;
   }
   // v135: Filter-Knopf der breiten Leiste mit dem Chip-Zustand der Liste synchron halten
