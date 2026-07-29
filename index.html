@@ -57,6 +57,9 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 /* v102: Suche + Liste/Heute in einer Zeile (bricht auf schmalen Schirmen um) */
 .search-toggle-row{display:flex;flex-wrap:wrap;align-items:center;background:var(--bg2);border-bottom:1px solid var(--border)}
 .search-toggle-row .search-bar{flex:1 1 300px;border-bottom:none}
+/* v140: Suchbereich-Umschalter Board/Überall */
+.search-scope{flex:0 0 auto;margin-right:8px;height:44px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.search-scope.aktiv{border-color:var(--accent);background:var(--accent);color:#fff}
 .view-toggle{display:flex;gap:6px;flex:1 1 240px;padding:0 12px 8px;flex-shrink:0}
 /* v102: Tablet-Layout ab 900px – zwei Spalten in Liste und Task, größere Tipp-Ziele */
 @media(min-width:900px){
@@ -76,6 +79,31 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .card-foto-icon{font-size:20px;color:var(--border)}
 .badge{display:inline-block;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:500;background:var(--bg3);border:1px solid var(--border)}
 .badge.status{background:rgba(106,138,255,.15);border-color:var(--accent);color:var(--accent2)}
+/* ── v138: iPhone-Kompakt-Kopf + Farbregel „Ruhig dunkel" (nur ≤520px) ─────────
+   Die .mk-Zeile ersetzt am iPhone die Board-/Status-Reihen (Ausklapp-Panel);
+   Farbe auf den Karten nur noch mit Bedeutung: Seitenstreifen blau/orange,
+   Aktions-Knöpfe und Status-Abzeichen werden ruhiges Grau. */
+.mk-row{display:none;align-items:center;gap:6px;padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--border)}
+.mk-board{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:0 12px;height:44px;font-size:15px;font-weight:600;cursor:pointer;text-align:left}
+.mk-board .mk-board-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mk-ico{flex-shrink:0;width:44px;height:44px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:17px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.mk-ico.mk-aktiv{border-color:#e8791a;color:#e8791a;background:rgba(232,121,26,.12)}
+.mk-panel{display:none;background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 12px;max-height:55vh;overflow-y:auto}
+.mk-panel.open{display:block}
+.mk-panel-lbl{font-size:12px;color:var(--text2);margin:2px 0 6px}
+.mk-panel .board-chip{display:block;width:100%;text-align:left;margin-bottom:6px;box-sizing:border-box}
+.mk-panel .status-chip{margin:0 6px 6px 0}
+@media (max-width:520px){
+  #listScreen .board-section{display:none!important}
+  #listScreen .status-section{display:none!important}
+  .mk-row{display:flex}
+  #listScreen .search-toggle-row .search-bar{display:none!important}
+  #listScreen.mk-suche .search-toggle-row .search-bar{display:flex!important}
+  #listScreen .search-toggle-row .search-scope{display:none!important}
+  #listScreen.mk-suche .search-toggle-row .search-scope{display:inline-flex!important;align-items:center}
+  #taskList .badge.status{background:var(--bg3);border-color:var(--border);color:var(--text2)}
+  #taskList .card-akt{background:var(--bg3)!important}
+}
 /* ── BAUDOKU TAB-BAR ── */
 .detail-tab-bar{display:flex;background:var(--bg2);border-bottom:2px solid var(--border);flex-shrink:0;}
 .detail-tab-btn{flex:1;padding:11px 8px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;color:var(--text2);border:none;background:transparent;border-bottom:3px solid transparent;margin-bottom:-2px;min-height:44px;}
@@ -387,6 +415,15 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <span class="size-bar-val" id="appZoomVal">100%</span>
     <button class="size-bar-step size-bar-step-lg" onclick="setAppZoom(Math.min(150,+(document.getElementById('appZoomSlider').value||100)+10))" title="Größer">A+</button>
   </div>
+  <!-- v138: iPhone-Kompakt-Kopf – ersetzt bei ≤520px die Board-/Status-Reihen durch
+       EINEN Board-Knopf mit Ausklapp-Panel + Lupe (Wunsch Frank: „Ausklappfunktion").
+       Tablet/Desktop (>520px) sehen diese Zeile nie und behalten die breiten Leisten. -->
+  <div class="mk-row" id="mkRow">
+    <button class="mk-board" id="mkBoardBtn" onclick="_mkTogglePanel()">Board wählen ▾</button>
+    <button class="mk-ico" id="mkFilterBtn" onclick="_mkTogglePanel()" title="Board und Status wählen">🏷</button>
+    <button class="mk-ico" id="mkSearchBtn" onclick="_mkToggleSearch()" title="Suche ein-/ausblenden">🔍</button>
+  </div>
+  <div class="mk-panel" id="mkPanel"></div>
   <div class="board-section">
     <div class="board-section-label" id="boardLabel">Board wählen</div>
     <div class="board-bar" id="boardBar"></div>
@@ -399,6 +436,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <input type="text" id="searchInput" placeholder="🔍 Suche Titel, Kostenstelle, Adresse…" oninput="renderList();document.getElementById('searchClear').style.display=this.value?'block':'none'" autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="search">
     <button class="search-clear" id="searchClear" onclick="document.getElementById('searchInput').value='';this.style.display='none';renderList()">✕</button>
   </div>
+  <!-- v140: Suchbereich – „Board" (wie bisher) oder „Überall" (alle Boards + Notizen + Foto-Texte) -->
+  <button class="search-scope" id="searchScopeBtn" onclick="_sucheScopeToggle()" title="Suchbereich: nur dieses Board oder überall (alle Boards, Notizen, Foto-Texte)">Board</button>
   <div class="view-toggle">
     <button id="tabListeBtn" onclick="switchMobView('liste')" style="flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">☰ Liste</button>
     <button id="tabHeuteBtn" onclick="switchMobView('heute')" style="flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;">📅 Heute</button>
@@ -1485,7 +1524,13 @@ function _mobAfterSilentReconnect(){
     _mobReconnectFollowupTs=Date.now();
     afterLogin();
   }
-  else{try{pollForChanges();}catch(e){}}
+  else{
+    try{pollForChanges();}catch(e){}
+    // v137: liegengebliebene Foto-Uploads auch nach Netz-Rückkehr nachholen –
+    // vorher passierte das NUR beim App-Start (afterLogin), Fotos blieben sonst
+    // bis zum nächsten Neustart lokal liegen.
+    setTimeout(()=>{_mobRetryPendingUploads().catch(()=>{});},2500);
+  }
 }
 async function _mobOnlineRetryNow(){
   if(tokenValid()){_mobAfterSilentReconnect();return;}
@@ -1563,6 +1608,9 @@ let _mobView='liste';
 // blieb alles stehen und die Heute-Kacheln hingen darunter (Befund Frank, Screenshot).
 function _mobApplyViewChrome(){
   const isHeute=(_mobView==='heute');
+  // v138: Kompakt-Kopf (iPhone) folgt derselben Regel wie die breiten Leisten
+  const mk=document.getElementById('mkRow');if(mk)mk.style.display=isHeute?'none':'';
+  if(isHeute){try{_mkClosePanel();const _ls=document.getElementById('listScreen');if(_ls)_ls.classList.remove('mk-suche');}catch(e){}}
   const bs=document.querySelector('.board-section');if(bs)bs.style.display=isHeute?'none':'';
   const ss=document.getElementById('statusSection');if(ss&&isHeute)ss.style.display='none'; // Liste: renderStatusBar entscheidet
   const sb=document.querySelector('.search-toggle-row .search-bar');if(sb)sb.style.display=isHeute?'none':'';
@@ -3156,7 +3204,9 @@ function _extractFolderIdMob(url){
 // ── Ausstehende Foto-Uploads wiederholen ─────────────────────────────────────
 // Beim App-Start / nach Login aufrufen: alle Fotos mit localKey aber ohne driveId
 // werden aus IndexedDB geladen und erneut zu Google Drive hochgeladen.
+let _mobRetryUploadsBusy=false; // v137: läuft nur EINMAL parallel (App-Start-Timer + Netz-Rückkehr können sich überschneiden → sonst doppelte Dateien in Drive)
 async function _mobRetryPendingUploads(){
+  if(_mobRetryUploadsBusy)return;
   if(!gdriveToken||!tokenValid())return;
   let pending=[];
   for(const[,tasks] of Object.entries(boards||{})){
@@ -3178,12 +3228,15 @@ async function _mobRetryPendingUploads(){
     }
   }
   if(!pending.length)return;
-  toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
-  let ok=0;
-  for(const {fo,folderId} of pending){
-    try{await _mobUploadFromKey(fo,folderId);ok++;}catch(e){console.warn('[MobPhoto] Retry:',e);}
-  }
-  if(ok>0){scheduleSave();toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' nachträglich hochgeladen','success',3000);}
+  _mobRetryUploadsBusy=true;
+  try{
+    toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
+    let ok=0;
+    for(const {fo,folderId} of pending){
+      try{await _mobUploadFromKey(fo,folderId);ok++;}catch(e){console.warn('[MobPhoto] Retry:',e);}
+    }
+    if(ok>0){scheduleSave();toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' nachträglich hochgeladen','success',3000);}
+  }finally{_mobRetryUploadsBusy=false;}
 }
 
 async function _mobUploadFromKey(fo,folderId){
@@ -3194,8 +3247,13 @@ async function _mobUploadFromKey(fo,folderId){
   const form=new FormData();
   form.append('metadata',new Blob([JSON.stringify({name:fo.name||'foto.jpg',parents:[folderId],mimeType:mime})],{type:'application/json'}));
   form.append('file',blob);
-  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+  // v137: wie _uploadOneFotoToDrive – abgelaufener Schlüssel bricht den Nachlade-Upload
+  // nicht mehr ab, sondern wird einmal still erneuert und der Upload wiederholt.
+  const _send=()=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
     {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form});
+  if(!tokenValid())await _ensureTokenSilent();
+  let r=await _send();
+  if(r.status===401&&await _ensureTokenSilent())r=await _send();
   if(!r.ok)throw new Error('HTTP '+r.status);
   const j=await r.json();
   fo.driveId=j.id;
@@ -3587,6 +3645,58 @@ function renderStatusBar(){
         +esc(s)+' <span style="opacity:.7;font-size:11px">('+cnt+')</span></button>';
     }).join('');
 }
+// ── v138: iPhone-Kompakt-Kopf – EIN Board-Knopf mit Ausklapp-Panel statt der
+// Chip-Reihen (Wunsch Frank: „Ausklappfunktion"). Alle Knöpfe rufen die
+// BESTEHENDEN Handler auf (switchBoard/switchStatus) – kein zweiter Code-Pfad. ──
+function _mkUpdate(){
+  const row=document.getElementById('mkRow');if(!row)return;
+  row.style.display=(_mobView==='heute')?'none':'';
+  const btn=document.getElementById('mkBoardBtn');
+  if(btn){
+    const cnt=(boards[currentBoard]||[]).length;
+    const bIcon=(boardTypes[currentBoard]||'baustelle')==='notiz'?'✅':(boardTypes[currentBoard]||'baustelle')==='email'?'📧':'🏗';
+    btn.innerHTML='<span>'+bIcon+'</span><span class="mk-board-txt">'+esc(currentBoard||'Board wählen')+' ('+cnt+')</span><span style="color:var(--text2);flex-shrink:0">▾</span>';
+  }
+  const fb=document.getElementById('mkFilterBtn');
+  if(fb)fb.classList.toggle('mk-aktiv',!!(currentStatus&&currentStatus.trim()));
+}
+function _mkTogglePanel(){
+  const p=document.getElementById('mkPanel');if(!p)return;
+  if(p.classList.contains('open')){_mkClosePanel();return;}
+  const names=Object.keys(boards);
+  let h='<div class="mk-panel-lbl">Board</div>';
+  h+=names.map(n=>{
+    const cnt=(boards[n]||[]).length;
+    const bIcon=(boardTypes[n]||'baustelle')==='notiz'?'✅ ':(boardTypes[n]||'baustelle')==='email'?'📧 ':'🏗 ';
+    return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="_mkPickBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
+  }).join('');
+  const tasks=boards[currentBoard]||[];
+  const boardSts=(_remoteBoardStatuses[currentBoard]&&_remoteBoardStatuses[currentBoard].length)?_remoteBoardStatuses[currentBoard]:statuses;
+  if(boardSts.length){
+    const counts={};tasks.forEach(t=>{const s=t.status||'';counts[s]=(counts[s]||0)+1;});
+    h+='<div class="mk-panel-lbl" style="margin-top:10px">Status</div>';
+    h+='<button class="status-chip'+(currentStatus===''?' active':'')+'" onclick="_mkPickStatus(\'\')">Alle <span style="opacity:.7;font-size:11px">('+tasks.length+')</span></button>';
+    h+=boardSts.filter(s=>(counts[s]||0)>0).map(s=>'<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="_mkPickStatus(\''+escAttr(s)+'\')">'+esc(s)+' <span style="opacity:.7;font-size:11px">('+(counts[s]||0)+')</span></button>').join('');
+  }
+  p.innerHTML=h;p.classList.add('open');
+}
+function _mkClosePanel(){const p=document.getElementById('mkPanel');if(p)p.classList.remove('open');}
+function _mkPickBoard(n){_mkClosePanel();switchBoard(n);}
+function _mkPickStatus(s){_mkClosePanel();switchStatus(s);}
+function _mkToggleSearch(){
+  const ls=document.getElementById('listScreen');if(!ls)return;
+  const auf=!ls.classList.contains('mk-suche');
+  ls.classList.toggle('mk-suche',auf);
+  if(auf){const si=document.getElementById('searchInput');if(si)setTimeout(()=>si.focus(),60);}
+}
+// ── v140: Suchbereich „Board" (wie bisher) / „Überall" (alle Boards + Notizen + Foto-Texte) ──
+let _sucheScope='board';
+function _sucheScopeToggle(){
+  _sucheScope=(_sucheScope==='board'?'alle':'board');
+  const b=document.getElementById('searchScopeBtn');
+  if(b){b.textContent=(_sucheScope==='alle'?'🌐 Überall':'Board');b.classList.toggle('aktiv',_sucheScope==='alle');}
+  renderList();
+}
 function renderList(resetScroll){
   // v133: Sichtbarkeit richtet sich nach der aktiven Ansicht – vorher wurde die Liste hier
   // ZWANGSWEISE eingeblendet und stand nach jedem Desktop-Sync ÜBER den Heute-Kacheln.
@@ -3594,6 +3704,7 @@ function renderList(resetScroll){
   if(_tl)_tl.style.display=(_mobView==='heute')?'none':'';
   renderBoardBar();
   renderStatusBar();
+  _mkUpdate(); // v138: Kompakt-Kopf (iPhone) mitpflegen
   const rawQ=(document.getElementById('searchInput')?.value||'');
   // Normierung: Kleinbuchstaben + Umlaute vereinfachen (ae/oe/ue/ss)
   const _norm=s=>String(s||'').toLowerCase()
@@ -3603,13 +3714,32 @@ function renderList(resetScroll){
   const tasks=boards[currentBoard]||[];
   // Status-Filter
   const _csTrim=currentStatus.trim();
-  let filtered=_csTrim?tasks.filter(t=>(t.status||'').trim()===_csTrim):tasks;
-  // Suche: alle Wörter müssen irgendwo auftauchen (Groß-/Kleinschreibung egal)
-  if(qWords.length){
-    filtered=filtered.filter(t=>{
-      const hay=_norm([t.title,t.adresse,t.hausverwaltung,t.schadensbild,(t.tags||[]).join(' '),(t.kontakte||[]).map(k=>k.name).join(' ')].join(' '));
-      return qWords.every(w=>hay.includes(w));
-    });
+  // v140: Suchtext deckt jetzt auch Notizprotokoll + Foto-Texte ab (beide Suchbereiche)
+  const _hayVon=t=>_norm([t.title,t.adresse,t.hausverwaltung,t.schadensbild,(t.tags||[]).join(' '),(t.kontakte||[]).map(k=>k.name).join(' '),
+    (t.notizVerlauf||[]).map(n=>n&&n.text||'').join(' '),(t.fotos||[]).map(f=>f&&f.caption||'').join(' ')].join(' '));
+  // v140: „Überall" – mit Suchbegriff werden ALLE Boards durchsucht (Status-Filter greift
+  // dabei bewusst nicht, die Status-Spalten gelten je Board); Treffer merken ihr Board.
+  const _sucheAlle=(_sucheScope==='alle'&&qWords.length>0);
+  const _sucheBoardVon=new Map();
+  let filtered;
+  if(_sucheAlle){
+    filtered=[];
+    for(const _bn of Object.keys(boards)){
+      for(const _t of (boards[_bn]||[])){
+        if(!_t)continue;
+        const hay=_hayVon(_t);
+        if(qWords.every(w=>hay.includes(w))){filtered.push(_t);_sucheBoardVon.set(_t.id,_bn);}
+      }
+    }
+  }else{
+    filtered=_csTrim?tasks.filter(t=>(t.status||'').trim()===_csTrim):tasks;
+    // Suche: alle Wörter müssen irgendwo auftauchen (Groß-/Kleinschreibung egal)
+    if(qWords.length){
+      filtered=filtered.filter(t=>{
+        const hay=_hayVon(t);
+        return qWords.every(w=>hay.includes(w));
+      });
+    }
   }
   if(!filtered.length){
     const hint=currentStatus?'Keine Tasks in „'+esc(currentStatus)+'"':(rawQ?'Keine Treffer für „'+esc(rawQ)+'"':'Noch keine Tasks in diesem Board.<br>Rechts unten „+" tippen.');
@@ -3628,12 +3758,14 @@ function renderList(resetScroll){
     // Tel/Maps-Buttons für Karten-Vorschau
     const cardTelK=(t.kontakte||[]).find(c=>c.tel);
     const cardAdr=(t.adresse||'').trim();
+    // v138: class="card-akt" → am iPhone (≤520px) werden die Rundknöpfe ruhiges Grau
+    // (Farbregel „nur Farbe mit Bedeutung"); Tablet behält Blau/Grün.
     const cardTelBtn=cardTelK
-      ?'<a href="tel:'+encodeURIComponent(cardTelK.tel)+'" onclick="event.stopPropagation()" '
+      ?'<a href="tel:'+encodeURIComponent(cardTelK.tel)+'" class="card-akt" onclick="event.stopPropagation()" '
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#1a6fc4;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PHONE+'</a>'
       :'';
     const cardMapsBtn=cardAdr
-      ?'<a href="https://maps.google.com/?q='+encodeURIComponent(cardAdr)+'" target="_blank" onclick="event.stopPropagation()" '
+      ?'<a href="https://maps.google.com/?q='+encodeURIComponent(cardAdr)+'" target="_blank" class="card-akt" onclick="event.stopPropagation()" '
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#2e7d32;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PIN+'</a>'
       :'';
     // v130 (Wunsch Frank): Stoppuhr direkt aus der Liste starten – kleines Icon VOR dem
@@ -3642,6 +3774,7 @@ function renderList(resetScroll){
     // sonst fehlte der Uhr-Knopf bei Tasks ohne Telefon/Adresse.
     const cardUhrBtn='<span onclick="event.stopPropagation();_cardTimerToggle(\''+escAttr(t.id)+'\')" '
       +'title="'+(isRunning?'Stoppuhr stoppen':'Stoppuhr starten')+'" '
+      +(isRunning?'':'class="card-akt" ') // v138: laufende Uhr bleibt orange (Farbe = Bedeutung)
       +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:'+(isRunning?'#e8791a':'#5b6472')+';display:inline-flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;">'
       +(isRunning?'⏹':'⏱')+'</span>';
     const showCardActions=true;
@@ -3661,7 +3794,7 @@ function renderList(resetScroll){
       +(isNotizBoard
         ?'<span style="font-size:13px;line-height:1;">✅</span>'
         :'<span style="display:inline-flex;align-items:center;flex-shrink:0;">'+_SVG_CRANE+'</span>')
-      +'<span style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(currentBoard)+'</span>'
+      +'<span style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(_sucheBoardVon.get(t.id)||currentBoard)+'</span>'
       +'</div>'
       +'<div class="task-card-title" style="color:var(--text)">'+esc(t.title||'(ohne Titel)')+'</div>'
       +'<div class="task-card-meta">'
@@ -6605,8 +6738,14 @@ async function _uploadOneFotoToDrive(file,folderId){
   const body=new FormData();
   body.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}));
   body.append('file',file);
-  const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,mimeType,thumbnailLink,webViewLink,webContentLink',
+  // v137: Schlüssel kann seit Upload-Beginn abgelaufen sein (ensureToken lief nur EINMAL
+  // am Anfang von uploadFoto, davor liegt die Kompression aller Fotos) → vor jedem Foto
+  // prüfen und bei 401 einmal still erneuern + wiederholen, statt „lokal gespeichert".
+  const _send=()=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,mimeType,thumbnailLink,webViewLink,webContentLink',
     {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body});
+  if(!tokenValid())await _ensureTokenSilent();
+  let r=await _send();
+  if(r.status===401&&await _ensureTokenSilent())r=await _send();
   if(!r.ok){const txt=await r.text().catch(()=>'');throw new Error('HTTP '+r.status+(txt?': '+txt.slice(0,120):''));}
   return await r.json();
 }
@@ -6684,7 +6823,11 @@ async function uploadFoto(files){
   // Nicht im Schnell-Tab (der hat seine eigene Vorschau + Notizfeld). Upload läuft im Hintergrund weiter.
   if(fotoObjs.length===1&&_currentDetailTab!=='schnell'){
     const _ni=t.fotos.indexOf(fotoObjs[0].fo);
-    if(_ni>=0){try{openFotoFullscreen(_ni);setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);}catch(e){}}
+    // v139 (Wunsch Frank, iPhone): das Schreibfenster öffnet sich NICHT mehr ungefragt –
+    // am iPhone (≤520px) erscheint nur das Foto, Text per „📝 Text"-Knopf (Ausklappfunktion).
+    // Tablet (>520px) behält den Auto-Aufruf (S-Pen-Handschrift direkt losschreiben).
+    const _autoText=!(window.matchMedia&&window.matchMedia('(max-width:520px)').matches);
+    if(_ni>=0){try{openFotoFullscreen(_ni);if(_autoText)setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);}catch(e){}}
   }
   // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
   let _fi=0;
@@ -8585,19 +8728,31 @@ function lbEditCaption(){
   const lbl=document.getElementById('lbTextViewLabel');
   const cur=lbl?lbl.textContent:'';
   _capPopupClose();
+  // v139: Am iPhone (≤520px) kompakte Lade von unten statt des 52vh-Tablet-Fensters –
+  // das Foto bleibt oben sichtbar, Schrift 17px, nur Diktieren + Fertig. Das große
+  // Fenster bleibt fürs Tablet (S-Pen-Handschrift braucht die Fläche).
+  const _kompakt=window.matchMedia&&window.matchMedia('(max-width:520px)').matches;
   const ov=document.createElement('div');
   ov.id='captionPopup';
-  ov.style.cssText='position:fixed;inset:0;z-index:10030;background:rgba(0,0,0,.75);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px 14px;';
-  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;width:100%;max-width:720px;display:flex;flex-direction:column;gap:10px;">'
+  ov.style.cssText=_kompakt
+    ?'position:fixed;inset:0;z-index:10030;background:rgba(0,0,0,.3);display:flex;align-items:flex-end;justify-content:center;padding:0;'
+    :'position:fixed;inset:0;z-index:10030;background:rgba(0,0,0,.75);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px 14px;';
+  const _boxStyle=_kompakt
+    ?'background:var(--bg2);border:1px solid var(--border);border-radius:16px 16px 0 0;padding:12px 14px;width:100%;display:flex;flex-direction:column;gap:8px;'
+    :'background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;width:100%;max-width:720px;display:flex;flex-direction:column;gap:10px;';
+  const _taStyle=_kompakt
+    ?'width:100%;box-sizing:border-box;height:26vh;background:#ffffff;color:#111111;border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:17px;line-height:1.5;font-family:inherit;resize:none;'
+    :'width:100%;box-sizing:border-box;height:52vh;background:#ffffff;color:#111111;border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:19px;line-height:1.6;font-family:inherit;resize:vertical;';
+  ov.innerHTML='<div style="'+_boxStyle+'">'
     +'<div style="display:flex;align-items:center;gap:8px;">'
       +'<span style="color:var(--text);font-weight:600;font-size:16px;flex:1;">📝 Text zum Foto</span>'
       +'<button onclick="_capPopupClose()" style="background:transparent;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px 8px;">✕</button>'
     +'</div>'
-    +'<textarea id="capPopupTA" placeholder="Beschreibung zum Foto – mit dem Stift direkt hineinschreiben…" style="width:100%;box-sizing:border-box;height:52vh;background:#ffffff;color:#111111;border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:19px;line-height:1.6;font-family:inherit;resize:vertical;"></textarea>'
+    +'<textarea id="capPopupTA" placeholder="'+(_kompakt?'Beschreibung zum Foto…':'Beschreibung zum Foto – mit dem Stift direkt hineinschreiben…')+'" style="'+_taStyle+'"></textarea>'
     +'<div style="display:flex;gap:8px;">'
       +'<button id="capPopupDiktat" onclick="_capPopupDiktat()" style="flex:1;min-height:50px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;">🎤 Diktieren</button>'
-      +'<button onclick="_capPopupClose()" style="flex:1;min-height:50px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;">Abbrechen</button>'
-      +'<button onclick="_capPopupSave()" style="flex:1;min-height:50px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">✓ Speichern</button>'
+      +(_kompakt?'':'<button onclick="_capPopupClose()" style="flex:1;min-height:50px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;">Abbrechen</button>')
+      +'<button onclick="_capPopupSave()" style="flex:1;min-height:50px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">✓ '+(_kompakt?'Fertig':'Speichern')+'</button>'
     +'</div>'
   +'</div>';
   document.body.appendChild(ov);
