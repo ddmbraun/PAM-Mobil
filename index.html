@@ -88,8 +88,19 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .mk-board .mk-board-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mk-ico{flex-shrink:0;width:44px;height:44px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:17px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .mk-ico.mk-aktiv{border-color:#e8791a;color:#e8791a;background:rgba(232,121,26,.12)}
-.mk-panel{display:none;background:var(--bg2);border-bottom:1px solid var(--border);padding:10px 12px;max-height:55vh;overflow-y:auto}
+/* v141: Panel schwebt jetzt ÜBER der Liste (vorher schob es alles nach unten – bei 7 Boards
+   wurde der Status-Teil abgeschnitten und Umschalter/Karten klebten darunter, Befund Frank). */
+.mk-panel{display:none;position:absolute;left:8px;right:8px;z-index:900;background:var(--bg2);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.55);padding:12px;max-height:70vh;overflow-y:auto}
 .mk-panel.open{display:block}
+.mk-backdrop{position:fixed;inset:0;z-index:890;background:rgba(0,0,0,.45)}
+/* v141: Kompakt-Ansicht – volle Titel (bis 2 Zeilen), sonst nichts */
+.kz{position:relative;background:var(--bg2);border:1px solid var(--border);border-left:4px solid var(--accent2);border-radius:0 10px 10px 0;padding:10px 12px;margin-bottom:7px;cursor:pointer}
+.kz.kz-rot{border-left-color:#f5a623}
+/* Titel wird NIE abgeschnitten (Vorgabe Frank: „nicht irgendwie was Abgeschnittenes") –
+   er bricht um, meist 2 Zeilen; sehr lange Titel brauchen eben 3. */
+.kz-titel{color:var(--text);font-size:calc(15px * var(--m-scale,1));font-weight:500;line-height:1.35;overflow-wrap:anywhere}
+.kz-info{margin-top:3px;font-size:calc(12px * var(--m-scale,1));color:var(--text2);line-height:1.3}
+.kz-info.kz-warn{color:#f5a623}
 .mk-panel-lbl{font-size:12px;color:var(--text2);margin:2px 0 6px}
 .mk-panel .board-chip{display:block;width:100%;text-align:left;margin-bottom:6px;box-sizing:border-box}
 .mk-panel .status-chip{margin:0 6px 6px 0}
@@ -440,6 +451,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   <button class="search-scope" id="searchScopeBtn" onclick="_sucheScopeToggle()" title="Suchbereich: nur dieses Board oder überall (alle Boards, Notizen, Foto-Texte)">Board</button>
   <div class="view-toggle">
     <button id="tabListeBtn" onclick="switchMobView('liste')" style="flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">☰ Liste</button>
+    <!-- v141 (Wunsch Frank): schlanke Kompakt-Ansicht – nur Titel (vollständig, bis 2 Zeilen) -->
+    <button id="tabKompaktBtn" onclick="switchMobView('kompakt')" style="flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;">≡ Kompakt</button>
     <button id="tabHeuteBtn" onclick="switchMobView('heute')" style="flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;">📅 Heute</button>
   </div>
   </div>
@@ -1602,7 +1615,13 @@ function showList(){
   document.getElementById('settingsScreen').classList.add('hidden');
 }
 
+// v141: 'liste' (ausführliche Karten) · 'kompakt' (schlanke Titel-Zeilen) · 'heute' (Tagesplan).
+// Die Wahl zwischen Liste und Kompakt wird gemerkt – Heute bleibt der Startbildschirm (v131).
+const VIEW_KEY='ptp_mob_view_v1';
 let _mobView='liste';
+function _mobSaveView(v){try{if(v==='liste'||v==='kompakt')localStorage.setItem(VIEW_KEY,v);}catch(e){}}
+function _mobSavedView(){try{const v=localStorage.getItem(VIEW_KEY);return(v==='kompakt')?'kompakt':'liste';}catch(e){return'liste';}}
+_mobView=_mobSavedView(); // gemerkte Wahl gilt auch für Renders außerhalb von switchMobView (Sync/Poll)
 // v133: EINE Stelle entscheidet, was sichtbar ist. Im Heute-Modus verschwindet das
 // KOMPLETTE Listen-Zubehör (Board-Zeile, Board-Chips, Status-Chips, Suchfeld) – vorher
 // blieb alles stehen und die Heute-Kacheln hingen darunter (Befund Frank, Screenshot).
@@ -1617,16 +1636,21 @@ function _mobApplyViewChrome(){
   const tl=document.getElementById('taskList');if(tl)tl.style.display=isHeute?'none':'';
   const hl=document.getElementById('heuteList');if(hl)hl.style.display=isHeute?'block':'none';
   const fab=document.getElementById('fabBtn');if(fab)fab.style.display=isHeute?'none':'';
-  const btnL=document.getElementById('tabListeBtn');
-  const btnH=document.getElementById('tabHeuteBtn');
-  if(btnL){btnL.style.background=isHeute?'var(--bg3)':'var(--accent)';btnL.style.color=isHeute?'var(--text2)':'#fff';}
-  if(btnH){btnH.style.background=isHeute?'var(--accent)':'var(--bg3)';btnH.style.color=isHeute?'#fff':'var(--text2)';}
+  // v141: drei Ansichten – der aktive Knopf ist blau, die beiden anderen grau
+  const _mark=(id,an)=>{const b=document.getElementById(id);if(b){b.style.background=an?'var(--accent)':'var(--bg3)';b.style.color=an?'#fff':'var(--text2)';}};
+  _mark('tabListeBtn',_mobView==='liste');
+  _mark('tabKompaktBtn',_mobView==='kompakt');
+  _mark('tabHeuteBtn',isHeute);
+  // v141: Kompakt-Ansicht bekommt eine eigene Klasse an der Liste (steuert nur die Optik)
+  const _tl2=document.getElementById('taskList');
+  if(_tl2)_tl2.classList.toggle('kompakt-liste',_mobView==='kompakt');
 }
 function switchMobView(view){
   _mobView=view;
+  _mobSaveView(view); // v141: Liste/Kompakt merken
   _mobApplyViewChrome();
   if(view==='heute')renderHeuteMobil();
-  else renderList(); // baut auch Status-Leiste/Board-Chips wieder auf
+  else renderList(true); // baut auch Status-Leiste/Board-Chips wieder auf
 }
 function renderHeuteMobil(){
   var el=document.getElementById('heuteList');if(!el)return;
@@ -3679,8 +3703,18 @@ function _mkTogglePanel(){
     h+=boardSts.filter(s=>(counts[s]||0)>0).map(s=>'<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="_mkPickStatus(\''+escAttr(s)+'\')">'+esc(s)+' <span style="opacity:.7;font-size:11px">('+(counts[s]||0)+')</span></button>').join('');
   }
   p.innerHTML=h;p.classList.add('open');
+  // v141: abgedunkelter Hintergrund – Tipp daneben schließt das Panel (wie das ⋯-Menü im Dachplan)
+  if(!document.getElementById('mkBackdrop')){
+    const bd=document.createElement('div');
+    bd.id='mkBackdrop';bd.className='mk-backdrop';
+    bd.addEventListener('click',_mkClosePanel);
+    p.parentNode.insertBefore(bd,p);
+  }
 }
-function _mkClosePanel(){const p=document.getElementById('mkPanel');if(p)p.classList.remove('open');}
+function _mkClosePanel(){
+  const p=document.getElementById('mkPanel');if(p)p.classList.remove('open');
+  const bd=document.getElementById('mkBackdrop');if(bd)bd.remove();
+}
 function _mkPickBoard(n){_mkClosePanel();switchBoard(n);}
 function _mkPickStatus(s){_mkClosePanel();switchStatus(s);}
 function _mkToggleSearch(){
@@ -3688,6 +3722,30 @@ function _mkToggleSearch(){
   const auf=!ls.classList.contains('mk-suche');
   ls.classList.toggle('mk-suche',auf);
   if(auf){const si=document.getElementById('searchInput');if(si)setTimeout(()=>si.focus(),60);}
+}
+// ── v141: Kompakt-Zeile (Wunsch Frank) – nur der VOLLE Titel (Umbruch bis 2 Zeilen, nichts
+// abgeschnitten), farbiger Seitenstreifen wie auf der Karte und bei Bedarf EINE kleine
+// Zusatzzeile (nächster Termin / laufende Uhr / Herkunfts-Board bei „Überall"-Suche).
+// Bewusst ohne Foto, Abzeichen, Terminkästen und Rundknöpfe – dafür ~3× mehr Tasks je Bildschirm.
+function _kompaktZeile(t,isRunning,boardHerkunft){
+  const _df=iso=>{if(!iso)return'';try{return new Date(iso).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(_){return iso;}};
+  const ov=!!(t.due&&isOverdue(t.due));
+  const aufgOv=(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date());
+  const warn=ov||aufgOv;
+  // Zusatzzeile: erster datierter Termin, sonst Fälligkeit
+  const naechste=(t.aufgaben||[]).filter(a=>a.datum).sort((a,b)=>String(a.datum).localeCompare(String(b.datum)))[0];
+  let info='';
+  if(isRunning)info='<span class="task-timer-badge" style="color:var(--orange,#e8791a);font-weight:600">⏱ '+formatTimerFor(t.id)+'</span>';
+  else if(naechste)info=esc(naechste.typ||'Termin')+' '+_df(naechste.datum);
+  else if(t.due)info=(ov?'überfällig ':'bis ')+_df(t.due);
+  const herkunft=boardHerkunft?'<span style="opacity:.75">'+esc(boardHerkunft)+'</span>':'';
+  const infoZeile=(info||herkunft)
+    ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+info+(info&&herkunft?' · ':'')+herkunft+'</div>'
+    :'';
+  return '<div class="kz'+(warn?' kz-rot':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
+    +'<div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
+    +infoZeile
+    +'</div>';
 }
 // ── v140: Suchbereich „Board" (wie bisher) / „Überall" (alle Boards + Notizen + Foto-Texte) ──
 let _sucheScope='board';
@@ -3755,6 +3813,8 @@ function renderList(resetScroll){
   list.innerHTML=filtered.map(t=>{ try {
     const status=t.status||'';
     const isRunning=t.id===runningTaskId;
+    // v141: Kompakt-Ansicht – schlanke Titel-Zeile statt großer Karte
+    if(_mobView==='kompakt')return _kompaktZeile(t,isRunning,_sucheBoardVon.get(t.id)||'');
     // Tel/Maps-Buttons für Karten-Vorschau
     const cardTelK=(t.kontakte||[]).find(c=>c.tel);
     const cardAdr=(t.adresse||'').trim();
