@@ -3317,12 +3317,18 @@ async function _mobRetryPendingUploads(){
   try{
     _fotoPendUpdate();
     toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
-    let ok=0;
+    // v144: ehrlich zählen – „Bild-Daten auf anderem Gerät" (BLOB_MISSING) ist KEIN Erfolg
+    let ok=0,woanders=0;
     for(const {fo,folderId} of pending){
-      try{await _mobUploadFromKey(fo,folderId);ok++;}catch(e){console.warn('[MobPhoto] Retry:',e);}
+      try{await _mobUploadFromKey(fo,folderId);ok++;}
+      catch(e){
+        if(String(e&&e.message)==='BLOB_MISSING')woanders++;
+        else console.warn('[MobPhoto] Retry:',e);
+      }
       _fotoPendUpdate();
     }
     if(ok>0){scheduleSave();toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' nachträglich hochgeladen','success',3000);}
+    else if(woanders>0)toast('📱 '+woanders+' Foto'+(woanders!==1?'s':'')+' liegen auf einem anderen Gerät – dort PAM öffnen, dann laden sie automatisch hoch','info',6000);
   }finally{_mobRetryUploadsBusy=false;_fotoPendUpdate();}
 }
 
@@ -3361,7 +3367,10 @@ async function _fotoOrphanReattach(){
 
 async function _mobUploadFromKey(fo,folderId){
   const dataUrl=await _mobPhotoGet(fo.localKey);
-  if(!dataUrl)return;
+  // v144: Bild-Daten liegen NUR auf dem Aufnahme-Gerät – auf anderen Geräten wurde das
+  // Foto vorher STILL übersprungen und trotzdem als Erfolg gezählt („Jetzt erneut
+  // hochladen" tat scheinbar nichts, Rot blieb). Jetzt ein echter, unterscheidbarer Fehler.
+  if(!dataUrl)throw new Error('BLOB_MISSING');
   const blob=_dataUrlToBlob(dataUrl);
   const mime=blob.type||'image/jpeg';
   const form=new FormData();
@@ -4125,6 +4134,10 @@ let _schnellMode='foto'; // 'foto' | 'notiz'
 function renderSchnellTab(t){
   const body=document.getElementById('detailBodySchnell');
   if(!body)return;
+  // v144: laufende Notiz-Eingabe überlebt den Neuaufbau – Hintergrund-Upload/Sync
+  // renderte den Tab neu und leerte das Feld mitten im Tippen/Diktieren.
+  const _oldTa=document.getElementById('schnellNotizQuick');
+  const _keep=(_oldTa&&_oldTa.value)?{val:_oldTa.value,foc:document.activeElement===_oldTa,ss:_oldTa.selectionStart,se:_oldTa.selectionEnd}:null;
   const fotos=(t.fotos||[]).filter(f=>f&&(f.localUrl||f.url||f.driveId||f.localKey));
   const notizVerlauf=t.notizVerlauf||[];
   const datumStr=new Date().toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
@@ -4191,6 +4204,15 @@ function renderSchnellTab(t){
 
   // Archiv-Grid nachladen wenn Foto-Modus und Archiv sichtbar
   if(isFoto&&fotos.length){_renderSchnellArchiv(t);}
+  // v144: gemerkte Notiz-Eingabe ins frisch gebaute Feld zurückschreiben
+  if(_keep){
+    const _ta=document.getElementById('schnellNotizQuick');
+    if(_ta){
+      _ta.value=_keep.val;
+      _ta.style.height='auto';_ta.style.height=Math.min(_ta.scrollHeight,240)+'px';
+      if(_keep.foc){_ta.focus();try{_ta.setSelectionRange(_keep.ss,_keep.se);}catch(e){}}
+    }
+  }
 }
 
 function _schnellSetMode(mode){
@@ -4286,14 +4308,18 @@ function _startSchnellDiktat(){
       else interim+=e.results[i][0].transcript;
     }
     if(final){finalText+=((finalText?' ':'')+final.trim());}
-    inp.value=finalText+(interim?' …'+interim:'');
-    inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,240)+'px';
+    // v144: Feld LIVE nachschlagen – nach einem Tab-Neuaufbau schrieb das Diktat sonst
+    // in den abgehängten alten DOM-Knoten weiter (Text unsichtbar verloren)
+    const _live=document.getElementById('schnellNotizQuick')||inp;
+    _live.value=finalText+(interim?' …'+interim:'');
+    _live.style.height='auto';_live.style.height=Math.min(_live.scrollHeight,240)+'px';
   };
   r.onerror=function(){_schnellDiktatRec=null;if(btn){btn.classList.remove('recording');btn.innerHTML='🎤 Diktieren';}};
   r.onend=function(){
     _schnellDiktatRec=null;
-    inp.value=finalText;
-    inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,240)+'px';
+    const _live=document.getElementById('schnellNotizQuick')||inp; // v144: s.o.
+    _live.value=finalText;
+    _live.style.height='auto';_live.style.height=Math.min(_live.scrollHeight,240)+'px';
     if(btn){btn.classList.remove('recording');btn.innerHTML='🎤 Diktieren';}
   };
   r.start();
@@ -7067,6 +7093,8 @@ async function uploadFoto(files){
     if(_currentDetailTab==='bau'){renderBaudokuTab(_tl);}
     else if(_currentDetailTab==='schnell'){renderSchnellTab(_tl);}
   }
+  // v144: Mehrfach-Stapel → geführtes Betexten anbieten (ein Tipp, dann Foto für Foto)
+  if(fotoObjs.length>1)_fotoTextHintShow(_taskId,fotoObjs.map(o=>o.fo.localKey));
   if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' lokal gespeichert','info');
   else if(!success&&failed)toast('⚠ Upload fehlgeschlagen – Foto lokal gespeichert','info');
   }finally{
@@ -8083,22 +8111,16 @@ async function _submitQuickAdd(){
   const fotoFiles=_quickAddFotoFiles.slice();
   _closeQuickAdd();
   toast('✓ Notiz gespeichert','success');
+  // v144: gleiche Härtung wie uploadFoto (v143) – dieser Weg hat einen EIGENEN Upload-Pfad
+  // und hatte das Poll-Loch noch: solange hier gearbeitet wird, darf der Poll die Boards
+  // nicht ersetzen; Ergebnisse gehen an den LIVE-Eintrag (_fotoLive); Fotos werden IMMER
+  // zuerst lokal verankert (Eintrag + Gerätespeicher inkl. taskId + Save), erst DANN Uploads.
+  _fotoUploadInFlight++;
+  try{
   // v62: sofort speichern + zurück zur Liste (kein Auto-Öffnen mehr)
   forceSave();
   renderList();
   const _qaRefresh=()=>{ try{renderList();}catch(e){} };
-  // Hilfsfunktion: Fotos lokal sichern wenn Drive nicht verfügbar
-  const _savePhotosLocally=async(uploading)=>{
-    for(let i=0;i<fotoFiles.length;i++){
-      const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
-      const fo={id:'f_'+newT.id+'_'+i,name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
-        localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:!!uploading,
-        uploadedAt:new Date().toISOString(),source:'mobile'};
-      newT.fotos.push(fo);
-      try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
-    }
-    if(fotoFiles.length)forceSave();
-  };
   // v62: GPS aus dem ersten Foto übernehmen (sofern nicht schon per 📍-Button gesetzt)
   await _qaApplyGpsFromFiles(newT,fotoFiles);
   // v78: erst NACH der EXIF/GPS-Auswertung verkleinern (Kompression entfernt EXIF)
@@ -8112,9 +8134,21 @@ async function _submitQuickAdd(){
   // v74: Diese Notiz im Konflikt-Merge schützen, bis Fotos hochgeladen + synchronisiert sind.
   _qaInFlightIds.add(newT.id);
   setTimeout(()=>{try{_qaInFlightIds.delete(newT.id);}catch(_e){}},120000);
-  // ── Fotos vorhanden → Schnellnotizen-Unterordner anlegen + hochladen ──
+  // ── v144: Fotos zuerst LOKAL verankern – App-Kill/Fehler kostet ab hier nichts mehr ──
+  const fotoObjs=[];
+  for(let i=0;i<fotoFiles.length;i++){
+    const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
+    const fo={id:'f_'+newT.id+'_'+i,name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
+      localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:false,
+      uploadedAt:new Date().toISOString(),source:'mobile'};
+    _fotoLive(newT.id,fo);fotoObjs.push({f:f,fo:fo});
+    try{await _mobPhotoSave(localKey,await _fileToDataUrl(f),{taskId:newT.id,name:f.name||''});}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
+  }
+  _saveMobileBackup();
+  forceSave();
+  _fotoPendUpdate();
+  // ── Token/Ordner – schlägt es fehl, bleiben die Fotos „offen" (Warnleuchte + Nachladen) ──
   if(!(await ensureToken())){
-    await _savePhotosLocally(false);
     toast('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung','info',5000);
     _qaRefresh();return;
   }
@@ -8126,7 +8160,6 @@ async function _submitQuickAdd(){
     forceSave(); // v68: Zwischen-Render entfernt – finaler Render nach Upload
   }catch(e){
     console.warn('[QuickAdd] Ordner:',e);
-    await _savePhotosLocally(false);
     // v75: aussagekräftigere Meldung – offline vs. Konto-/Zugriffsproblem.
     const _off=(typeof navigator!=='undefined'&&navigator.onLine===false);
     const _msg=_off
@@ -8135,36 +8168,40 @@ async function _submitQuickAdd(){
     toast(_msg,'warning',6000);
     _qaRefresh();return;
   }
-  // Fotos lokal sichern + hochladen
-  const fotoObjs=[];
-  for(let i=0;i<fotoFiles.length;i++){
-    const f=fotoFiles[i];const localKey='qa_'+newT.id+'_'+i;
-    const fo={id:'f_'+newT.id+'_'+i,name:f.name,mimeType:f.type||'image/jpeg',size:f.size||0,
-      localUrl:URL.createObjectURL(f),localKey,driveId:null,_uploading:true,
-      uploadedAt:new Date().toISOString(),source:'mobile'};
-    newT.fotos.push(fo);fotoObjs.push({f:f,fo:fo});
-    try{await _mobPhotoSave(localKey,await _fileToDataUrl(f));}catch(e){console.warn('[QuickAdd] Foto lokal:',e);}
-  }
-  forceSave(); // v68: Zwischen-Render entfernt – finaler Render nach Upload
+  // ── Uploads – Ergebnis IMMER an den LIVE-Eintrag schreiben (v144) ──
   let _okCount=0,_failCount=0,_idx=0;
   for(const o of fotoObjs){
     _idx++;setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
     try{
+      o.fo._uploading=true;
       const meta=await _uploadOneFotoToDrive(o.f,_qaFolderId);
       try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,o.fo.localUrl);}catch(e){}
-      o.fo.driveId=meta.id;o.fo.name=meta.name||o.fo.name;
-      o.fo.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
-      o.fo.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
-      o.fo.download=meta.webContentLink||'';o.fo._uploading=false;_okCount++;
+      const live=_fotoLive(newT.id,o.fo);
+      live.driveId=meta.id;live.name=meta.name||o.fo.name;
+      live.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
+      live.url=meta.webViewLink||('https://drive.google.com/file/d/'+meta.id+'/view');
+      live.download=meta.webContentLink||'';live._uploading=false;delete live._uploadError;
+      if(live!==o.fo){o.fo.driveId=meta.id;o.fo._uploading=false;}
+      _mobPhotoSetMeta(o.fo.localKey,{done:1});
+      _okCount++;
     }catch(upErr){
       console.warn('[QuickAdd] Foto-Upload fehlgeschlagen:',upErr);
-      o.fo._uploading=false;o.fo._uploadError=true;_failCount++;
+      const live=_fotoLive(newT.id,o.fo);
+      live._uploading=false;live._uploadError=true;
+      if(live!==o.fo){o.fo._uploading=false;o.fo._uploadError=true;}
+      _failCount++;
     }
-    scheduleSave();
+    scheduleSave();_fotoPendUpdate();
   }
+  // v144: alle Stapel-Fotos im Live-Task sicherstellen, dann final speichern
+  for(const o of fotoObjs)_fotoLive(newT.id,o.fo);
   forceSave();_qaRefresh();
   if(_failCount)toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
   else toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen','success');
+  }finally{
+    _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);
+    _fotoPendUpdate();
+  }
 }
 
 async function deleteTask(){
@@ -8416,9 +8453,29 @@ function _fotoPendEnsureEls(){
   }
   return {b,p};
 }
+// v144: Bild-Daten liegen nur auf dem Aufnahme-Gerät. Die Leuchte unterscheidet deshalb
+// „offen auf DIESEM Gerät" (kann hier hochgeladen werden) von „liegt auf ANDEREM Gerät"
+// (dort PAM öffnen). _fotoPendLocalKeys = Schlüssel, deren Bild-Daten hier vorhanden sind.
+let _fotoPendLocalKeys=null; // null = noch nicht ermittelt → im Zweifel als „hier" behandeln
+let _fotoPendKeysBusy=false;
+function _fotoPendRefreshKeys(){
+  if(_fotoPendKeysBusy)return;
+  _fotoPendKeysBusy=true;
+  _mobPhotoListMeta().then(ms=>{
+    const s=new Set(ms.map(m=>m.key).filter(Boolean));
+    const changed=!_fotoPendLocalKeys||s.size!==_fotoPendLocalKeys.size||[...s].some(k=>!_fotoPendLocalKeys.has(k));
+    _fotoPendLocalKeys=s;
+    _fotoPendKeysBusy=false;
+    if(changed)_fotoPendUpdate();
+  }).catch(()=>{_fotoPendKeysBusy=false;});
+}
+function _fotoIstHier(fo){
+  return !_fotoPendLocalKeys||_fotoPendLocalKeys.has(fo.localKey);
+}
 function _fotoPendUpdate(){
   try{
     const {b,p}=_fotoPendEnsureEls();
+    _fotoPendRefreshKeys();
     const list=_fotoPendList();
     const n=list.length;
     const off=navigator.onLine===false;
@@ -8430,13 +8487,22 @@ function _fotoPendUpdate(){
         setTimeout(()=>{if(_fotoPendList().length===0)b.style.display='none';},3500);
       }else if(b.textContent!=='✓ Alle Fotos gesichert'){b.style.display='none';}
     }else{
+      const hier=list.filter(x=>_fotoIstHier(x.fo));
+      const nw=n-hier.length; // auf anderem Gerät
       let bg,txt;
       const busy=_fotoUploadInFlight>0||_mobRetryUploadsBusy;
-      const hasErr=list.some(x=>x.fo&&x.fo._uploadError);
-      if(off){bg='#546e7a';txt='📴 '+n+' Foto'+(n!==1?'s':'')+' warten auf Empfang';}
-      else if(busy){bg='#c77700';txt='📤 '+n+' Foto'+(n!==1?'s':'')+' werden gesichert…';}
-      else if(hasErr){bg='#c62828';txt='⚠ '+n+' Foto'+(n!==1?'s':'')+' nicht gesichert – antippen';}
-      else{bg='#c77700';txt='📤 '+n+' Foto'+(n!==1?'s':'')+' noch nicht gesichert – antippen';}
+      const hasErr=hier.some(x=>x.fo&&x.fo._uploadError);
+      if(!hier.length){
+        // Nur Fremd-Geräte-Fotos: kein Alarm-Rot – dieses Gerät kann nichts tun
+        bg='#455a64';txt='🔁 '+nw+' Foto'+(nw!==1?'s':'')+' auf anderem Gerät – antippen';
+      }else{
+        const h=hier.length;
+        if(off){bg='#546e7a';txt='📴 '+h+' Foto'+(h!==1?'s':'')+' warten auf Empfang';}
+        else if(busy){bg='#c77700';txt='📤 '+h+' Foto'+(h!==1?'s':'')+' werden gesichert…';}
+        else if(hasErr){bg='#c62828';txt='⚠ '+h+' Foto'+(h!==1?'s':'')+' nicht gesichert – antippen';}
+        else{bg='#c77700';txt='📤 '+h+' Foto'+(h!==1?'s':'')+' noch nicht gesichert – antippen';}
+        if(nw>0)txt+=' (+'+nw+' anderes Gerät)';
+      }
       b.style.background=bg;b.style.display='flex';b.textContent=txt;
       if(p.style.display!=='none')_fotoPendPanelRender();
     }
@@ -8456,8 +8522,12 @@ function _fotoPendPanelRender(){
   let h='<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:8px;">📤 Offene Foto-Sicherungen ('+list.length+')</div>';
   h+=list.slice(0,20).map(x=>{
     const zeit=x.fo.uploadedAt?_fmtTs(x.fo.uploadedAt):'';
-    const st=x.fo._uploadError?'<span style="color:#e57373;">Fehler – wird wiederholt</span>':(off?'<span style="color:var(--text2);">wartet auf Empfang</span>':'<span style="color:var(--text2);">wartet</span>');
-    return '<div style="padding:6px 0;border-bottom:0.5px solid var(--border);">'
+    // v144: „liegt auf anderem Gerät" hat Vorrang – dieses Gerät kann das Foto nicht hochladen
+    let st;
+    if(!_fotoIstHier(x.fo))st='<span style="color:#90a4ae;">📱 auf anderem Gerät – dort PAM öffnen</span>';
+    else if(x.fo._uploadError)st='<span style="color:#e57373;">Fehler – wird erneut versucht</span>';
+    else st=off?'<span style="color:var(--text2);">wartet auf Empfang</span>':'<span style="color:var(--text2);">wartet</span>';
+    return '<div onclick="_fotoPendOpenTask(\''+escAttr(x.task.id||'')+'\')" style="padding:6px 0;border-bottom:0.5px solid var(--border);cursor:pointer;">'
       +'<div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(x.task.title||'Task')+'</div>'
       +'<div style="font-size:12px;color:var(--text2);display:flex;gap:8px;">'+(zeit?'<span>'+zeit+'</span>':'')+st+'</div>'
       +'</div>';
@@ -8467,8 +8537,15 @@ function _fotoPendPanelRender(){
     +'<button onclick="_fotoPendRetryNow()" style="flex:1;min-height:46px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">📤 Jetzt erneut hochladen</button>'
     +'<button onclick="_fotoPendPanelToggle()" style="min-height:46px;padding:0 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;cursor:pointer;">Schließen</button>'
     +'</div>'
-    +'<div style="font-size:11px;color:var(--text2);margin-top:8px;">Fotos bleiben lokal auf dem Gerät gesichert und werden automatisch hochgeladen, sobald Empfang und Anmeldung da sind.</div>';
+    +'<div style="font-size:11px;color:var(--text2);margin-top:8px;">Eintrag antippen öffnet den Task. Fotos bleiben auf dem Aufnahme-Gerät gesichert und laden automatisch hoch, sobald dort Empfang und Anmeldung da sind.</div>';
   p.innerHTML=h;
+}
+// v144: Panel-Eintrag antippen → Task öffnen (z.B. um ein hängendes Foto anzusehen/zu entfernen)
+function _fotoPendOpenTask(id){
+  if(!id)return;
+  const {p}=_fotoPendEnsureEls();
+  p.style.display='none';
+  try{openDetail(id);}catch(e){}
 }
 async function _fotoPendRetryNow(){
   if(navigator.onLine===false){toast('📴 Kein Empfang – Upload startet automatisch, sobald Netz da ist','info',4000);return;}
@@ -9043,10 +9120,13 @@ function _lbShowCaption(text){const lbl=document.getElementById('lbTextViewLabel
 // v113: „📝 Text" öffnet ein GROSSES Schreib-Popup statt des schmalen Streifens –
 // genug Fläche für S-Pen-Handschrift (Samsung „S Pen zu Text" schreibt direkt ins Feld).
 let _capDiktatRec=null;
+let _capPopupKey=''; // v144: Ziel-Foto DIESES Popups – bleibt korrekt, auch wenn das Vollbild inzwischen weiterblättert
+let _capQueue=null;  // v144: geführte Text-Runde {keys:[],idx}
 function lbEditCaption(){
   const lbl=document.getElementById('lbTextViewLabel');
   const cur=lbl?lbl.textContent:'';
-  _capPopupClose();
+  _capPopupClose(true,true); // v144: halb geschriebenen Text des VORIGEN Fotos retten statt kommentarlos wegwerfen
+  _capPopupKey=_lbFotoKey;
   // v139: Am iPhone (≤520px) kompakte Lade von unten statt des 52vh-Tablet-Fensters –
   // das Foto bleibt oben sichtbar, Schrift 17px, nur Diktieren + Fertig. Das große
   // Fenster bleibt fürs Tablet (S-Pen-Handschrift braucht die Fläche).
@@ -9077,8 +9157,23 @@ function lbEditCaption(){
   document.body.appendChild(ov);
   const ta=document.getElementById('capPopupTA');if(ta){ta.value=cur;setTimeout(()=>ta.focus(),80);}
 }
-function _capPopupClose(){
+function _capPopupClose(saveDraft,keepQueue){
   if(_capDiktatRec){try{_capDiktatRec.stop();}catch(_){}_capDiktatRec=null;}
+  // v144: Implizites Schließen (das nächste Foto öffnet sein eigenes Fenster) rettet
+  // ungespeicherten Text automatisch ans richtige Foto – vorher war er kommentarlos weg.
+  // ✕/Abbrechen (ohne saveDraft) verwerfen weiterhin BEWUSST.
+  if(saveDraft){
+    try{
+      const ta=document.getElementById('capPopupTA');
+      const txt=ta?ta.value.trim():'';
+      if(txt&&_capPopupKey){
+        const t=currentTask();
+        const f=t&&t.fotos?t.fotos.find(x=>x&&(x.localKey===_capPopupKey||x.driveId===_capPopupKey||x.id===_capPopupKey)):null;
+        if(f&&(f.caption||'')!==txt){f.caption=txt;scheduleSave();toast('💾 Text am vorigen Foto gespeichert','info',2500);}
+      }
+    }catch(e){}
+  }
+  if(!keepQueue)_capQueue=null; // ✕/Abbrechen beendet auch eine laufende Text-Runde
   const o=document.getElementById('captionPopup');if(o)o.remove();
 }
 function _capPopupSave(){
@@ -9086,12 +9181,14 @@ function _capPopupSave(){
   const text=ta.value.trim();
   // v143: Foto über die stabile Kennung finden statt über die Listenposition –
   // der Index konnte sich durch Sync/Upload verschieben, der Text verpuffte STILL
-  // oder landete am falschen Foto. Bei Kennung-Treffer zählt NUR die Kennung.
+  // oder landete am falschen Foto. v144: Vorrang hat die beim ÖFFNEN des Fensters
+  // gemerkte Kennung (_capPopupKey) – auch wenn das Vollbild inzwischen weitersprang.
   const t=currentTask();
   let f=null;
+  const _key=_capPopupKey||_lbFotoKey;
   if(t&&t.fotos){
-    if(_lbFotoKey)f=t.fotos.find(x=>x&&(x.localKey===_lbFotoKey||x.driveId===_lbFotoKey||x.id===_lbFotoKey));
-    if(!f&&!_lbFotoKey&&_lbFotoIdx>=0)f=t.fotos[_lbFotoIdx]||null;
+    if(_key)f=t.fotos.find(x=>x&&(x.localKey===_key||x.driveId===_key||x.id===_key));
+    if(!f&&!_key&&_lbFotoIdx>=0)f=t.fotos[_lbFotoIdx]||null;
   }
   if(f){
     f.caption=text;
@@ -9103,7 +9200,64 @@ function _capPopupSave(){
     toast('⚠ Text konnte keinem Foto zugeordnet werden – Foto neu öffnen, Text bleibt hier stehen','error',6000);
     return;
   }
+  // v144: geführte Text-Runde – nach ✓ automatisch das nächste Foto öffnen
+  if(_capQueue){
+    _capQueue.idx++;
+    if(_capQueue.idx<_capQueue.keys.length){
+      _capPopupClose(false,true);
+      _capQueueOpen();
+      return;
+    }
+    _capQueue=null;
+    toast('✓ Alle Foto-Texte durch','success',2500);
+  }
   _capPopupClose();
+}
+// ── v144: Geführte Text-Runde – Fotos eines Stapels nacheinander betexten ──────
+function _fotoTexteErgaenzen(keys){
+  const t=currentTask();if(!t||!t.fotos)return;
+  const rest=(keys||[]).filter(k=>t.fotos.some(x=>x&&(x.localKey===k||x.id===k)));
+  if(!rest.length){toast('Keine Fotos gefunden','info');return;}
+  _capQueue={keys:rest,idx:0};
+  _capQueueOpen();
+}
+function _capQueueOpen(){
+  if(!_capQueue)return;
+  const t=currentTask();if(!t||!t.fotos){_capQueue=null;return;}
+  while(_capQueue.idx<_capQueue.keys.length){
+    const k=_capQueue.keys[_capQueue.idx];
+    const i=t.fotos.findIndex(x=>x&&(x.localKey===k||x.id===k));
+    if(i>=0){
+      try{openFotoFullscreen(i);}catch(e){}
+      setTimeout(()=>{try{lbEditCaption();}catch(e){}},350);
+      return;
+    }
+    _capQueue.idx++; // Foto inzwischen entfernt → überspringen
+  }
+  _capQueue=null;
+}
+// v144: Hinweis-Pille nach einem Mehrfach-Stapel: ein Tipp startet die Text-Runde
+let _fotoTextHintTimer=null;
+function _fotoTextHintShow(taskId,keys){
+  try{
+    if(!keys||keys.length<2)return;
+    let el=document.getElementById('fotoTextHint');
+    if(!el){
+      el=document.createElement('div');
+      el.id='fotoTextHint';
+      el.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));z-index:9590;padding:10px 18px;border-radius:24px;font-size:14px;font-weight:700;color:#fff;background:var(--accent,#2e4fc4);box-shadow:0 4px 16px rgba(0,0,0,.4);cursor:pointer;white-space:nowrap;max-width:94vw;overflow:hidden;text-overflow:ellipsis;';
+      document.body.appendChild(el);
+    }
+    el.textContent='📝 Texte zu '+keys.length+' Fotos ergänzen ▸';
+    el.style.display='block';
+    el.onclick=function(){
+      el.style.display='none';
+      if(currentTaskId!==taskId){try{openDetail(taskId);}catch(e){}}
+      setTimeout(()=>_fotoTexteErgaenzen(keys),200);
+    };
+    clearTimeout(_fotoTextHintTimer);
+    _fotoTextHintTimer=setTimeout(()=>{el.style.display='none';},45000);
+  }catch(e){}
 }
 function _capPopupDiktat(){
   if(_capDiktatRec){try{_capDiktatRec.stop();}catch(_){}return;}
@@ -9136,9 +9290,16 @@ function _capPopupDiktat(){
   r.start();
 }
 function lbSaveCaption(){
+  // v144: gleiche Kennungs-Logik wie _capPopupSave – der alte Index-Weg konnte den Text
+  // still verwerfen oder ans falsche Foto hängen (Altpfad, derzeit ohne aktiven Aufrufer)
   const inp=document.getElementById('lbTextInput'),bar=document.getElementById('lbTextbar');if(!inp)return;
   const text=inp.value.trim();_lbShowCaption(text);bar.classList.remove('editing');
-  if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){t.fotos[_lbFotoIdx].caption=text;scheduleSave();if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
+  const t=currentTask();if(!t||!t.fotos)return;
+  let f=null;
+  if(_lbFotoKey)f=t.fotos.find(x=>x&&(x.localKey===_lbFotoKey||x.driveId===_lbFotoKey||x.id===_lbFotoKey));
+  if(!f&&!_lbFotoKey&&_lbFotoIdx>=0)f=t.fotos[_lbFotoIdx]||null;
+  if(f){f.caption=text;scheduleSave();if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}
+  else if(text)toast('⚠ Text konnte keinem Foto zugeordnet werden','error',5000);
 }
 function lbCancelCaption(){const bar=document.getElementById('lbTextbar');if(bar)bar.classList.remove('editing');}
 // ── v121: 📍-Dialog – Aufnahmeort im Foto ansehen/korrigieren ──────────────────
