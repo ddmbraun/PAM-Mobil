@@ -104,16 +104,21 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .mk-panel-lbl{font-size:12px;color:var(--text2);margin:2px 0 6px}
 .mk-panel .board-chip{display:block;width:100%;text-align:left;margin-bottom:6px;box-sizing:border-box}
 .mk-panel .status-chip{margin:0 6px 6px 0}
-@media (max-width:520px){
-  #listScreen .board-section{display:none!important}
-  #listScreen .status-section{display:none!important}
-  .mk-row{display:flex}
-  #listScreen .search-toggle-row .search-bar{display:none!important}
-  #listScreen.mk-suche .search-toggle-row .search-bar{display:flex!important}
-  #listScreen .search-toggle-row .search-scope{display:none!important}
-  #listScreen.mk-suche .search-toggle-row .search-scope{display:inline-flex!important;align-items:center}
-  #taskList .badge.status{background:var(--bg3);border-color:var(--border);color:var(--text2)}
-  #taskList .card-akt{background:var(--bg3)!important}
+/* v142 (Wunsch Frank): Tablet GENAUSO wie iPhone – der Kompakt-Kopf mit Ausklapp-Panel
+   und die Farbregel „Ruhig dunkel" gelten jetzt auf ALLEN Bildschirmbreiten. Die alten
+   breiten Board-/Status-Leisten (v116/v127) bleiben im Code, werden aber nie mehr gezeigt. */
+#listScreen .board-section{display:none!important}
+#listScreen .status-section{display:none!important}
+.mk-row{display:flex}
+#listScreen .search-toggle-row .search-bar{display:none!important}
+#listScreen.mk-suche .search-toggle-row .search-bar{display:flex!important}
+#listScreen .search-toggle-row .search-scope{display:none!important}
+#listScreen.mk-suche .search-toggle-row .search-scope{display:inline-flex!important;align-items:center}
+#taskList .badge.status{background:var(--bg3);border-color:var(--border);color:var(--text2)}
+#taskList .card-akt{background:var(--bg3)!important}
+/* Auf dem Tablet das Panel nicht über die volle Breite aufreißen */
+@media (min-width:521px){
+  .mk-panel{left:12px;right:auto;min-width:340px;max-width:440px}
 }
 /* ── BAUDOKU TAB-BAR ── */
 .detail-tab-bar{display:flex;background:var(--bg2);border-bottom:2px solid var(--border);flex-shrink:0;}
