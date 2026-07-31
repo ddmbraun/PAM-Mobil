@@ -223,6 +223,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .m-dbox-val{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;padding-left:2px;}
 .m-dbox-val.miss{color:#A32D2D;}
 .fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border-radius:28px;background:var(--accent);color:white;border:none;font-size:28px;line-height:1;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:20}
+/* v145: Blitz-Foto-Knopf – sitzt über dem Plus, bewusst als Umriss (Plus bleibt der Haupt-Knopf) */
+.fab-blitz{bottom:88px;background:var(--bg2);color:var(--accent2);border:2px solid var(--accent);font-size:24px;}
 .fab:active{transform:scale(.95)}
 .empty{text-align:center;color:var(--text2);padding:40px 20px;font-size:14px}
 /* ── DETAIL ── */
@@ -463,6 +465,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   </div>
   <div class="task-list" id="taskList"></div>
   <div id="heuteList" style="display:none;flex:1;overflow-y:auto;padding:10px 12px;"></div>
+  <!-- v145: Blitz-Foto – fotografieren OHNE Task; landet im Tages-Sammler „📷 Foto-Eingang" -->
+  <button class="fab fab-blitz" id="blitzFabBtn" onclick="_blitzFoto()" title="Blitz-Foto – ohne Task fotografieren">📷</button>
   <button class="fab" id="fabBtn" onclick="newTask()">+</button>
 </div>
 
@@ -505,6 +509,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   <input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
   <input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
   <input type="file" id="fotoInputGallerySingle" accept="image/*" style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
+  <input type="file" id="blitzFotoInput" accept="image/*" capture="environment" style="display:none" onchange="_blitzFotoFiles(this.files);this.value=''" autocomplete="off">
 </div>
 
 <!-- ══ SCHNELL-ADD BOTTOM-SHEET ══ -->
@@ -1967,6 +1972,7 @@ async function loadFile(){
     const data=await r.json();
     _applyMobileFilter(data);
     if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
+    _fotoPreloadNeue(); // v145: erster Lauf merkt nur den Bestand (kein Massen-Download)
     // modifiedTime und parent-Ordner-ID für Poll-Vergleich aktualisieren
     try{
       const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?fields=modifiedTime,parents&_='+Date.now(),
@@ -1991,6 +1997,8 @@ let pollTimer=null;
 let _saveRetryCount=0;
 async function pollForChanges(){
   if(!fileId||!gdriveToken)return;
+  // v145: im Hintergrund nicht pollen (10-s-Takt gilt nur bei sichtbarer App)
+  if(document.visibilityState==='hidden')return;
   // Nicht während der User tippt
   const ae=document.activeElement;
   if(ae&&['INPUT','TEXTAREA','SELECT'].includes(ae.tagName))return;
@@ -2030,12 +2038,38 @@ async function pollForChanges(){
     fileLastModified=meta.modifiedTime;
     if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
     else{renderList();if(_mobView==='heute')renderHeuteMobil();}
+    _fotoPreloadNeue(); // v145: neue Fotos vom anderen Gerät gleich vorladen
     toast('↻ Vom Desktop aktualisiert','success');
   }catch(e){console.warn('[PTP-Mobile]',e);}
 }
+// v145 „schnelle Übergabe" Teil 2: frisch synchronisierte Fotos im Hintergrund vorladen,
+// damit Antippen sofort das volle Bild zeigt statt „lade…". Erster Lauf merkt nur den
+// Bestand (seeded) – sonst würden beim App-Start alte Fotos unnötig geladen.
+let _fotoPreloadSeen=new Set();
+let _fotoPreloadSeeded=false;
+function _fotoPreloadNeue(){
+  try{
+    const neu=[];
+    for(const[,tasks]of Object.entries(boards||{})){
+      if(!Array.isArray(tasks))continue;
+      for(const task of tasks)for(const f of (task&&task.fotos)||[]){
+        if(f&&f.driveId&&!_fotoPreloadSeen.has(f.driveId)){
+          _fotoPreloadSeen.add(f.driveId);
+          neu.push(f.driveId);
+        }
+      }
+    }
+    if(!_fotoPreloadSeeded){_fotoPreloadSeeded=true;return;}
+    if(document.visibilityState==='hidden'||navigator.onLine===false)return;
+    neu.slice(-6).forEach(id=>{try{if(!_fotoBlobCache.has(id))_fetchFotoBlob(id).catch(()=>{});}catch(e){}});
+  }catch(e){}
+}
 function startPolling(){
   if(pollTimer)clearInterval(pollTimer);
-  pollTimer=setInterval(pollForChanges,30000); // Synchron mit Desktop (war 20000)
+  // v145 „schnelle Übergabe": 10 s statt 30 s – gilt effektiv nur bei sichtbarer App,
+  // im Hintergrund steigt pollForChanges sofort aus (Akku/API geschont; beim
+  // Zurückkehren pollt der visibilitychange-Handler ohnehin sofort).
+  pollTimer=setInterval(pollForChanges,10000);
   if(!window._ptpmVisHooked){
     document.addEventListener('visibilitychange',async()=>{
       if(document.visibilityState!=='visible')return;
@@ -4175,6 +4209,8 @@ function renderSchnellTab(t){
         +'<div style="display:flex;gap:8px;">'
         +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
         +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
+        // v145: lose Blitz-Fotos aus dem Tages-Sammler in DIESEN Task holen
+        +((!String(t.id||'').startsWith('fe_')&&_feAlleFotos().length)?'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="_feImportOeffnen()">📥 Eingang ('+_feAlleFotos().length+')</button>':'')
         +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="_skizzeOpen()">✏️ Skizze</button>' // v124: ersetzt den weggefallenen Skizze-Reiter
         +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-height:46px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
         +'</div>'
@@ -5475,6 +5511,8 @@ function renderDetail(t){
           +'<div class="field-row" style="gap:6px;margin-top:6px">'
             +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Neues Foto</button>'
             +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼️ Aus Galerie</button>'
+            // v145: lose Blitz-Fotos aus dem Tages-Sammler in DIESEN Task holen
+            +((!String(t.id||'').startsWith('fe_')&&_feAlleFotos().length)?'<button class="add-btn" style="flex:1" onclick="_feImportOeffnen()">📥 Eingang ('+_feAlleFotos().length+')</button>':'')
           +'</div>'
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte in Einstellungen einen Standard-Fotoordner hinterlegen.</div>')
     +'</div></div>'
@@ -6934,10 +6972,11 @@ async function _uploadOneFotoToDrive(file,folderId){
   if(!r.ok){const txt=await r.text().catch(()=>'');throw new Error('HTTP '+r.status+(txt?': '+txt.slice(0,120):''));}
   return await r.json();
 }
-async function uploadFoto(files){
+async function uploadFoto(files,_zielTaskId){
+  // v145: optionaler Ziel-Task (Blitz-Foto → Tages-Sammler, ohne dass der Task offen ist)
   if(!files||!files.length)return;
   const fileArr=Array.from(files);
-  const t=currentTask();
+  const t=_zielTaskId?findTaskById(_zielTaskId):currentTask();
   if(!t){toast('Keine Task geöffnet','error');return;}
   // v72: Reihenfolge wichtig – zuerst der eigene Ordner des Tasks, dann je nach Board-Typ.
   // 1) Eigener Foto-/Projektordner des Tasks (falls vorhanden)
@@ -7010,6 +7049,9 @@ async function uploadFoto(files){
   // und der „App in Hintergrund"-Handler sichert die frischen Fotos ins lokale Backup.
   dirty=true;_dirtyTs=Date.now();
   _fotoPendUpdate();
+  // v145: Anzeige/Vorschau/Vollbild nur, wenn der Ziel-Task wirklich offen ist –
+  // beim Blitz-Foto (Tages-Sammler im Hintergrund) bleibt die Liste unangetastet.
+  if(currentTaskId===_taskId){
   _mOpenSections['Fotos']=true;
   renderDetail(t);
   if(_currentDetailTab==='schnell'){
@@ -7028,8 +7070,9 @@ async function uploadFoto(files){
     const _autoText=!(window.matchMedia&&window.matchMedia('(max-width:520px)').matches);
     if(_ni>=0){try{openFotoFullscreen(_ni);if(_autoText)setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);}catch(e){}}
   }
+  }
   // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
-  let _fi=0;
+  let _fi=0,_posP=null;
   for(const o of fotoObjs){
     _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' wird übernommen…');
     o.file=await _compressFoto(o.file); // v78: Kompression (EXIF-GPS wurde oben bereits gelesen)
@@ -7037,7 +7080,33 @@ async function uploadFoto(files){
     o.fo.mimeType=o.file.type||o.fo.mimeType;
     if(o.file.name)o.fo.name=o.file.name;
     try{
-      const dataUrl=await _fileToDataUrl(o.file);
+      let dataUrl=await _fileToDataUrl(o.file);
+      // v145: GPS-Auffüllung – iPhone-Web-Fotos kommen oft OHNE Standort (iOS schneidet
+      // ihn ab, bevor die App das Bild bekommt). Fehlt GPS im EXIF, wird die aktuelle
+      // Geräteposition eingetragen; hochgeladen und lokal gesichert wird die GPS-Fassung.
+      try{
+        if(/^data:image\/jpe?g/i.test(dataUrl)){
+          if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+          if(window.piexif&&!_readGpsFromDataUrl(dataUrl)){
+            if(!_posP)_posP=new Promise(res=>{
+              try{navigator.geolocation.getCurrentPosition(
+                p=>res({lat:p.coords.latitude,lon:p.coords.longitude}),
+                ()=>res(null),{enableHighAccuracy:true,timeout:8000,maximumAge:60000});}
+              catch(e){res(null);}
+            });
+            const pos=await _posP;
+            if(pos){
+              const mitGps=_writeGpsIntoDataUrl(dataUrl,pos.lat,pos.lon);
+              if(mitGps&&mitGps!==dataUrl){
+                dataUrl=mitGps;
+                try{o.file=new File([_dataUrlToBlob(dataUrl)],o.file.name||o.fo.name||'foto.jpg',{type:'image/jpeg'});}
+                catch(eF){o.file=_dataUrlToBlob(dataUrl);}
+                o.fo.size=o.file.size||o.fo.size;
+              }
+            }
+          }
+        }
+      }catch(eG){console.warn('[uploadFoto] GPS-Auffüllung:',eG);}
       // v143: taskId mitspeichern – verwaiste Fotos (App-Kill vor dem Task-Save)
       // können damit beim nächsten Start wieder an ihren Task gehängt werden.
       await _mobPhotoSave(o.fo.localKey,dataUrl,{taskId:_taskId,name:o.fo.name||''});
@@ -7113,6 +7182,148 @@ function _fotoLive(taskId,fo){
   let live=fo.localKey?t.fotos.find(f=>f&&f.localKey===fo.localKey):null;
   if(!live){t.fotos.push(fo);live=fo;}
   return live;
+}
+
+// ══════════════════════════════════════════════
+//  v145: BLITZ-FOTO + FOTO-EINGANG
+//  📷-Knopf über dem Plus: fotografieren OHNE Task – die Bilder landen in einem
+//  Tages-Sammler „📷 Foto-Eingang TT.MM." auf dem Schnell-Board (feste Tages-ID:
+//  legen iPhone und Tablet ihn parallel an, verschmilzt der Konflikt-Merge beide
+//  zu EINEM Task). Später holt „📥 Foto-Eingang" im Ziel-Task die Bilder ab –
+//  die Drive-Datei wird dabei nur UMGEHÄNGT (kein Neu-Upload, EXIF unverändert).
+// ══════════════════════════════════════════════
+function _feId(){const d=new Date();return 'fe_'+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');}
+function _ensureFotoEingangTask(){
+  const id=_feId();
+  let t=findTaskById(id);
+  if(t)return t;
+  const savedBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
+  if(!savedBoard)return null;
+  if(!boards[savedBoard])boards[savedBoard]=[];
+  const d=new Date();
+  const titel='📷 Foto-Eingang '+String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.';
+  const arr=(_remoteBoardStatuses[savedBoard]&&_remoteBoardStatuses[savedBoard].length)?_remoteBoardStatuses[savedBoard]:statuses;
+  t={id,title:titel,desc:'Lose Blitz-Fotos – im Ziel-Task „📥 Foto-Eingang" antippen, um sie zuzuordnen.',
+    owner:'',due:'',status:arr[0]||'',ampel:'grün',ausführungsdatum:'',tags:[],source:'',
+    hausverwaltung:'',adresse:'',schadensbild:'',kontakte:[],gdrive:'',gdriveOrdner:'',nas:'',
+    links:[],attachments:[],timeEntries:[],ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]};
+  boards[savedBoard].push(t);
+  _qaInFlightIds.add(id);setTimeout(()=>{try{_qaInFlightIds.delete(id);}catch(_e){}},120000);
+  forceSave();
+  return t;
+}
+function _blitzFoto(){
+  const savedBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
+  if(!savedBoard){toast('Bitte erst in Einstellungen ein Schnell-Board wählen','error');openSettings();return;}
+  const inp=document.getElementById('blitzFotoInput');if(inp)inp.click();
+}
+async function _blitzFotoFiles(files){
+  if(!files||!files.length)return;
+  const t=_ensureFotoEingangTask();
+  if(!t){toast('Foto-Eingang konnte nicht angelegt werden','error');return;}
+  toast('📷 Blitz-Foto → „'+t.title+'"','info',2000);
+  await uploadFoto(files,t.id);
+}
+// Alle losen Fotos aus sämtlichen Foto-Eingang-Sammlern (auch von Vortagen)
+function _feAlleFotos(){
+  const out=[];
+  for(const[,tasks]of Object.entries(boards||{})){
+    if(!Array.isArray(tasks))continue;
+    for(const task of tasks){
+      if(!task||!String(task.id||'').startsWith('fe_'))continue;
+      for(const fo of task.fotos||[])if(fo&&(fo.driveId||fo.localKey))out.push({feTask:task,fo});
+    }
+  }
+  return out;
+}
+let _feAuswahl=null;
+function _feImportOeffnen(){
+  const ziel=currentTask();if(!ziel)return;
+  const alle=_feAlleFotos();
+  if(!alle.length){toast('Foto-Eingang ist leer','info');return;}
+  _feAuswahl=new Set();
+  let ov=document.getElementById('feImportOverlay');if(ov)ov.remove();
+  ov=document.createElement('div');
+  ov.id='feImportOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.88);display:flex;flex-direction:column;padding:14px;';
+  ov.innerHTML='<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px;">📥 Foto-Eingang → „'+esc(ziel.title||'')+'"</div>'
+    +'<div style="font-size:12px;color:#bbb;margin-bottom:10px;">Fotos antippen zum Auswählen – sie werden in den Fotos-Ordner dieses Tasks verschoben (kein Neu-Upload).</div>'
+    +'<div id="feImportGrid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start;"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:12px;">'
+    +'<button id="feImportOk" onclick="_feImportUebernehmen()" style="flex:1;min-height:50px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">✓ Übernehmen (0)</button>'
+    +'<button onclick="document.getElementById(\'feImportOverlay\').remove()" style="min-height:50px;padding:0 18px;border-radius:10px;border:1px solid #666;background:transparent;color:#fff;font-size:15px;cursor:pointer;">Abbrechen</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  const grid=ov.querySelector('#feImportGrid');
+  alle.forEach((x,i)=>{
+    const key=x.fo.localKey||x.fo.driveId||('i'+i);
+    const cell=document.createElement('div');
+    cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid transparent;cursor:pointer;';
+    const img=document.createElement('img');
+    img.style.cssText='width:100%;height:100%;object-fit:cover;';
+    const src=x.fo.thumbnail||x.fo.localUrl||(x.fo.driveId?'https://drive.google.com/thumbnail?id='+x.fo.driveId+'&sz=w400':'');
+    if(src)img.src=src;
+    else if(x.fo.localKey)_mobPhotoGet(x.fo.localKey).then(du=>{if(du)img.src=du;});
+    img.onerror=()=>{if(x.fo.localKey)_mobPhotoGet(x.fo.localKey).then(du=>{if(du)img.src=du;});};
+    const tag=document.createElement('div');
+    tag.style.cssText='position:absolute;left:4px;bottom:4px;right:4px;font-size:10px;color:#fff;background:rgba(0,0,0,.55);border-radius:6px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    tag.textContent=(x.fo.uploadedAt?_fmtTs(x.fo.uploadedAt)+' · ':'')+(x.feTask.title||'');
+    cell.appendChild(img);cell.appendChild(tag);
+    cell.onclick=()=>{
+      if(_feAuswahl.has(key)){_feAuswahl.delete(key);cell.style.borderColor='transparent';}
+      else{_feAuswahl.add(key);cell.style.borderColor='var(--accent)';}
+      const okBtn=document.getElementById('feImportOk');
+      if(okBtn)okBtn.textContent='✓ Übernehmen ('+_feAuswahl.size+')';
+    };
+    grid.appendChild(cell);
+  });
+}
+async function _feImportUebernehmen(){
+  const ziel=currentTask();
+  const ov=document.getElementById('feImportOverlay');
+  if(!ziel||!_feAuswahl||!_feAuswahl.size){if(ov)ov.remove();return;}
+  const alle=_feAlleFotos().filter(x=>_feAuswahl.has(x.fo.localKey||x.fo.driveId||''));
+  if(ov)ov.remove();
+  if(!alle.length)return;
+  // Ziel-Ordner: gleiche Kette wie beim Fotografieren im Task – t.gdrive zeigt auf den
+  // „Fotos"-Unterordner der Desktop-Struktur, Fallback Hauptordner bzw. Standard-Fotoordner
+  let zielFid=extractDriveFolderId(ziel.gdrive)||extractDriveFolderId(ziel.gdriveOrdner);
+  if(!zielFid)zielFid=extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
+  const _hatDrive=alle.some(x=>x.fo.driveId);
+  if(_hatDrive){
+    if(navigator.onLine===false){toast('📴 Zum Verschieben bitte mit Empfang erneut versuchen','error',5000);return;}
+    if(!(await ensureToken())){toast('Nicht angemeldet – bitte anmelden und erneut versuchen','error',5000);return;}
+    if(!zielFid){toast('❗ Ziel-Task hat keinen Drive-Ordner und kein Standard-Fotoordner ist gesetzt','error',6000);return;}
+  }
+  if(!ziel.fotos)ziel.fotos=[];
+  let ok=0,fail=0;
+  setSaveInd('saving','Fotos übernehmen…');
+  for(const x of alle){
+    try{
+      if(x.fo.driveId){await _feDriveMove(x.fo.driveId,zielFid);}
+      else if(x.fo.localKey){_mobPhotoSetMeta(x.fo.localKey,{taskId:ziel.id});} // Nachlade-Ziel umbiegen
+      x.feTask.fotos=x.feTask.fotos.filter(f=>f!==x.fo);
+      ziel.fotos.push(x.fo);
+      ok++;
+    }catch(e){console.warn('[FE] Verschieben:',e);fail++;}
+  }
+  forceSave();
+  renderDetail(ziel);
+  if(_currentDetailTab==='schnell')renderSchnellTab(ziel);
+  _fotoPendUpdate();
+  if(ok)toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' in „'+(ziel.title||'Task')+'" übernommen','success',3000);
+  if(fail)toast('⚠ '+fail+' Foto'+(fail!==1?'s':'')+' konnten nicht verschoben werden','error',5000);
+}
+// Drive-Datei in einen anderen Ordner UMHÄNGEN (kein Neu-Upload, Inhalt/EXIF unverändert)
+async function _feDriveMove(fileId,newParent){
+  const r0=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(fileId)+'?fields=parents',
+    {headers:{Authorization:'Bearer '+gdriveToken}});
+  if(!r0.ok)throw new Error('HTTP '+r0.status);
+  const old=((await r0.json()).parents||[]).join(',');
+  const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(fileId)
+    +'?addParents='+encodeURIComponent(newParent)+(old?'&removeParents='+encodeURIComponent(old):''),
+    {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:'{}'});
+  if(!r.ok)throw new Error('HTTP '+r.status);
 }
 // Tap auf Thumbnail → Lightbox in der App (mit Fallback-Link zum Drive-Viewer)
 // ── Mobile Lightbox ──────────────────────────────────────────────
