@@ -7072,7 +7072,7 @@ async function uploadFoto(files,_zielTaskId){
   }
   }
   // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
-  let _fi=0,_posP=null;
+  let _fi=0,_posP=null,_posWarn=false;
   for(const o of fotoObjs){
     _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' wird übernommen…');
     o.file=await _compressFoto(o.file); // v78: Kompression (EXIF-GPS wurde oben bereits gelesen)
@@ -7103,6 +7103,10 @@ async function uploadFoto(files,_zielTaskId){
                 catch(eF){o.file=_dataUrlToBlob(dataUrl);}
                 o.fo.size=o.file.size||o.fo.size;
               }
+            }else if(!_posWarn){
+              // v146: nicht mehr still durchwinken – Frank soll SEHEN, dass der Standort fehlt
+              _posWarn=true;
+              toast('⚠ Kein Standort ermittelbar – Foto ohne GPS gespeichert. Ortung für PAM erlaubt?','info',6000);
             }
           }
         }
@@ -7128,7 +7132,10 @@ async function uploadFoto(files,_zielTaskId){
     _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' hochladen…');
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
-      _fotoBlobCache.set(meta.id,fo.localUrl);
+      // v146: die HOCHGELADENE Fassung cachen (komprimiert + ggf. GPS-gestempelt) – vorher
+      // lag das rohe Kamera-Original im Cache und der 📍-Dialog zeigte „KEIN Aufnahmeort",
+      // obwohl die Drive-Datei längst Koordinaten hatte (Befund Frank 31.07.).
+      try{_fotoBlobCache.set(meta.id,URL.createObjectURL(file));}catch(e){_fotoBlobCache.set(meta.id,fo.localUrl);}
       const live=_fotoLive(_taskId,fo);
       live.driveId=meta.id;
       live.name=meta.name||fo.name;
@@ -8386,7 +8393,8 @@ async function _submitQuickAdd(){
     try{
       o.fo._uploading=true;
       const meta=await _uploadOneFotoToDrive(o.f,_qaFolderId);
-      try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,o.fo.localUrl);}catch(e){}
+      // v146: hochgeladene Fassung cachen statt Roh-Original (s. uploadFoto)
+      try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,URL.createObjectURL(o.f));}catch(e){}
       const live=_fotoLive(newT.id,o.fo);
       live.driveId=meta.id;live.name=meta.name||o.fo.name;
       live.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
@@ -9553,8 +9561,23 @@ function lbGpsDialog(){
       const el=document.getElementById('lbGpsCurrent');if(!el)return;
       if(gps){
         el.textContent='Aktuell im Foto: '+gps.lat.toFixed(5)+', '+gps.lon.toFixed(5);
-        _reverseGeocode(gps.lat,gps.lon).then(a=>{const e2=document.getElementById('lbGpsCurrent');if(e2&&a)e2.textContent='Aktuell im Foto: '+a;}).catch(()=>{});
-      } else el.textContent='Aktuell ist KEIN Aufnahmeort im Foto gespeichert.';
+        // v146 (Wunsch Frank): aktuellen Ort ins Eingabefeld VORFÜLLEN – zum Prüfen/Anpassen.
+        // Erst die Koordinaten, sobald die Adresse aufgelöst ist diese – aber NIE eine
+        // bereits begonnene Nutzereingabe überschreiben (Koordinaten-Vorfüllung erkennbar an Ziffern/Komma).
+        const inp0=document.getElementById('lbGpsInput');
+        if(inp0&&!inp0.value)inp0.value=gps.lat.toFixed(5)+', '+gps.lon.toFixed(5);
+        _reverseGeocode(gps.lat,gps.lon).then(a=>{
+          const e2=document.getElementById('lbGpsCurrent');if(e2&&a)e2.textContent='Aktuell im Foto: '+a;
+          const inp=document.getElementById('lbGpsInput');
+          if(inp&&a&&(!inp.value||/^[\d.,\s\-]+$/.test(inp.value)))inp.value=a;
+        }).catch(()=>{});
+      } else {
+        el.textContent='Aktuell ist KEIN Aufnahmeort im Foto gespeichert.';
+        // v146: ohne GPS die Objektadresse des Tasks als Startwert anbieten (ein Tipp auf 🔍 Prüfen genügt)
+        const inp=document.getElementById('lbGpsInput');
+        const _t=currentTask();
+        if(inp&&!inp.value&&_t&&_t.adresse)inp.value=_t.adresse;
+      }
     }catch(e){const el=document.getElementById('lbGpsCurrent');if(el)el.textContent='Aktueller Stand nicht lesbar.';}
   })();
 }
