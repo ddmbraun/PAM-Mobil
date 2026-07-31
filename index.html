@@ -5513,6 +5513,8 @@ function renderDetail(t){
             +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼️ Aus Galerie</button>'
             // v145: lose Blitz-Fotos aus dem Tages-Sammler in DIESEN Task holen
             +((!String(t.id||'').startsWith('fe_')&&_feAlleFotos().length)?'<button class="add-btn" style="flex:1" onclick="_feImportOeffnen()">📥 Eingang ('+_feAlleFotos().length+')</button>':'')
+            // v147: Fotos auswählen → als PDF oder als bereinigte Fotos (ohne GPS/Datum) teilen
+            +(fotos.length?'<button class="add-btn" style="flex:1" onclick="_shrOeffnen()">📤 Teilen…</button>':'')
           +'</div>'
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte in Einstellungen einen Standard-Fotoordner hinterlegen.</div>')
     +'</div></div>'
@@ -7321,6 +7323,201 @@ async function _feImportUebernehmen(){
   if(ok)toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' in „'+(ziel.title||'Task')+'" übernommen','success',3000);
   if(fail)toast('⚠ '+fail+' Foto'+(fail!==1?'s':'')+' konnten nicht verschoben werden','error',5000);
 }
+// ══════════════════════════════════════════════
+//  v147: TEILEN-PAKET – Fotos auswählen → als PDF teilen ODER als bereinigte Fotos
+//  (ohne GPS/Datum/Kamera + neutrale Dateinamen). Die Originale in Drive bleiben
+//  UNVERÄNDERT – bereinigt wird nur die verschickte Kopie.
+//  Einstiege: „📤 Teilen…" in der Foto-Sektion (freie Auswahl) und „📤" am
+//  Tagesblock im Tagebuch (Tag vorausgewählt). Beide öffnen dasselbe Fenster.
+// ══════════════════════════════════════════════
+let _shrSel=null;
+function _shrKey(f){return f.localKey||f.driveId||f.id||'';}
+const _shrIstVideo=f=>/^video\//i.test(f&&f.mimeType||'')||/\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(f&&f.name||'');
+function _shrTagTeilen(dayKey){
+  const t=currentTask();if(!t)return;
+  const keys=(t.fotos||[]).filter(f=>{
+    if(!f||_shrIstVideo(f))return false;
+    const d=_mtbParseTs(f.ts);
+    return (d?_mtbDayKey(d):'')===String(dayKey||'');
+  }).map(_shrKey).filter(Boolean);
+  _shrOeffnen(keys);
+}
+function _shrOeffnen(preKeys){
+  const t=currentTask();if(!t)return;
+  const fotos=(t.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.driveId||f.localKey||f.localUrl));
+  if(!fotos.length){toast('Keine Fotos im Task','info');return;}
+  _shrSel=new Set(preKeys||[]);
+  let ov=document.getElementById('shrOverlay');if(ov)ov.remove();
+  ov=document.createElement('div');
+  ov.id='shrOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.88);display:flex;flex-direction:column;padding:14px;';
+  ov.innerHTML='<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px;">📤 Fotos teilen</div>'
+    +'<div style="font-size:12px;color:#bbb;margin-bottom:10px;">Fotos antippen zum Aus-/Abwählen. Das Original in Drive bleibt unverändert – geteilt wird nur eine Kopie.</div>'
+    +'<div id="shrGrid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start;"></div>'
+    +'<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:#ddd;cursor:pointer;">'
+    +'<input type="checkbox" id="shrMitText" style="width:20px;height:20px;">Beschriftung + Datum ins PDF (sonst neutral)</label>'
+    +'<div style="display:flex;gap:8px;margin-top:10px;">'
+    +'<button id="shrPdfBtn" onclick="_shrPdfTeilen()" style="flex:1;min-height:50px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">📄 Als PDF (0)</button>'
+    +'<button id="shrImgBtn" onclick="_shrFotosTeilen()" style="flex:1;min-height:50px;border-radius:10px;border:1px solid var(--accent);background:transparent;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🖼 Fotos bereinigt (0)</button>'
+    +'<button onclick="_shrClose()" style="min-height:50px;padding:0 14px;border-radius:10px;border:1px solid #666;background:transparent;color:#fff;font-size:14px;cursor:pointer;">✕</button>'
+    +'</div>'
+    +'<div style="font-size:11px;color:#999;margin-top:8px;">PDF enthält keine Aufnahmedaten. „Fotos bereinigt" entfernt GPS/Datum/Kamera aus den Bildern und neutralisiert die Dateinamen (foto-1.jpg …).</div>';
+  document.body.appendChild(ov);
+  const grid=ov.querySelector('#shrGrid');
+  fotos.forEach((f,i)=>{
+    const key=_shrKey(f)||('i'+i);
+    const cell=document.createElement('div');
+    cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid '+(_shrSel.has(key)?'var(--accent)':'transparent')+';cursor:pointer;';
+    const img=document.createElement('img');
+    img.style.cssText='width:100%;height:100%;object-fit:cover;';
+    const src=f.thumbnail||f.thumbnailLink||f.localUrl||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
+    if(src)img.src=src;
+    else if(f.localKey)_mobPhotoGet(f.localKey).then(du=>{if(du)img.src=du;});
+    img.onerror=()=>{if(f.localKey)_mobPhotoGet(f.localKey).then(du=>{if(du)img.src=du;});};
+    cell.appendChild(img);
+    if(f.caption){
+      const tag=document.createElement('div');
+      tag.style.cssText='position:absolute;left:4px;bottom:4px;right:4px;font-size:10px;color:#fff;background:rgba(0,0,0,.55);border-radius:6px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      tag.textContent=f.caption;
+      cell.appendChild(tag);
+    }
+    cell.onclick=()=>{
+      if(_shrSel.has(key)){_shrSel.delete(key);cell.style.borderColor='transparent';}
+      else{_shrSel.add(key);cell.style.borderColor='var(--accent)';}
+      _shrZaehler();
+    };
+    grid.appendChild(cell);
+  });
+  _shrZaehler();
+}
+function _shrZaehler(){
+  const n=_shrSel?_shrSel.size:0;
+  const p=document.getElementById('shrPdfBtn');if(p)p.textContent='📄 Als PDF ('+n+')';
+  const b=document.getElementById('shrImgBtn');if(b)b.textContent='🖼 Fotos bereinigt ('+n+')';
+}
+function _shrClose(){const o=document.getElementById('shrOverlay');if(o)o.remove();_shrSel=null;}
+function _shrGewaehlte(){
+  const t=currentTask();if(!t||!t.fotos||!_shrSel)return[];
+  return t.fotos.filter(f=>f&&_shrSel.has(_shrKey(f)));
+}
+// Bild-Bytes in bester verfügbarer Qualität besorgen (Cache → Gerätespeicher → lokale URL → Drive)
+async function _shrBytes(f){
+  try{
+    const id=f.editedDriveId||f.driveId;
+    if(id&&_fotoBlobCache.get(id)){const r=await fetch(_fotoBlobCache.get(id));return await r.blob();}
+    if(f.localKey){const du=await _mobPhotoGet(f.localKey);if(du)return _dataUrlToBlob(du);}
+    if(f.localUrl){const r=await fetch(f.localUrl);return await r.blob();}
+    if(id){const u=await _fetchFotoBlob(id);if(u){const r=await fetch(u);return await r.blob();}}
+  }catch(e){console.warn('[Teilen] Bytes:',e);}
+  return null;
+}
+// Neu kodieren über Canvas → sämtliche EXIF-Daten (GPS/Datum/Kamera) sind raus.
+// maxSeite begrenzt die längste Kante (fürs PDF), 0 = Originalgröße behalten.
+function _shrNeuKodieren(blob,maxSeite){
+  return new Promise(res=>{
+    const url=URL.createObjectURL(blob);
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        let w=img.naturalWidth,h=img.naturalHeight;
+        if(maxSeite&&Math.max(w,h)>maxSeite){const s=maxSeite/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+        const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        const dataUrl=cv.toDataURL('image/jpeg',0.9);
+        URL.revokeObjectURL(url);
+        res({dataUrl,w,h,blob:_dataUrlToBlob(dataUrl)});
+      }catch(e){URL.revokeObjectURL(url);res(null);}
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);res(null);};
+    img.src=url;
+  });
+}
+async function _shrPdfTeilen(){
+  const t=currentTask();if(!t)return;
+  const list=_shrGewaehlte();
+  if(!list.length){toast('Bitte zuerst Fotos antippen','info');return;}
+  if(!window.jspdf){toast('PDF-Baustein noch nicht geladen – kurz warten und erneut versuchen','error');return;}
+  const mitText=!!(document.getElementById('shrMitText')&&document.getElementById('shrMitText').checked);
+  toast('📄 PDF wird erstellt…','info',3000);
+  try{
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const W=210,H=297,M=12;let first=true,ok=0;
+    for(const f of list){
+      const blob=await _shrBytes(f);if(!blob)continue;
+      const d=await _shrNeuKodieren(blob,1600);if(!d)continue;
+      if(!first)doc.addPage();first=false;
+      const maxW=W-2*M,maxH=H-2*M-(mitText?14:0);
+      let w=maxW,h=w*d.h/d.w;
+      if(h>maxH){h=maxH;w=h*d.w/d.h;}
+      doc.addImage(d.dataUrl,'JPEG',(W-w)/2,M,w,h);
+      if(mitText){
+        doc.setFontSize(10);doc.setTextColor(60);
+        const dt=f.ts?new Date(f.ts):null;
+        const zeile=[(dt&&!isNaN(dt))?dt.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr':'',(f.caption||'')].filter(Boolean).join(' – ');
+        if(zeile)doc.text(doc.splitTextToSize(zeile,W-2*M),M,M+h+7);
+      }
+      ok++;
+    }
+    if(!ok){toast('Keine Bilddaten auf diesem Gerät verfügbar (Foto evtl. nur auf dem anderen Gerät)','error',5000);return;}
+    const name=mitText
+      ?(((t.title||'Fotos').replace(/[^\w\s.\-äöüÄÖÜß]+/g,'').trim().slice(0,60)||'Fotos')+'.pdf')
+      :'fotos.pdf'; // neutral: auch der Dateiname verrät nichts
+    await _shrShare([new File([doc.output('blob')],name,{type:'application/pdf'})],name);
+    _shrClose();
+  }catch(e){console.error('[Teilen] PDF:',e);toast('PDF fehlgeschlagen: '+(e.message||e),'error',5000);}
+}
+async function _shrFotosTeilen(){
+  const list=_shrGewaehlte();
+  if(!list.length){toast('Bitte zuerst Fotos antippen','info');return;}
+  toast('🖼 Fotos werden bereinigt…','info',3000);
+  const files=[];let i=0;
+  for(const f of list){
+    const blob=await _shrBytes(f);if(!blob)continue;
+    const d=await _shrNeuKodieren(blob,0);if(!d)continue;
+    i++;files.push(new File([d.blob],'foto-'+i+'.jpg',{type:'image/jpeg'}));
+  }
+  if(!files.length){toast('Keine Bilddaten auf diesem Gerät verfügbar (Foto evtl. nur auf dem anderen Gerät)','error',5000);return;}
+  await _shrShare(files,'Fotos');
+  _shrClose();
+}
+async function _shrShare(files,titel){
+  try{
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files})){
+      await navigator.share({files,title:titel});
+      return;
+    }
+  }catch(e){
+    if(e&&e.name==='AbortError')return; // Nutzer hat das Teilen-Fenster geschlossen
+    // iOS verlangt eine FRISCHE Nutzer-Geste – nach der Bild-Aufbereitung kann die
+    // abgelaufen sein → großer „Jetzt teilen"-Knopf holt sie sich neu.
+    if(e&&(e.name==='NotAllowedError'||e.name==='InvalidStateError')){_shrShareRetry(files,titel);return;}
+    console.warn('[Teilen] share:',e);
+  }
+  // Kein System-Teilen (z.B. Desktop-Browser) → Dateien herunterladen
+  for(const f of files){
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(f);a.download=f.name;
+    document.body.appendChild(a);a.click();a.remove();
+  }
+  toast('⬇ System-Teilen nicht verfügbar – Datei'+(files.length!==1?'en':'')+' heruntergeladen','info',4000);
+}
+function _shrShareRetry(files,titel){
+  let ov=document.getElementById('shrRetry');if(ov)ov.remove();
+  ov=document.createElement('div');
+  ov.id='shrRetry';
+  ov.style.cssText='position:fixed;inset:0;z-index:9750;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:340px;width:100%;text-align:center;">'
+    +'<div style="font-size:14px;color:var(--text);margin-bottom:14px;">'+files.length+' Datei'+(files.length!==1?'en':'')+' fertig – noch ein Tipp:</div>'
+    +'<button id="shrRetryBtn" style="width:100%;min-height:54px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer;">📤 Jetzt teilen</button>'
+    +'<button onclick="document.getElementById(\'shrRetry\').remove()" style="width:100%;min-height:44px;margin-top:8px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:14px;cursor:pointer;">Abbrechen</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  document.getElementById('shrRetryBtn').onclick=()=>{
+    navigator.share({files,title:titel}).catch(e=>{if(e&&e.name!=='AbortError')toast('Teilen fehlgeschlagen','error');});
+    ov.remove();
+  };
+}
 // Drive-Datei in einen anderen Ordner UMHÄNGEN (kein Neu-Upload, Inhalt/EXIF unverändert)
 async function _feDriveMove(fileId,newParent){
   const r0=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(fileId)+'?fields=parents',
@@ -7652,6 +7849,8 @@ function renderTagebuchTab(t){
       +'<span style="font-size:calc(13px * var(--m-scale,1));font-weight:700;color:var(--accent2);white-space:nowrap;">'+(key?_mtbDayLabel(key):'Ohne Datum')+'</span>'
       +'<span style="font-size:11px;color:var(--text2);white-space:nowrap;">'+teile.join(' · ')+'</span>'
       +'<span style="flex:1;height:1px;background:var(--border);"></span>'
+      // v147: Fotos dieses Tages mit einem Tipp vorausgewählt ins Teilen-Fenster
+      +(fc?'<button onclick="_shrTagTeilen(\''+escAttr(key)+'\')" title="Fotos dieses Tages teilen" style="flex-shrink:0;padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;">📤</button>':'')
       +'</div>';
     // Fotos den Notiz-Ankern zuordnen (wie Desktop b518)
     const anker=g.notiz.filter(x=>!_mtbIsSys(x.n.text)&&x.d);
