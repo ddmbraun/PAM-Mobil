@@ -3306,25 +3306,30 @@ function _extractFolderIdMob(url){
 // Beim App-Start / nach Login aufrufen: alle Fotos mit localKey aber ohne driveId
 // werden aus IndexedDB geladen und erneut zu Google Drive hochgeladen.
 let _mobRetryUploadsBusy=false; // v137: läuft nur EINMAL parallel (App-Start-Timer + Netz-Rückkehr können sich überschneiden → sonst doppelte Dateien in Drive)
-async function _mobRetryPendingUploads(){
-  if(_mobRetryUploadsBusy)return;
-  if(!gdriveToken||!tokenValid())return;
+async function _mobRetryPendingUploads(opts){
+  const laut=!!(opts&&opts.laut); // vom Knopf gerufen → IMMER eine Rückmeldung, nie stumm
+  if(_mobRetryUploadsBusy){if(laut)toast('📤 Läuft bereits – einen Moment…','info',3000);return null;}
+  if(!gdriveToken||!tokenValid()){if(laut)toast('Nicht angemeldet – bitte einmal anmelden','error',5000);return null;}
   // v143: Verwaiste Fotos (App-Kill bevor der Task-Eintrag gespeichert war) zuerst
   // aus dem Geräte-Speicher wieder an ihre Tasks hängen – dann normal nachladen.
   try{await _fotoOrphanReattach();}catch(e){console.warn('[MobPhoto] Orphan:',e);}
   // v143: Fallback Standard-Fotoordner – vorher wurden Tasks OHNE eigenen Drive-Link
   // komplett übersprungen (`continue`), deren Fotos blieben für immer „lokal".
   const _defFid=extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
-  let pending=[];
-  for(const[,tasks] of Object.entries(boards||{})){
-    if(!Array.isArray(tasks))continue;
+  let pending=[],ohneOrdner=0;
+  // v148: ALLE Listen – auch ausgeblendete Boards und vom Spaltenfilter versteckte Tasks
+  // (genau die Quelle, aus der die Warnleuchte zählt).
+  for(const tasks of _alleTaskListen()){
     for(const task of tasks){
       if(!task)continue;
+      const offene=(task.fotos||[]).filter(f=>f&&f.localKey&&!f.driveId).length
+        +(task.pruefberichte||[]).reduce((s,pb)=>s+((pb.fotos||[]).filter(f=>f&&f.localKey&&!f.driveId).length),0);
+      if(!offene)continue;
       let fid=_extractFolderIdMob(task.gdrive||task.gdriveOrdner||'');
       // v143: Schnellnotiz-Task ohne Ordner (Foto wurde offline aufgenommen, Ordner-Anlage
       // brauchte Token) → Schnellnotizen-Ordner jetzt nachträglich anlegen (Sinn von v73:
       // Notiz-Fotos gehören in den Projektordner, nicht in den Standard-Fotoordner).
-      if(!fid&&(task.fotos||[]).some(f=>f&&f.localKey&&!f.driveId)){
+      if(!fid){
         const _bn=findBoardByTaskId(task.id);
         const _quickBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
         if((boardTypes[_bn]||'baustelle')==='notiz'||(!!_quickBoard&&_bn===_quickBoard)){
@@ -3335,35 +3340,89 @@ async function _mobRetryPendingUploads(){
       // Prüfbericht-Fotos NUR in den eigenen Task-Ordner (kein Fallback – sonst Streu-Dateien)
       if(fid)for(const pb of task.pruefberichte||[]){
         for(const foto of pb.fotos||[]){
-          if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:fid});
+          if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:fid,task});
         }
       }
       // Fix v60: auch normale Task-Fotos nachladen (z.B. Quick-Add bei Upload-Fehler) –
       // vorher wurden NUR Prüfbericht-Fotos wiederholt, Task-Fotos blieben dauerhaft lokal
       const tfid=fid||_defFid;
-      if(tfid)for(const foto of task.fotos||[]){
-        if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:tfid});
+      if(tfid){
+        for(const foto of task.fotos||[]){
+          if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:tfid,task});
+        }
+      }else{
+        // v148: nicht mehr stillschweigend überspringen – Frank soll den Grund sehen
+        ohneOrdner+=offene;
       }
     }
   }
-  if(!pending.length){_fotoPendUpdate();return;}
+  if(!pending.length){
+    _fotoPendUpdate();
+    if(laut){
+      if(ohneOrdner)toast('❗ '+ohneOrdner+' Foto'+(ohneOrdner!==1?'s':'')+' ohne Ziel-Ordner – im Task einen Drive-Ordner eintragen oder in den Einstellungen einen Standard-Fotoordner hinterlegen','error',7000);
+      else toast('✓ Nichts offen – alle Fotos sind gesichert','success',3000);
+    }
+    return {gesamt:0,ok:0,geheilt:0,woanders:0,fehler:0,ohneOrdner};
+  }
   _mobRetryUploadsBusy=true;
+  const b={gesamt:pending.length,ok:0,geheilt:0,woanders:0,fehler:0,ohneOrdner};
   try{
     _fotoPendUpdate();
     toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
-    // v144: ehrlich zählen – „Bild-Daten auf anderem Gerät" (BLOB_MISSING) ist KEIN Erfolg
-    let ok=0,woanders=0;
     for(const {fo,folderId} of pending){
-      try{await _mobUploadFromKey(fo,folderId);ok++;}
+      try{await _mobUploadFromKey(fo,folderId);b.ok++;}
       catch(e){
-        if(String(e&&e.message)==='BLOB_MISSING')woanders++;
-        else console.warn('[MobPhoto] Retry:',e);
+        if(String(e&&e.message)==='BLOB_MISSING'){
+          // v148: Bilddaten hier nicht vorhanden → BEVOR wir „liegt auf anderem Gerät"
+          // sagen, in Drive nachsehen. Häufigster Fall der Sackgasse (Befund Frank 31.07.):
+          // der Upload lief längst, nur der Task-Eintrag verlor die Datei-Kennung.
+          let geheilt=false;
+          try{geheilt=await _fotoDriveWiederfinden(fo,folderId);}catch(e2){console.warn('[MobPhoto] Wiederfinden:',e2);}
+          if(geheilt)b.geheilt++;else b.woanders++;
+        }else{b.fehler++;console.warn('[MobPhoto] Retry:',e);}
       }
       _fotoPendUpdate();
     }
-    if(ok>0){scheduleSave();toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' nachträglich hochgeladen','success',3000);}
-    else if(woanders>0)toast('📱 '+woanders+' Foto'+(woanders!==1?'s':'')+' liegen auf einem anderen Gerät – dort PAM öffnen, dann laden sie automatisch hoch','info',6000);
+    if(b.ok||b.geheilt)scheduleSave();
+    const teile=[];
+    if(b.ok)teile.push('✓ '+b.ok+' hochgeladen');
+    if(b.geheilt)teile.push('🛟 '+b.geheilt+' in Drive wiedergefunden');
+    if(b.fehler)teile.push('⚠ '+b.fehler+' fehlgeschlagen');
+    if(teile.length)toast(teile.join(' · '),b.fehler?'info':'success',4000);
+    if(b.woanders)toast('📱 '+b.woanders+' Foto'+(b.woanders!==1?'s':'')+' weder hier noch in Drive gefunden – auf dem Aufnahme-Gerät PAM öffnen, oder den Eintrag über die Leuchte entfernen','info',7000);
+    if(b.ohneOrdner)toast('❗ '+b.ohneOrdner+' Foto'+(b.ohneOrdner!==1?'s':'')+' ohne Ziel-Ordner (Drive-Ordner im Task oder Standard-Fotoordner fehlt)','error',6000);
   }finally{_mobRetryUploadsBusy=false;_fotoPendUpdate();}
+  return b;
+}
+// v148: Datei in Drive wiederfinden und den Eintrag daran hängen. Rettet die Sackgasse
+// „beide Geräte sagen: liegt auf dem anderen" – die entsteht, wenn der Upload erfolgreich
+// war (lokale Kopie danach gelöscht), der Task-Stand mit der Kennung aber verloren ging.
+// Bewusst vorsichtig: nur bei eindeutigem Treffer (gleiche Dateigröße ODER genau 1 Fund).
+async function _fotoDriveWiederfinden(fo,folderId){
+  if(!fo||fo.driveId||!folderId)return false;
+  const roh=String(fo.name||'').trim();
+  if(!roh)return false;
+  const such=roh.replace(/[^\w.\-]+/g,'_').replace(/['\\]/g,'');
+  if(such.length<5)return false; // zu unspezifisch → lieber nicht raten
+  const q="'"+folderId+"' in parents and trashed=false and name contains '"+such+"'";
+  const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)
+    +'&fields=files(id,name,size,thumbnailLink,webViewLink,webContentLink)&pageSize=20',
+    {headers:{Authorization:'Bearer '+gdriveToken}});
+  if(!r.ok)return false;
+  const files=((await r.json()).files)||[];
+  if(!files.length)return false;
+  let m=null;
+  if(fo.size)m=files.find(f=>Number(f.size||0)===Number(fo.size)); // Größe = stärkster Beleg
+  if(!m&&files.length===1)m=files[0];
+  if(!m)return false; // mehrdeutig → nichts tun, lieber melden
+  fo.driveId=m.id;
+  fo.name=m.name||fo.name;
+  fo.thumbnail=m.thumbnailLink||('https://drive.google.com/thumbnail?id='+m.id+'&sz=w400');
+  fo.url=m.webViewLink||('https://drive.google.com/file/d/'+m.id+'/view');
+  fo.download=m.webContentLink||'';
+  fo._uploading=false;delete fo._uploadError;
+  if(fo.localKey)_mobPhotoSetMeta(fo.localKey,{done:1});
+  return true;
 }
 
 // v143: Waisen-Wiederherstellung – Fotos, die im Geräte-Speicher (IndexedDB) liegen,
@@ -3371,7 +3430,7 @@ async function _mobRetryPendingUploads(){
 // gespeichert war). Kriterien: taskId bekannt, nicht als erledigt/verworfen markiert,
 // jünger als 7 Tage, Task existiert noch. Alt-Einträge ohne taskId werden nie angefasst.
 async function _fotoOrphanReattach(){
-  if(!Object.keys(boards||{}).length)return;
+  if(!_alleTaskListen().length)return; // v148: auch ausgeblendete/gefilterte Listen zählen
   const metas=await _mobPhotoListMeta();
   const cand=metas.filter(m=>m.key&&m.taskId&&!m.done&&(Date.now()-(m.ts||0))<7*24*3600*1000);
   if(!cand.length)return;
@@ -3379,13 +3438,11 @@ async function _fotoOrphanReattach(){
   const collect=tasks=>{for(const task of tasks||[]){if(!task)continue;
     for(const f of task.fotos||[])if(f&&f.localKey)ref.add(f.localKey);
     for(const pb of task.pruefberichte||[])for(const f of pb.fotos||[])if(f&&f.localKey)ref.add(f.localKey);}};
-  for(const[,v]of Object.entries(boards||{}))if(Array.isArray(v))collect(v);
-  for(const[,v]of Object.entries(hiddenBoards||{}))if(Array.isArray(v))collect(v);
-  for(const[,v]of Object.entries(_mobileFilteredOut||{}))if(Array.isArray(v))collect(v);
+  for(const arr of _alleTaskListen())collect(arr);
   let re=0;
   for(const m of cand){
     if(ref.has(m.key))continue;
-    const t=findTaskById(m.taskId);
+    const t=_fotoTaskById(m.taskId); // v148: auch ausgeblendete/gefilterte Tasks
     if(!t)continue;
     if(!t.fotos)t.fotos=[];
     t.fotos.push({id:m.key,localKey:m.key,name:m.name||'foto.jpg',mimeType:'image/jpeg',size:0,
@@ -8841,16 +8898,27 @@ document.addEventListener('visibilitychange',()=>{
 // ══════════════════════════════════════════════
 let _fotoUploadInFlight=0; // uploadFoto läuft → pollForChanges darf die Boards nicht ersetzen
 let _fotoPendLastCount=0;
+// v148: EINE gemeinsame Quelle für Warnleuchte UND Nachladen. Vorher zählte die Leuchte
+// über ALLE Boards (auch ausgeblendete + vom Spaltenfilter versteckte), das Nachladen sah
+// aber nur die sichtbaren → „Jetzt erneut hochladen" tat scheinbar nichts (Befund Frank).
+function _alleTaskListen(){
+  const out=[];
+  const add=obj=>{for(const[,v]of Object.entries(obj||{}))if(Array.isArray(v))out.push(v);};
+  try{add(boards);add(hiddenBoards);add(_mobileFilteredOut);}catch(e){}
+  return out;
+}
+// Task auch in ausgeblendeten/gefilterten Listen finden (findTaskById kennt nur `boards`)
+function _fotoTaskById(id){
+  for(const arr of _alleTaskListen()){const f=arr.find(t=>t&&t.id===id);if(f)return f;}
+  return null;
+}
+function _fpKey(f){return (f&&(f.localKey||f.driveId||f.id))||'';}
 function _fotoPendList(){
   const out=[];
   const scan=tasks=>{for(const task of tasks||[]){if(!task)continue;
     for(const f of task.fotos||[])if(f&&f.localKey&&!f.driveId)out.push({task,fo:f});
     for(const pb of task.pruefberichte||[])for(const f of pb.fotos||[])if(f&&f.localKey&&!f.driveId)out.push({task,fo:f});}};
-  try{
-    for(const[,v]of Object.entries(boards||{}))if(Array.isArray(v))scan(v);
-    for(const[,v]of Object.entries(hiddenBoards||{}))if(Array.isArray(v))scan(v);
-    for(const[,v]of Object.entries(_mobileFilteredOut||{}))if(Array.isArray(v))scan(v);
-  }catch(e){}
+  try{for(const arr of _alleTaskListen())scan(arr);}catch(e){}
   return out;
 }
 function _fotoPendEnsureEls(){
@@ -8876,6 +8944,7 @@ function _fotoPendEnsureEls(){
 // (dort PAM öffnen). _fotoPendLocalKeys = Schlüssel, deren Bild-Daten hier vorhanden sind.
 let _fotoPendLocalKeys=null; // null = noch nicht ermittelt → im Zweifel als „hier" behandeln
 let _fotoPendKeysBusy=false;
+let _fotoPendSig=''; // v148: Inhalts-Kennung des offenen Panels (verhindert Neuaufbau unter dem Finger)
 function _fotoPendRefreshKeys(){
   if(_fotoPendKeysBusy)return;
   _fotoPendKeysBusy=true;
@@ -8922,7 +8991,9 @@ function _fotoPendUpdate(){
         if(nw>0)txt+=' (+'+nw+' anderes Gerät)';
       }
       b.style.background=bg;b.style.display='flex';b.textContent=txt;
-      if(p.style.display!=='none')_fotoPendPanelRender();
+      // v148: nur neu aufbauen, wenn sich der Inhalt geändert hat – sonst verschluckt die
+      // 15-s-Auffrischung Fingertipps auf „Schließen"/„Jetzt erneut hochladen".
+      if(p.style.display!=='none'&&_fotoPendSigVon(list)!==_fotoPendSig)_fotoPendPanelRender();
     }
     _fotoPendLastCount=n;
   }catch(e){}
@@ -8935,28 +9006,43 @@ function _fotoPendPanelToggle(){
 function _fotoPendPanelRender(){
   const {p}=_fotoPendEnsureEls();
   const list=_fotoPendList();
-  if(!list.length){p.style.display='none';return;}
+  if(!list.length){p.style.display='none';_fotoPendSig='';return;}
   const off=navigator.onLine===false;
   let h='<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:8px;">📤 Offene Foto-Sicherungen ('+list.length+')</div>';
   h+=list.slice(0,20).map(x=>{
     const zeit=x.fo.uploadedAt?_fmtTs(x.fo.uploadedAt):'';
+    const key=_fpKey(x.fo);
+    const fremd=!_fotoIstHier(x.fo);
     // v144: „liegt auf anderem Gerät" hat Vorrang – dieses Gerät kann das Foto nicht hochladen
     let st;
-    if(!_fotoIstHier(x.fo))st='<span style="color:#90a4ae;">📱 auf anderem Gerät – dort PAM öffnen</span>';
+    if(fremd)st='<span style="color:#90a4ae;">📱 nicht auf diesem Gerät</span>';
     else if(x.fo._uploadError)st='<span style="color:#e57373;">Fehler – wird erneut versucht</span>';
     else st=off?'<span style="color:var(--text2);">wartet auf Empfang</span>':'<span style="color:var(--text2);">wartet</span>';
-    return '<div onclick="_fotoPendOpenTask(\''+escAttr(x.task.id||'')+'\')" style="padding:6px 0;border-bottom:0.5px solid var(--border);cursor:pointer;">'
-      +'<div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(x.task.title||'Task')+'</div>'
-      +'<div style="font-size:12px;color:var(--text2);display:flex;gap:8px;">'+(zeit?'<span>'+zeit+'</span>':'')+st+'</div>'
+    return '<div style="padding:6px 0;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px;">'
+      +'<div onclick="_fotoPendOpenTask(\''+escAttr(x.task.id||'')+'\')" style="flex:1;min-width:0;cursor:pointer;">'
+        +'<div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(x.task.title||'Task')+'</div>'
+        +'<div style="font-size:12px;color:var(--text2);display:flex;gap:8px;">'+(zeit?'<span>'+zeit+'</span>':'')+st+'</div>'
+      +'</div>'
+      // v148: Ausweg – Eintrag entfernen, wenn das Bild hier nicht liegt (Sackgassen-Fall)
+      +(fremd?'<button onclick="_fotoPendEntfernen(\''+escAttr(x.task.id||'')+'\',\''+escAttr(key)+'\',event)" title="Eintrag entfernen" style="flex-shrink:0;min-height:38px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">✕</button>':'')
       +'</div>';
   }).join('');
   if(list.length>20)h+='<div style="font-size:12px;color:var(--text2);padding:6px 0;">… und '+(list.length-20)+' weitere</div>';
   h+='<div style="display:flex;gap:8px;margin-top:10px;">'
-    +'<button onclick="_fotoPendRetryNow()" style="flex:1;min-height:46px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">📤 Jetzt erneut hochladen</button>'
+    +'<button id="fotoPendRetryBtn" onclick="_fotoPendRetryNow()" style="flex:1;min-height:46px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;">📤 Jetzt erneut hochladen</button>'
     +'<button onclick="_fotoPendPanelToggle()" style="min-height:46px;padding:0 16px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;cursor:pointer;">Schließen</button>'
     +'</div>'
-    +'<div style="font-size:11px;color:var(--text2);margin-top:8px;">Eintrag antippen öffnet den Task. Fotos bleiben auf dem Aufnahme-Gerät gesichert und laden automatisch hoch, sobald dort Empfang und Anmeldung da sind.</div>';
+    +'<div style="font-size:11px;color:var(--text2);margin-top:8px;">Eintrag antippen öffnet den Task. „Jetzt erneut hochladen" sucht auch in Drive nach der Datei. ✕ entfernt einen Eintrag, dessen Bild nirgends mehr auffindbar ist (Drive-Datei bleibt).</div>';
   p.innerHTML=h;
+  _fotoPendSig=_fotoPendSigVon(list);
+}
+// v148: Kennung des angezeigten Inhalts – das Panel wird nur noch neu aufgebaut, wenn
+// sich wirklich etwas ändert. Vorher ersetzte die 15-s-Auffrischung die Knöpfe mitten im
+// Antippen → der Tipp landete im Leeren („Schließen/Hochladen tut nichts", Befund Frank).
+function _fotoPendSigVon(list){
+  return (navigator.onLine===false?'off|':'on|')+(_mobRetryUploadsBusy?'b|':'')+list.map(x=>
+    (x.task.id||'')+':'+_fpKey(x.fo)+':'+(_fotoIstHier(x.fo)?'h':'w')+(x.fo._uploadError?'e':'')
+  ).join(',');
 }
 // v144: Panel-Eintrag antippen → Task öffnen (z.B. um ein hängendes Foto anzusehen/zu entfernen)
 function _fotoPendOpenTask(id){
@@ -8967,8 +9053,37 @@ function _fotoPendOpenTask(id){
 }
 async function _fotoPendRetryNow(){
   if(navigator.onLine===false){toast('📴 Kein Empfang – Upload startet automatisch, sobald Netz da ist','info',4000);return;}
-  if(!(await ensureToken())){toast('Nicht angemeldet – bitte einmal anmelden, dann lädt alles automatisch hoch','error',5000);return;}
-  await _mobRetryPendingUploads();
+  const btn=document.getElementById('fotoPendRetryBtn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Prüfe…';}
+  try{
+    if(!(await ensureToken())){toast('Nicht angemeldet – bitte einmal anmelden, dann lädt alles automatisch hoch','error',5000);return;}
+    // v148: `laut` → gibt IMMER Rückmeldung, auch wenn es nichts zu tun gibt (vorher stumm)
+    await _mobRetryPendingUploads({laut:true});
+  }catch(e){
+    console.warn('[FotoPend] Retry:',e);
+    toast('⚠ Nachladen fehlgeschlagen: '+(e&&e.message||e),'error',5000);
+  }finally{
+    const b2=document.getElementById('fotoPendRetryBtn');
+    if(b2){b2.disabled=false;b2.textContent='📤 Jetzt erneut hochladen';}
+    _fotoPendSig=''; // Panel darf sich jetzt neu aufbauen (Zustand hat sich geändert)
+    _fotoPendUpdate();
+  }
+}
+// v148: Ausweg aus der Sackgasse – Eintrag entfernen, wenn das Bild nirgends mehr existiert.
+// Entfernt NUR den Verweis im Task; eine bereits hochgeladene Drive-Datei bleibt bestehen.
+async function _fotoPendEntfernen(taskId,key,ev){
+  if(ev&&ev.stopPropagation)ev.stopPropagation();
+  const t=_fotoTaskById(taskId);
+  if(!t){toast('Task nicht gefunden','error');return;}
+  if(!confirm('Diesen Foto-Eintrag entfernen?\n\nDas Bild ist auf diesem Gerät nicht vorhanden und wurde auch in Drive nicht gefunden. Eine trotzdem vorhandene Drive-Datei bleibt erhalten – hier verschwindet nur der Verweis im Task.'))return;
+  let weg=false;
+  const raus=arr=>{if(!Array.isArray(arr))return arr;const n=arr.length;const r=arr.filter(f=>!(f&&_fpKey(f)===key));if(r.length<n)weg=true;return r;};
+  t.fotos=raus(t.fotos);
+  for(const pb of t.pruefberichte||[])pb.fotos=raus(pb.fotos);
+  if(key)_mobPhotoSetMeta(key,{done:1}); // Waisen-Rettung fasst den Schlüssel nicht mehr an
+  if(weg){forceSave();toast('✓ Eintrag entfernt','success',2500);}
+  if(currentTaskId===taskId){const ct=findTaskById(taskId);if(ct)try{renderDetail(ct);}catch(e){}}
+  _fotoPendSig='';
   _fotoPendUpdate();
 }
 setInterval(_fotoPendUpdate,15000); // Sicherheitsnetz: fängt alle Pfade, die keinen direkten Update-Aufruf haben
