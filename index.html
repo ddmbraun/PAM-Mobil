@@ -498,6 +498,9 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
     <button class="detail-tab-btn" id="tabBauBtn" onclick="switchDetailTab('bau')">🏗 Baudoku</button>
     <button class="detail-tab-btn schnell-tab" id="tabSchnellBtn" onclick="switchDetailTab('schnell')">⚡ Schnell</button>
   </div>
+  <!-- v150: feste Erstellt-Zeile – auf jedem Reiter sichtbar, gefüllt in renderDetail().
+       Bleibt leer/unsichtbar, wenn der Task kein Erstell-Datum hat (alte Desktop-Tasks). -->
+  <div id="detailCreatedLine" style="display:none;padding:4px 14px 5px;font-size:11.5px;color:var(--text2);border-bottom:0.5px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
   <!-- v124 Paket 3: ✏️-Skizze-REITER entfällt – Skizzen-Knopf sitzt jetzt in Schnell + Tagebuch,
        gespeicherte Skizzen erscheinen als Foto im Tagebuch-Tagesblock (landen eh in t.fotos). -->
   <div class="detail-body" id="detailBody"></div>
@@ -1089,6 +1092,24 @@ function toggleMSect(el){
   if(key){_mOpenSections[key]=el.classList.contains('open');}
 }
 function generateId(){return 't_'+Date.now()+'_'+Math.random().toString(36).substr(2,6);}
+// v150: Erstell-Zeitpunkt eines Tasks ermitteln. Quelle 1: echtes Feld createdAt (ab v150
+// bei jedem hier neu angelegten Task). Quelle 2 (ältere Schnellnotizen): die 📅-Zeile, die
+// _submitQuickAdd seit jeher an den Anfang der Beschreibung schreibt. Gibt es beides nicht
+// (z.B. alte Desktop-Tasks), wird bewusst NICHTS angezeigt – geraten wird nicht.
+function _taskErstelltAm(t){
+  if(!t)return null;
+  if(t.createdAt){const d=new Date(t.createdAt);if(!isNaN(d.getTime()))return d;}
+  const m=/📅\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\D{0,3}(\d{1,2}):(\d{2})/.exec(t.desc||'');
+  if(m){const d=new Date(+m[3],+m[2]-1,+m[1],+m[4],+m[5]);if(!isNaN(d.getTime()))return d;}
+  return null;
+}
+function _taskErstelltText(t,kurz){
+  const d=_taskErstelltAm(t);
+  if(!d)return'';
+  const p=n=>String(n).padStart(2,'0');
+  if(kurz)return p(d.getDate())+'.'+p(d.getMonth()+1)+'.';
+  return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear()+' · '+p(d.getHours())+':'+p(d.getMinutes());
+}
 function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{try{t.remove();}catch(e){console.warn('[PTP-Mobile]',e);}},2500);}
 function parseMinutes(von,bis){try{if(!von||!bis)return 0;const[vh,vm]=von.split(':').map(Number);const[bh,bm]=bis.split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(e){return 0;}}
 
@@ -2166,7 +2187,7 @@ async function saveFile(){
                     const rt=remoteVisible[bn][idx];
                     // Scalars: localTask gewinnt – ABER nicht wenn localTask leer ist und Remote etwas hat
                     const mergedTask={...rt,...localTask};
-                    const scalarFields=['ausführungsdatum','due','title','desc','adresse','hausverwaltung','schadensbild','owner','status','ampel','source','gdrive','nas','tags','aktivitaet','ausfuehrungstermin']; // Fix: tags, aktivitaet, ausfuehrungstermin ergänzt
+                    const scalarFields=['ausführungsdatum','due','title','desc','adresse','hausverwaltung','schadensbild','owner','status','ampel','source','gdrive','nas','tags','aktivitaet','ausfuehrungstermin','createdAt']; // Fix: tags, aktivitaet, ausfuehrungstermin ergänzt · v150: createdAt
                     for(const f of scalarFields){
                       const lv=localTask[f];const rv=rt[f];
                       if((lv===''||lv===null||lv===undefined)&&rv){mergedTask[f]=rv;}
@@ -3936,8 +3957,12 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
   else if(naechste)info=esc(naechste.typ||'Termin')+' '+_df(naechste.datum);
   else if(t.due)info=(ov?'überfällig ':'bis ')+_df(t.due);
   const herkunft=boardHerkunft?'<span style="opacity:.75">'+esc(boardHerkunft)+'</span>':'';
-  const infoZeile=(info||herkunft)
-    ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+info+(info&&herkunft?' · ':'')+herkunft+'</div>'
+  // v150: Erstell-Datum klein am Ende der Zusatzzeile (falls bekannt)
+  const _erst=_taskErstelltText(t,true);
+  const erstelltHtml=_erst?'<span style="opacity:.75">📅 '+_erst+'</span>':'';
+  const _teile=[info,herkunft,erstelltHtml].filter(Boolean).join(' · ');
+  const infoZeile=_teile
+    ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+_teile+'</div>'
     :'';
   return '<div class="kz'+(warn?' kz-rot':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
     +'<div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
@@ -4052,6 +4077,7 @@ function renderList(resetScroll){
         ?'<span style="font-size:13px;line-height:1;">✅</span>'
         :'<span style="display:inline-flex;align-items:center;flex-shrink:0;">'+_SVG_CRANE+'</span>')
       +'<span style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(_sucheBoardVon.get(t.id)||currentBoard)+'</span>'
+      +(_taskErstelltText(t,true)?'<span style="margin-left:auto;font-size:10.5px;color:var(--text2);flex-shrink:0;">📅 '+_taskErstelltText(t,true)+'</span>':'') // v150: Erstell-Datum klein in der Kartenecke
       +'</div>'
       +'<div class="task-card-title" style="color:var(--text)">'+esc(t.title||'(ohne Titel)')+'</div>'
       +'<div class="task-card-meta">'
@@ -5357,6 +5383,16 @@ function renderDetail(t){
     if(!chip)return;
     if(kst){chip.textContent='KST '+kst;chip.style.display='block';}
     else{chip.textContent='';chip.style.display='none';}
+  })();
+  // v150: feste Erstellt-Zeile unter der Reiter-Leiste (Wunsch Frank 02.08.) –
+  // mit Adresse dahinter, falls eine erfasst wurde (📍 oder Foto-GPS)
+  (function(){
+    const el=document.getElementById('detailCreatedLine');
+    if(!el)return;
+    const txt=_taskErstelltText(t,false);
+    if(!txt){el.style.display='none';el.textContent='';return;}
+    el.textContent='📅 Erstellt: '+txt+((t.adresse||'').trim()?' · 📍 '+t.adresse.trim():'');
+    el.style.display='block';
   })();
   _resetOpenSectionsForTask(t.id);
   const body=document.getElementById('detailBody');
@@ -7272,7 +7308,8 @@ function _ensureFotoEingangTask(){
   t={id,title:titel,desc:'Lose Blitz-Fotos – im Ziel-Task „📥 Foto-Eingang" antippen, um sie zuzuordnen.',
     owner:'',due:'',status:arr[0]||'',ampel:'grün',ausführungsdatum:'',tags:[],source:'',
     hausverwaltung:'',adresse:'',schadensbild:'',kontakte:[],gdrive:'',gdriveOrdner:'',nas:'',
-    links:[],attachments:[],timeEntries:[],ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]};
+    links:[],attachments:[],timeEntries:[],ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[],
+    createdAt:d.toISOString()}; // v150: echtes Erstell-Datum
   boards[savedBoard].push(t);
   _qaInFlightIds.add(id);setTimeout(()=>{try{_qaInFlightIds.delete(id);}catch(_e){}},120000);
   forceSave();
@@ -8609,7 +8646,8 @@ async function _submitQuickAdd(){
     id:generateId(),title:title,desc:desc,owner:'',due:'',status:boardStatArr[0]||'',ampel:'grün',
     ausführungsdatum:'',tags:[],source:'',hausverwaltung:'',adresse:'',schadensbild:'',
     kontakte:[],gdrive:'',gdriveOrdner:'',nas:'',links:[],attachments:[],timeEntries:[],
-    ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[]
+    ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[],
+    createdAt:now.toISOString() // v150: echtes Erstell-Datum (Anzeige oben im Task + auf der Karte)
   };
   boards[savedBoard].push(newT);
   // v62/v65: Standort (📍) + bearbeitbares Adressfeld übernehmen
