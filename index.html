@@ -8319,7 +8319,43 @@ async function _quickNoteFolderUsable(id){
     return !!d.id && !d.trashed && (!d.capabilities || d.capabilities.canAddChildren!==false);
   }catch(e){return false;}
 }
+// v149: Desktop-Einstellungen (pam_settings.json in Drive) mitlesen. Im ⚙-Menü des
+// Desktops (ab b566) gibt es das Feld „Schnellnotizen (Handy)" – ist dort ein Ordner
+// eingetragen, gilt er auch hier. Leer oder nicht erreichbar = alles wie bisher
+// (Seed-ID + Namens-Fallback). Einmal pro App-Start gelesen.
+let _mobilSettingsCache=null;
+async function _mobilLeseDesktopSettings(){
+  if(_mobilSettingsCache!==null)return _mobilSettingsCache;
+  _mobilSettingsCache={};
+  try{
+    if(!gdriveToken)return _mobilSettingsCache;
+    const q=encodeURIComponent("name='pam_settings.json' and trashed=false");
+    const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+q+'&fields=files(id,modifiedTime)&orderBy=modifiedTime desc&pageSize=5',
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    if(!r.ok)return _mobilSettingsCache;
+    const d=await r.json();
+    if(!d.files||!d.files.length)return _mobilSettingsCache;
+    const r2=await fetch('https://www.googleapis.com/drive/v3/files/'+d.files[0].id+'?alt=media',
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    if(!r2.ok)return _mobilSettingsCache;
+    const j=await r2.json();
+    if(j&&typeof j==='object')_mobilSettingsCache=j;
+  }catch(e){console.warn('[Einstellungen] pam_settings.json (mobil):',e);}
+  return _mobilSettingsCache;
+}
 async function _ensureQuickNoteParent(){
+  // v149: Wunsch-Ordner aus den Desktop-Einstellungen hat Vorrang – aber nur, wenn er
+  // wirklich nutzbar ist. Bewusst NICHT in QUICK_PARENT_KEY gecacht: wird das Feld am
+  // Desktop wieder geleert, fällt die App von selbst auf den Standard zurück.
+  try{
+    const st=await _mobilLeseDesktopSettings();
+    const raw=(st.ordnerSchnellnotiz||'').trim();
+    const wunschId=raw?(extractDriveFolderId(raw)||(/^[A-Za-z0-9_-]{10,}$/.test(raw)?raw:'')):'';
+    if(wunschId && await _quickNoteFolderUsable(wunschId)){
+      console.info('[QuickNote] Schnellnotiz-Ordner aus Desktop-Einstellungen:',wunschId);
+      return wunschId;
+    }
+  }catch(e){console.warn('[QuickNote] Desktop-Einstellung:',e);}
   // 1) gecachte ID, dann feste Seed-ID validieren
   let cached='';
   try{cached=localStorage.getItem(QUICK_PARENT_KEY)||'';}catch(e){}
