@@ -7568,6 +7568,63 @@ function _feFindeSammler(id){
 // vorher liefen bei 40 Fotos 40 Drive-Abrufe gleichzeitig los.
 const _thumbLinkCache=new Map(); // driveId → thumbnailLink (https) | '' = gibt es nicht
 const _thumbLinkInflight=new Map(); // v154: laufende Abrufe bündeln – wie _fotoBlobInflight
+// ── v155: Vorschau-Bilder im GERÄT ablegen (Befund Frank: „nach dem Neustarten der App
+//    laden die Vorschauen immer wieder") ──────────────────────────────────────────────
+// v154 merkte sich nur die thumbnailLink-ADRESSE am Foto-Objekt – und selbst die wurde
+// nie gespeichert, weil auf _thumbMerken kein Speichern folgte. Nach jedem App-Start also:
+// Metadaten holen + Bild holen, für jede Kachel neu. Jetzt landen die Vorschau-BYTES in
+// derselben IndexedDB, die schon die Fotos hält (Schlüssel 'thumb_<driveId>'). Ab dem
+// zweiten Öffnen kommt die Kachel ohne jedes Netz – auch offline.
+// done:1 und KEIN taskId: die Waisen-Rettung (_mobPhotoListMeta, filtert auf
+// `taskId && !done`) fasst diese Einträge damit nicht an.
+const _thumbBytesCache=new Map();   // driveId → dataUrl (Sitzung, spart den DB-Zugriff)
+const _thumbBytesInflight=new Map();
+function _thumbCacheKey(id){return 'thumb_'+id;}
+// Nicht mehr als 4 Vorschauen gleichzeitig aus dem Netz holen – beim Scrollen liefen
+// sonst dutzende Abrufe parallel und das Gerät wurde träge (Franks „bis es markiert ist
+// dauert sehr lange": die Fingertipps kamen an, das Gerät kam nur nicht dazu).
+let _thumbLaufend=0; const _thumbWarteschlange=[];
+function _thumbSchlitz(){
+  if(_thumbLaufend<4)return Promise.resolve(_thumbLaufend++);
+  return new Promise(res=>_thumbWarteschlange.push(()=>{_thumbLaufend++;res();}));
+}
+function _thumbSchlitzFrei(){
+  _thumbLaufend--;
+  const n=_thumbWarteschlange.shift();
+  if(n)n();
+}
+async function _thumbBytes(id){
+  if(!id)return '';
+  if(_thumbBytesCache.has(id))return _thumbBytesCache.get(id);
+  if(_thumbBytesInflight.has(id))return _thumbBytesInflight.get(id);
+  const p=(async()=>{
+    // 1) schon im Gerät?
+    try{
+      const du=await _mobPhotoGet(_thumbCacheKey(id));
+      if(du){_thumbBytesCache.set(id,du);return du;}
+    }catch(e){}
+    // 2) sonst einmal aus Drive holen und dauerhaft ablegen
+    await _thumbSchlitz();
+    try{
+      const link=await _driveThumbLink(id);
+      if(!link)return '';
+      let r=null;
+      try{r=await fetch(link);}catch(_e){}
+      if(!r||!r.ok){try{r=await fetch(link,{headers:{Authorization:'Bearer '+gdriveToken}});}catch(_e){}}
+      if(!r||!r.ok)return '';
+      const blob=await r.blob();
+      if(!blob||blob.size<1000)return ''; // winzige Platzhalter überspringen
+      const du=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result||'');fr.onerror=()=>res('');fr.readAsDataURL(blob);});
+      if(!du)return '';
+      _thumbBytesCache.set(id,du);
+      _mobPhotoSave(_thumbCacheKey(id),du,{done:1,art:'thumb'}).catch(()=>{});
+      return du;
+    }catch(e){console.warn('[Vorschau] Bytes:',e);return '';}
+    finally{_thumbSchlitzFrei();}
+  })().finally(()=>{_thumbBytesInflight.delete(id);});
+  _thumbBytesInflight.set(id,p);
+  return p;
+}
 function _driveThumbLink(id){
   if(!id)return Promise.resolve('');
   if(_thumbLinkCache.has(id))return Promise.resolve(_thumbLinkCache.get(id));
@@ -7615,11 +7672,16 @@ function _fotoVorschauLaden(f,img){
   const ausSpeicher=!!((f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))||(id&&_fotoBlobCache.get(id)));
   if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))quellen.push(()=>f.localUrl);
   if(id&&_fotoBlobCache.get(id))quellen.push(()=>_fotoBlobCache.get(id));
+  // v155: Reihenfolge geändert – erst alles vom GERÄT, dann das dauerhaft abgelegte
+  // Vorschaubild, erst danach gemerkte Adressen und ganz zuletzt der Vollbild-Weg.
+  // Wichtig: _thumbBytes MUSS vor _thumbGespeichert stehen. Sonst bedient eine noch
+  // gültige gemerkte Adresse jede Kachel aus dem Netz, der Geräte-Cache wird nie
+  // gefüllt – und nach dem nächsten App-Start geht alles wieder von vorne los
+  // (genau der Befund „laden nach dem Neustarten immer wieder").
+  if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey));
+  if(id)quellen.push(()=>_thumbBytes(id)); // Gerät → einmalig Drive → bleibt liegen
   const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
   if(_ts)quellen.push(()=>_ts);
-  if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey));
-  // v154: kleines Drive-Thumbnail (~20-50 KB) statt Vollbild – und die Adresse merken
-  if(id)quellen.push(()=>_driveThumbLink(id).then(l=>{if(l)_thumbMerken(f,l);return l;}));
   // letzte Not: der alte Weg inkl. Vollbild-Rückfall (selten, z.B. Datei ohne Thumbnail)
   if(id)quellen.push(()=>_mobFetchThumb(id).then(u=>{if(u)_thumbMerken(f,u);return u;}));
   let n=0;
@@ -7885,8 +7947,12 @@ async function _shrPdfTeilen(){
   try{
     const {jsPDF}=window.jspdf;
     const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    const W=210,H=297,M=12;let first=true,ok=0;
+    const W=210,H=297,M=12;let first=true,ok=0,nr=0;
     for(const f of list){
+      // v155: Fortschritt sichtbar machen – vorher stand nur EIN Hinweis am Anfang und
+      // das Fenster wirkte minutenlang tot (Befund Frank „dauert sehr lange")
+      nr++;setSaveInd('saving','PDF: Foto '+nr+'/'+list.length+'…');
+      await new Promise(r=>setTimeout(r,0)); // Anzeige durchlassen, Gerät bleibt bedienbar
       const blob=await _shrBytes(f);if(!blob)continue;
       const d=await _shrNeuKodieren(blob,1600);if(!d)continue;
       if(!first)doc.addPage();first=false;
@@ -7902,11 +7968,15 @@ async function _shrPdfTeilen(){
       }
       ok++;
     }
+    setSaveInd('saved','');
     if(!ok){toast('Keine Bilddaten auf diesem Gerät verfügbar (Foto evtl. nur auf dem anderen Gerät)','error',5000);return;}
     const name=mitText
       ?(((t.title||'Fotos').replace(/[^\w\s.\-äöüÄÖÜß]+/g,'').trim().slice(0,60)||'Fotos')+'.pdf')
       :'fotos.pdf'; // neutral: auch der Dateiname verrät nichts
-    await _shrShare([new File([doc.output('blob')],name,{type:'application/pdf'})],name);
+    // v155: Versand vermerken – bei „nachfrage" (iOS-Zweite-Geste) erst nach dem Tipp
+    const _vermerk=()=>_shrVermerken('als PDF',ok);
+    const _erg=await _shrShare([new File([doc.output('blob')],name,{type:'application/pdf'})],name,_vermerk);
+    if(_erg==='geteilt'||_erg==='geladen')_vermerk();
     _shrClose();
   }catch(e){console.error('[Teilen] PDF:',e);toast('PDF fehlgeschlagen: '+(e.message||e),'error',5000);}
 }
@@ -7914,27 +7984,38 @@ async function _shrFotosTeilen(){
   const list=_shrGewaehlte();
   if(!list.length){toast('Bitte zuerst Fotos antippen','info');return;}
   toast('🖼 Fotos werden bereinigt…','info',3000);
-  const files=[];let i=0;
+  const files=[];let i=0,nr=0;
   for(const f of list){
+    // v155: Fortschritt sichtbar machen. Das Bereinigen dekodiert und kodiert JEDES Foto
+    // in voller Auflösung neu (nur so sind GPS/Datum/Kamera wirklich raus) – das dauert
+    // auf dem Handy je nach Bild ein bis mehrere Sekunden. Vorher sah man davon nichts.
+    nr++;setSaveInd('saving','Bereinigen: Foto '+nr+'/'+list.length+'…');
+    await new Promise(r=>setTimeout(r,0)); // Anzeige durchlassen, Gerät bleibt bedienbar
     const blob=await _shrBytes(f);if(!blob)continue;
     const d=await _shrNeuKodieren(blob,0);if(!d)continue;
     i++;files.push(new File([d.blob],'foto-'+i+'.jpg',{type:'image/jpeg'}));
   }
+  setSaveInd('saved','');
   if(!files.length){toast('Keine Bilddaten auf diesem Gerät verfügbar (Foto evtl. nur auf dem anderen Gerät)','error',5000);return;}
-  await _shrShare(files,'Fotos');
+  // v155: Versand vermerken – bei „nachfrage" (iOS-Zweite-Geste) erst nach dem Tipp
+  const _vermerk=()=>_shrVermerken('bereinigt',files.length);
+  const _erg=await _shrShare(files,'Fotos',_vermerk);
+  if(_erg==='geteilt'||_erg==='geladen')_vermerk();
   _shrClose();
 }
-async function _shrShare(files,titel){
+// v155: liefert jetzt zurück, WAS passiert ist – damit der Versand vermerkt werden kann.
+// 'geteilt' | 'geladen' | 'abgebrochen' | 'nachfrage' (iOS-Zweite-Geste, vermerkt sich selbst)
+async function _shrShare(files,titel,onErfolg){
   try{
     if(navigator.share&&navigator.canShare&&navigator.canShare({files})){
       await navigator.share({files,title:titel});
-      return;
+      return 'geteilt';
     }
   }catch(e){
-    if(e&&e.name==='AbortError')return; // Nutzer hat das Teilen-Fenster geschlossen
+    if(e&&e.name==='AbortError')return 'abgebrochen'; // Nutzer hat das Teilen-Fenster geschlossen
     // iOS verlangt eine FRISCHE Nutzer-Geste – nach der Bild-Aufbereitung kann die
     // abgelaufen sein → großer „Jetzt teilen"-Knopf holt sie sich neu.
-    if(e&&(e.name==='NotAllowedError'||e.name==='InvalidStateError')){_shrShareRetry(files,titel);return;}
+    if(e&&(e.name==='NotAllowedError'||e.name==='InvalidStateError')){_shrShareRetry(files,titel,onErfolg);return 'nachfrage';}
     console.warn('[Teilen] share:',e);
   }
   // Kein System-Teilen (z.B. Desktop-Browser) → Dateien herunterladen
@@ -7944,8 +8025,57 @@ async function _shrShare(files,titel){
     document.body.appendChild(a);a.click();a.remove();
   }
   toast('⬇ System-Teilen nicht verfügbar – Datei'+(files.length!==1?'en':'')+' heruntergeladen','info',4000);
+  return 'geladen';
 }
-function _shrShareRetry(files,titel){
+// ══════════════════════════════════════════════
+//  v155: VERSAND-VERMERK (Frage Frank: „wo wird vermerkt, dass ich die Bilder
+//  verschickt habe und an wen")
+//  Wichtig und ohne Beschönigung: WELCHE App bzw. WELCHER Empfänger im System-
+//  Teilen-Fenster gewählt wurde, gibt das Betriebssystem der App NICHT preis – die
+//  Web-Share-Schnittstelle liefert nach dem Teilen bewusst nichts zurück. Automatisch
+//  festhalten lässt sich also nur: WANN, WIE VIELE Fotos und in WELCHER Form.
+//  Der Empfänger wird direkt danach in einer kleinen Leiste nachgetragen (freiwillig,
+//  verschwindet von selbst). Der Vermerk landet im Notizprotokoll des Tasks – damit
+//  steht er auch am PC und im Bautagebuch.
+// ══════════════════════════════════════════════
+function _shrVermerken(art,anzahl){
+  const t=currentTask();if(!t)return;
+  const basis='📤 '+anzahl+' Foto'+(anzahl!==1?'s':'')+' '+art+' geteilt';
+  addNotiz(basis); // schreibt {ts,text} + forceSave + frischt die Verlaufs-Listen auf
+  const liste=t.notizVerlauf||[];
+  _shrEmpfaengerLeiste(t,liste[liste.length-1],basis);
+}
+function _shrEmpfaengerLeiste(t,eintrag,basis){
+  if(!eintrag)return;
+  let bar=document.getElementById('shrEmpfBar');if(bar)bar.remove();
+  bar=document.createElement('div');
+  bar.id='shrEmpfBar';
+  bar.style.cssText='position:fixed;left:10px;right:10px;bottom:16px;z-index:9800;background:var(--bg2);border:1px solid var(--accent);border-radius:12px;padding:10px;display:flex;gap:8px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.5);';
+  bar.innerHTML='<span style="font-size:12px;color:var(--text2);flex-shrink:0;">An wen?</span>'
+    +'<input id="shrEmpfInput" type="text" placeholder="Name eintragen (freiwillig)" autocomplete="off" style="flex:1;min-width:0;padding:9px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;">'
+    +'<button id="shrEmpfOk" style="flex-shrink:0;min-height:40px;padding:0 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">✓</button>'
+    +'<button id="shrEmpfZu" style="flex-shrink:0;min-height:40px;padding:0 10px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:15px;cursor:pointer;">✕</button>';
+  document.body.appendChild(bar);
+  const zu=()=>{const b=document.getElementById('shrEmpfBar');if(b)b.remove();};
+  const uebernehmen=()=>{
+    const el=document.getElementById('shrEmpfInput');
+    const v=(el&&el.value||'').trim();
+    if(v){
+      eintrag.text=basis+' → '+v;
+      forceSave();
+      try{if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}catch(e){}
+      toast('✓ Vermerkt: '+v,'success',2000);
+    }
+    zu();
+  };
+  document.getElementById('shrEmpfZu').onclick=zu;
+  document.getElementById('shrEmpfOk').onclick=uebernehmen;
+  const inp=document.getElementById('shrEmpfInput');
+  if(inp)inp.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault();uebernehmen();}};
+  // Kein Zwang: verschwindet von selbst, der Vermerk ohne Empfänger steht trotzdem.
+  setTimeout(()=>{const b=document.getElementById('shrEmpfBar');if(b&&b===bar)b.remove();},25000);
+}
+function _shrShareRetry(files,titel,onErfolg){
   let ov=document.getElementById('shrRetry');if(ov)ov.remove();
   ov=document.createElement('div');
   ov.id='shrRetry';
@@ -7957,7 +8087,9 @@ function _shrShareRetry(files,titel){
     +'</div>';
   document.body.appendChild(ov);
   document.getElementById('shrRetryBtn').onclick=()=>{
-    navigator.share({files,title:titel}).catch(e=>{if(e&&e.name!=='AbortError')toast('Teilen fehlgeschlagen','error');});
+    navigator.share({files,title:titel})
+      .then(()=>{if(typeof onErfolg==='function')onErfolg();}) // v155: auch dieser Weg wird vermerkt
+      .catch(e=>{if(e&&e.name!=='AbortError')toast('Teilen fehlgeschlagen','error');});
     ov.remove();
   };
 }
