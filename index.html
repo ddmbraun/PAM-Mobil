@@ -5646,9 +5646,9 @@ function renderDetail(t){
           +'</div>'
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte in Einstellungen einen Standard-Fotoordner hinterlegen.</div>')
     +'</div></div>'
-    // ── DATEIANHÄNGE (nur Baustelle) ──
-    +(!isNotiz?'<div class="sect'+oc('Anhaenge')+'" data-sect="Anhaenge"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📎 Dateianhänge'+(attachments.length?' ('+attachments.length+')':'')+'</span>'+(attachments.length?'<button onclick="event.stopPropagation();_openAttachThumbnailGridMob()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">🖼 Alle ansehen</button>':'')+'</div><div class="sect-body">'
-      +(attachments.length?'<div id="attachListMob">'+renderAttachmentsMob(attachments)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Dateianhänge.</div>')
+    // ── DOKUMENTE (nur Baustelle) – v152: wie Desktop-Sektion, gruppiert nach Drive-Unterordner ──
+    +(!isNotiz?'<div class="sect'+oc('Anhaenge')+'" data-sect="Anhaenge"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📂 Dokumente'+(attachments.length?' ('+attachments.length+')':'')+'</span>'+(attachments.length?'<button onclick="event.stopPropagation();_openAttachThumbnailGridMob()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">🖼 Alle ansehen</button>':'')+'</div><div class="sect-body">'
+      +(attachments.length?'<div id="attachListMob">'+renderAttachmentsMob(attachments)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Dokumente – am PC per 🔄 aus dem Dokumente-Ordner nachtragen.</div>')
     +'</div></div>':'')
     // ── PRÜFFORMULARE (nur Baustelle) ──
     +(!isNotiz?(()=>{
@@ -6852,9 +6852,38 @@ function attachIconMob(type){
   return'📄';
 }
 function formatBytesMob(n){if(!n)return'';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
+// ── v152: Dokumente nach Ordner gruppieren – wie die Desktop-Sektion (b556/b587) ──
+// Der Desktop-Abgleich (🔄) schreibt jede Drive-Datei mit ihrem Unterordner-Namen ins
+// Feld a.ordner (leer = Wurzel des Dokumente-Ordners). Diese Daten kommen über die
+// gemeinsame JSON aufs Handy – hier wird NUR gruppiert und angezeigt, nichts von
+// Drive gescannt, nichts geschrieben. Sortierung wie am PC: Wurzel „Dokumente"
+// zuerst, „Formulare" zuletzt, dazwischen alphabetisch. Nur eine Gruppe → flache
+// Liste ohne Ordner-Köpfe (wie bisher).
+function _attachNachOrdnerMob(list){
+  const m=new Map();
+  (list||[]).forEach((a,i)=>{
+    const k=((a&&a.ordner)||'').trim()||'Dokumente';
+    if(!m.has(k))m.set(k,[]);
+    m.get(k).push({a,i}); // i = Original-Index in t.attachments – öffnen/laden braucht ihn
+  });
+  const namen=[...m.keys()].sort((x,y)=>{
+    if(x==='Dokumente')return -1; if(y==='Dokumente')return 1;
+    if(x==='Formulare')return 1;  if(y==='Formulare')return -1;
+    return x.localeCompare(y,'de');
+  });
+  return namen.map(n=>({name:n,items:m.get(n),mehrere:namen.length>1}));
+}
+let _attachGrpZu={}; // zugeklappte Ordner-Gruppen, pro Sitzung: 'taskId|Ordnername' → true
+function _attachGrpToggle(el){
+  const key=el&&el.dataset?el.dataset.grpkey:'';
+  if(!key)return;
+  _attachGrpZu[key]=!_attachGrpZu[key];
+  const t=currentTask();const box=document.getElementById('attachListMob');
+  if(t&&box)box.innerHTML=renderAttachmentsMob(t.attachments||[]);
+}
 function renderAttachmentsMob(list){
   if(!list||!list.length)return '';
-  return list.map((a,i)=>{
+  const zeile=(a,i)=>{
     const isImg=a.type&&a.type.startsWith('image/');
     const fid=a.driveId||a.fileId||'';
     // Thumbnail: data-URL (desktop-Uploads) ODER Drive-Thumbnail-URL über fileId
@@ -6866,6 +6895,18 @@ function renderAttachmentsMob(list){
       +'<div class="attach-meta-mob"><div class="attach-name-mob">'+esc(a.name||'Datei')+'</div><div class="attach-size-mob">'+formatBytesMob(a.size)+'</div></div>'
       +'<button class="inline-btn" style="padding:6px 10px;font-size:12px" onclick="event.stopPropagation();downloadAttachMob('+i+')">↓</button>'
       +'</div>';
+  };
+  const grp=_attachNachOrdnerMob(list);
+  if(!grp.length)return '';
+  if(!grp[0].mehrere)return grp[0].items.map(x=>zeile(x.a,x.i)).join('');
+  const t=currentTask();const tid=t?t.id:'';
+  return grp.map(g=>{
+    const key=tid+'|'+g.name;
+    const zu=!!_attachGrpZu[key];
+    return '<div data-grpkey="'+escAttr(key)+'" onclick="_attachGrpToggle(this)" style="display:flex;align-items:center;gap:6px;padding:7px 4px 5px;font-size:12px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;">'
+      +'<span style="font-size:10px;transition:transform .15s;'+(zu?'':'transform:rotate(90deg);')+'">▶</span>'
+      +'📂 '+esc(g.name)+' <span style="font-weight:400;color:var(--text2);">('+g.items.length+')</span></div>'
+      +(zu?'':g.items.map(x=>zeile(x.a,x.i)).join(''));
   }).join('');
 }
 function openAttachMob(i){
