@@ -1937,7 +1937,37 @@ async function findOrPickFile(){
 // Splittet rohe Drive-Daten in statuses / sichtbare boards / hiddenBoards / Whitelist
 let _remoteBoardStatuses={}; // wird vom Desktop gesetzt, Mobil schreibt es unverändert zurück
 let boardTypes={}; // 'baustelle' | 'notiz' pro Board-Name
+// ── v151: Schutzriegel „ein leeres Feld überschreibt nie ein gefülltes" ──
+// Hintergrund: der Desktop kennt createdAt (v150) und skizzen nicht – sein
+// saveTaskData baut Tasks aus einer festen Feldliste komplett neu und wirft beide
+// Felder bei jedem Speichern weg. Ohne Riegel übernimmt der nächste Sync hier die
+// kastrierte Fassung und Erstelldatum/Skizzen wären auf allen Geräten weg.
+// Der Riegel stellt die Werte lokal wieder her; beim nächsten normalen Speichern
+// wandern sie automatisch nach Drive zurück. Kann entfallen, sobald der Desktop
+// (geplant b589) die Felder selbst stempelt und erhält.
+const _SCHUTZ_FELDER=['createdAt','skizzen'];
+function _schutzLeer(v){return v===undefined||v===null||v===''||(Array.isArray(v)&&!v.length);}
+function _schutzFelderUebernehmen(neuT,altT){
+  if(!neuT||!altT)return;
+  for(const f of _SCHUTZ_FELDER){
+    if(_schutzLeer(neuT[f])&&!_schutzLeer(altT[f]))neuT[f]=altT[f];
+  }
+}
+// Alle aktuell bekannten lokalen Tasks (sichtbar + versteckt + weggefiltert) als id→Task-Karte
+function _schutzAltMap(){
+  const m=new Map();
+  const sammel=obj=>{for(const v of Object.values(obj||{})){if(!Array.isArray(v))continue;for(const t of v){if(t&&t.id&&!m.has(t.id))m.set(t.id,t);}}};
+  sammel(boards);sammel(hiddenBoards);sammel(_mobileFilteredOut);
+  return m;
+}
 function _applyMobileFilter(data){
+  // v151: Schutzriegel – geschützte Felder des alten lokalen Stands merken,
+  // BEVOR die Remote-Daten die Boards ersetzen (greift bei Laden, Poll und Backup)
+  const _schutzAlt=_schutzAltMap();
+  if(_schutzAlt.size)for(const[k,v]of Object.entries(data)){
+    if(k.startsWith('_')||!Array.isArray(v))continue;
+    for(const t of v){if(t&&t.id)_schutzFelderUebernehmen(t,_schutzAlt.get(t.id));}
+  }
   statuses=Array.isArray(data._statuses)?data._statuses:[];
   mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
   mobileStatusFilter=(data._mobileStatusFilter&&typeof data._mobileStatusFilter==='object')?{...data._mobileStatusFilter}:{};
@@ -2176,6 +2206,11 @@ async function saveFile(){
               if(rHasWhitelist && !rWhite.includes(k))remoteHidden[k]=v;
               else remoteVisible[k]=v;
             }
+            // v151: Schutzriegel – Remote-Fassungen ohne createdAt/skizzen erben die lokalen
+            // Werte, bevor sie unten als Merge-Basis die lokalen Tasks ersetzen (s. _SCHUTZ_FELDER)
+            {const _schutzAlt=_schutzAltMap();
+             if(_schutzAlt.size)for(const _grp of[remoteVisible,remoteHidden])
+               for(const _v of Object.values(_grp))for(const _t of _v){if(_t&&_t.id)_schutzFelderUebernehmen(_t,_schutzAlt.get(_t.id));}}
             // Lokale Änderung der gerade offenen Task in die sichtbaren Remote-Boards mergen
             if(_savingTaskId){
               const localTask=findTaskById(_savingTaskId);
