@@ -4282,6 +4282,11 @@ function _fmtTs(iso){
 //  SCHNELL-TAB  –  Option A (Toggle Foto/Notiz)
 // ══════════════════════════════════════════════
 let _schnellMode='foto'; // 'foto' | 'notiz'
+// v153: Klappzustand des Foto-Archivs merken. Vorher stand display:none FEST im HTML und
+// renderSchnellTab baut den Tab bei jeder Gelegenheit neu (nach jedem Foto, nach jedem
+// fertigen Upload, nach jedem Sync, nach jeder Notiz) – das Archiv fiel dabei jedes Mal
+// wieder zu, die gerade aufgenommenen Fotos verschwanden vor Franks Augen.
+let _schnellArchivOffen=false;
 
 function renderSchnellTab(t){
   const body=document.getElementById('detailBodySchnell');
@@ -4324,18 +4329,24 @@ function renderSchnellTab(t){
         +'<span style="font-size:44px;">📷</span>'
         +'<span style="font-size:13px;color:var(--accent2);font-weight:600;">Antippen zum Fotografieren</span>'
         +'</div>'
-        +'<div style="display:flex;gap:8px;">'
-        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
-        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
+        // v153: flex-wrap + min-width – die Reihe hat jetzt bis zu sechs Knöpfe und
+        // bricht am Handy sauber um, statt sie auf Fingernagelbreite zu quetschen.
+        +'<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+        +'<button class="inline-btn" style="flex:1;min-width:96px;min-height:46px;" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Kamera</button>'
+        +'<button class="inline-btn" style="flex:1;min-width:96px;min-height:46px;" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼 Galerie</button>'
         // v145: lose Blitz-Fotos aus dem Tages-Sammler in DIESEN Task holen
-        +((!String(t.id||'').startsWith('fe_')&&_feAlleFotos().length)?'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="_feImportOeffnen()">📥 Eingang ('+_feAlleFotos().length+')</button>':'')
-        +'<button class="inline-btn" style="flex:1;min-height:46px;" onclick="_skizzeOpen()">✏️ Skizze</button>' // v124: ersetzt den weggefallenen Skizze-Reiter
-        +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-height:46px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
+        +((!String(t.id||'').startsWith('fe_')&&_feAlleFotos().length)?'<button class="inline-btn" style="flex:1;min-width:96px;min-height:46px;" onclick="_feImportOeffnen()">📥 Eingang ('+_feAlleFotos().length+')</button>':'')
+        +'<button class="inline-btn" style="flex:1;min-width:96px;min-height:46px;" onclick="_skizzeOpen()">✏️ Skizze</button>' // v124: ersetzt den weggefallenen Skizze-Reiter
+        // v153: Teilen gab es hier nicht – zum Verschicken musste man extra nach Task-Info wechseln.
+        +(fotos.length?'<button class="inline-btn" style="flex:1;min-width:96px;min-height:46px;" onclick="_shrOeffnen()">📤 Teilen</button>':'')
+        +(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" class="inline-btn" style="flex:1;min-width:96px;min-height:46px;text-decoration:none;display:flex;align-items:center;justify-content:center;">☁ Drive</a>':'')
         +'</div>'
-        // Archiv eingeklappt
+        // v153: Archiv merkt sich seinen Zustand (_schnellArchivOffen) und heißt jetzt
+        // „Aufgenommene Fotos" – „Archiv" klang nach Ablage, nicht nach Arbeitsvorrat.
         +(fotos.length
-          ?'<div id="schnellArchivToggle" onclick="_toggleSchnellArchiv()" style="margin-top:10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--accent2);padding:4px 0;">▸ Archiv ('+fotos.length+' Fotos)</div>'
-          +'<div id="schnellArchivList" style="display:none;"></div>'
+          ?'<div id="schnellArchivToggle" onclick="_toggleSchnellArchiv()" style="margin-top:10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--accent2);padding:4px 0;">'+(_schnellArchivOffen?'▾':'▸')+' Aufgenommene Fotos ('+fotos.length+')</div>'
+          +'<div id="schnellArchivList" style="display:'+(_schnellArchivOffen?'grid':'none')+';grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;"></div>'
+          +(_schnellArchivOffen?'<div style="font-size:11px;color:var(--text2);margin-top:6px;">Foto antippen → Vollbild mit 📝 Text und ✏️ Malen.</div>':'')
           :'<div style="margin-top:10px;font-size:12px;color:var(--text2);">Noch keine Fotos.</div>')
         +'</div>'
       // ── NOTIZ-MODUS ──
@@ -4356,8 +4367,9 @@ function renderSchnellTab(t){
     // ── Hinweis ──
     +'<div style="text-align:center;font-size:11px;color:var(--text2);padding:10px 0 4px;">⏱ Zeiterfassung, 👷 Personal, 📦 Material → <span style="color:var(--accent2);">🏗 Baudoku</span></div>';
 
-  // Archiv-Grid nachladen wenn Foto-Modus und Archiv sichtbar
-  if(isFoto&&fotos.length){_renderSchnellArchiv(t);}
+  // Archiv-Grid nur füllen, wenn es auch offen ist – sonst würden bei jedem Neuaufbau
+  // Drive-Vorschauen für ein unsichtbares Raster geladen (v153).
+  if(isFoto&&fotos.length&&_schnellArchivOffen){_renderSchnellArchiv(t);}
   // v144: gemerkte Notiz-Eingabe ins frisch gebaute Feld zurückschreiben
   if(_keep){
     const _ta=document.getElementById('schnellNotizQuick');
@@ -4374,16 +4386,12 @@ function _schnellSetMode(mode){
   const t=currentTask();if(t)renderSchnellTab(t);
 }
 
+// v153: nur noch den gemerkten Zustand umlegen und neu zeichnen – renderSchnellTab baut
+// Pfeil, Beschriftung, Raster und Hinweiszeile aus _schnellArchivOffen auf. Vorher wurde
+// hier am DOM geschraubt, was der nächste Neuaufbau prompt wieder überschrieb.
 function _toggleSchnellArchiv(){
-  const list=document.getElementById('schnellArchivList');
-  const toggle=document.getElementById('schnellArchivToggle');
-  if(!list||!toggle)return;
-  const open=list.style.display==='none';
-  list.style.display=open?'grid':'none';
-  if(open){list.style.gridTemplateColumns='repeat(4,1fr)';list.style.gap='6px';list.style.marginTop='8px';}
-  const t=currentTask();
-  const n=(t&&t.fotos?t.fotos.filter(f=>f&&(f.localUrl||f.url||f.driveId||f.localKey)).length:0);
-  toggle.textContent=(open?'▾ ':'▸ ')+'Archiv ('+n+' Fotos)';
+  _schnellArchivOffen=!_schnellArchivOffen;
+  const t=currentTask();if(t)renderSchnellTab(t);
 }
 
 function _toggleSchnellNotizArchiv(){
@@ -4410,17 +4418,43 @@ function _renderSchnellArchiv(t){
     const div=document.createElement('div');
     div.style.cssText='aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;';
     const img=document.createElement('img');
-    img.src=f.localUrl||f.url||'';
     img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
+    img.onload=function(){this.style.display='block';};
     img.onerror=function(){this.style.display='none';};
-    if(!img.src&&f.driveId){
-      // Drive-Thumbnail versuchen
-      _mobFetchThumb(f.driveId).then(u=>{if(u){f.localUrl=u;img.src=u;}});
-    } else if(!img.src&&f.localKey){
-      // Fallback: Foto aus IndexedDB laden
-      _mobPhotoGet(f.localKey).then(dataUrl=>{if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}else{img.style.display='none';}});
+    // v153 FIX: vorher `img.src=f.localUrl||f.url||''` und danach `if(!img.src&&…)`.
+    // Die Eigenschaft img.src liefert nach dem Setzen NIE '' zurück – ein leerer Wert
+    // wird gegen die Seiten-Adresse aufgelöst und ist damit immer wahr. Beide
+    // Ersatzwege waren toter Code: Fotos ohne frisches localUrl (nach App-Neustart
+    // ODER vom anderen Gerät) blieben als leerer grauer Kasten stehen, das Archiv
+    // wirkte leer. Jetzt dieselbe Kette wie im Baudoku-Raster (Zeile ~4690):
+    // Speicher → IndexedDB → Drive-Thumbnail (angemeldet).
+    if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
+    else if(f.url&&/^https?:/i.test(f.url)){img.src=f.url;}
+    else if(f.localKey){
+      _mobPhotoGet(f.localKey).then(dataUrl=>{
+        if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}
+        // Foto vom anderen Gerät: localKey steht in der JSON, liegt hier aber nicht
+        // im Gerätespeicher → dann über Drive holen statt leer zu bleiben.
+        else if(f.driveId){const _ts=_thumbGespeichert(f);if(_ts)img.src=_ts;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;_thumbMerken(f,u);}});}
+      });
     }
+    else if(f.driveId){const _ts=_thumbGespeichert(f);if(_ts)img.src=_ts;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;_thumbMerken(f,u);}});}
     div.appendChild(img);
+    // v153: Beschriftung sichtbar machen – vorher sah man dem Raster nicht an, welches
+    // Foto schon einen Text hat und welches noch bearbeitet werden muss.
+    div.style.position='relative';
+    if(f.caption){
+      const cap=document.createElement('div');
+      cap.style.cssText='position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;line-height:1.2;padding:2px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;';
+      cap.textContent=f.caption;
+      div.appendChild(cap);
+    }else{
+      const off=document.createElement('div');
+      off.style.cssText='position:absolute;right:3px;bottom:3px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;line-height:1;padding:2px 4px;border-radius:5px;pointer-events:none;';
+      off.textContent='📝';
+      off.title='noch ohne Text';
+      div.appendChild(off);
+    }
     div.onclick=()=>openFotoFullscreen(oi);
     list.appendChild(div);
   });
@@ -4483,47 +4517,91 @@ function _startSchnellDiktat(){
 
 
 
+// v153: nimmt jetzt EINE oder MEHRERE frische Aufnahmen entgegen. Vorher bekam die
+// Vorschau nur `fotoObjs[letztes]` – bei einer Serie aus der Galerie hatten alle anderen
+// Fotos keinen Weg zu „Verwerfen" oder „Bearbeiten", man musste sie im Archiv suchen.
+// Jetzt blättert man mit ‹ › durch die Serie; „✓ Behalten" springt zum nächsten und
+// schließt erst nach dem letzten.
 function _showSchnellFotoPreview(fo, t){
+  const liste=Array.isArray(fo)?fo.filter(Boolean):(fo?[fo]:[]);
+  if(!liste.length)return;
+  let idx=0;
   let prev=document.getElementById('schnellFotoPreview');
   if(prev)prev.remove();
   prev=document.createElement('div');
   prev.id='schnellFotoPreview';
   prev.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
-  const src=fo.localUrl||fo.url||'';
   const img=document.createElement('img');
-  img.src=src;img.style.cssText='max-width:90vw;max-height:65vh;border-radius:12px;object-fit:contain;';
+  img.style.cssText='max-width:90vw;max-height:60vh;border-radius:12px;object-fit:contain;';
   const lbl=document.createElement('div');
-  lbl.style.cssText='font-size:14px;color:#fff;opacity:.8;';lbl.textContent=fo.name||'Foto';
+  lbl.style.cssText='font-size:14px;color:#fff;opacity:.8;text-align:center;padding:0 12px;';
+  // Blätterleiste – nur bei mehr als einem frischen Foto
+  const nav=document.createElement('div');
+  nav.style.cssText='display:flex;align-items:center;gap:14px;color:#fff;font-size:15px;font-weight:600;';
+  const knopf=(txt,fn)=>{const b=document.createElement('button');b.textContent=txt;
+    b.style.cssText='padding:8px 18px;border-radius:10px;background:rgba(255,255,255,.15);color:#fff;border:none;font-size:18px;font-weight:700;cursor:pointer;';
+    b.onclick=fn;return b;};
+  const zaehler=document.createElement('span');
+  const zurueck=knopf('‹',()=>{if(idx>0){idx--;zeige();}});
+  const vor=knopf('›',()=>{if(idx<liste.length-1){idx++;zeige();}});
+  nav.appendChild(zurueck);nav.appendChild(zaehler);nav.appendChild(vor);
+  const aktuell=()=>liste[idx];
+  // Index im LIVE-Stand suchen (die Objekte können durch Konflikt-Merge ersetzt worden
+  // sein – gleiche Absicherung wie bisher in „Bearbeiten", jetzt an einer Stelle)
+  const liveIndex=f=>{
+    const t2=currentTask();if(!t2||!t2.fotos)return-1;
+    let i=t2.fotos.indexOf(f);
+    if(i<0&&f.localKey)i=t2.fotos.findIndex(x=>x&&x.localKey===f.localKey);
+    return i;
+  };
+  const weiterOderSchliessen=()=>{
+    liste.splice(idx,1);
+    if(!liste.length){prev.remove();return;}
+    if(idx>=liste.length)idx=liste.length-1;
+    zeige();
+  };
+  function zeige(){
+    const f=aktuell();
+    img.src=f.localUrl||f.url||'';
+    lbl.textContent=f.name||'Foto';
+    const mehr=liste.length>1;
+    nav.style.display=mehr?'flex':'none';
+    zaehler.textContent=(idx+1)+' von '+liste.length;
+    zurueck.style.visibility=idx>0?'visible':'hidden';
+    vor.style.visibility=idx<liste.length-1?'visible':'hidden';
+    btnKeep.textContent=mehr&&idx<liste.length-1?'✓ Behalten ›':'✓ Behalten';
+  }
   const row=document.createElement('div');row.style.cssText='display:flex;gap:12px;flex-wrap:wrap;justify-content:center;padding:0 10px;';
   const btnDel=document.createElement('button');
   btnDel.textContent='✕ Verwerfen';
   btnDel.style.cssText='padding:12px 24px;border-radius:10px;background:#E24B4A;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
-  btnDel.onclick=function(){_schnellFotoVerwerfen(fo.localKey||fo.driveId||'',fo.name||'');};
+  btnDel.onclick=function(){const f=aktuell();_schnellFotoVerwerfen(f.localKey||f.driveId||'',f.name||'',true);weiterOderSchliessen();};
   const btnKeep=document.createElement('button');
   btnKeep.textContent='✓ Behalten';
   btnKeep.style.cssText='padding:12px 24px;border-radius:10px;background:#4CAF50;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
-  btnKeep.onclick=function(){prev.remove();};
+  btnKeep.onclick=function(){weiterOderSchliessen();};
   const btnMore=document.createElement('button');
   btnMore.textContent='📷 Weiteres Foto';
   btnMore.style.cssText='padding:12px 24px;border-radius:10px;background:#2e4fc4;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
   btnMore.onclick=function(){prev.remove();var inp=document.getElementById('fotoInputCamera');if(inp)inp.click();};
   // v110: ✏️ Bearbeiten – behält das Foto und öffnet direkt die Vollbild-Ansicht (Text + Malen), Wunsch Frank
   const btnEdit=document.createElement('button');
-  btnEdit.textContent='✏️ Bearbeiten';
+  btnEdit.textContent='✏️ Text / Malen';
   btnEdit.style.cssText='padding:12px 24px;border-radius:10px;background:#2e4fc4;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
   btnEdit.onclick=function(){
+    const i=liveIndex(aktuell());
     prev.remove();
-    const t2=currentTask();if(!t2||!t2.fotos)return;
-    let i=t2.fotos.indexOf(fo);
-    if(i<0&&fo.localKey)i=t2.fotos.findIndex(f=>f&&f.localKey===fo.localKey);
     if(i>=0)openFotoFullscreen(i);
   };
   row.appendChild(btnDel);row.appendChild(btnMore);row.appendChild(btnEdit);row.appendChild(btnKeep);
-  prev.appendChild(img);prev.appendChild(lbl);prev.appendChild(row);
+  prev.appendChild(img);prev.appendChild(lbl);prev.appendChild(nav);prev.appendChild(row);
+  zeige();
   document.body.appendChild(prev);
 }
 
-function _schnellFotoVerwerfen(localKey, name){
+// v153: _vorschauBleibt=true, wenn die Vorschau selbst weiterblättert (Serie) – sonst
+// verschwände nach dem ersten Verwerfen das ganze Fenster samt der restlichen Fotos.
+function _schnellFotoVerwerfen(localKey, name, _vorschauBleibt){
   if(localKey)_mobPhotoSetMeta(localKey,{done:1}); // v143: bewusst verworfen → Waisen-Rettung fasst es nicht mehr an
   const t=currentTask();
   if(t&&t.fotos){
@@ -4532,6 +4610,7 @@ function _schnellFotoVerwerfen(localKey, name){
     renderSchnellTab(t);
     _fotoPendUpdate();
   }
+  if(_vorschauBleibt)return;
   const prev=document.getElementById('schnellFotoPreview');
   if(prev)prev.remove();
 }
@@ -7226,8 +7305,11 @@ async function uploadFoto(files,_zielTaskId){
   _mOpenSections['Fotos']=true;
   renderDetail(t);
   if(_currentDetailTab==='schnell'){
+    _schnellArchivOffen=true; // v153: frische Fotos sollen direkt sichtbar sein
     renderSchnellTab(t);
-    if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs[fotoObjs.length-1].fo,t);
+    // v153: ALLE frischen Aufnahmen durchreichen, nicht nur die letzte – bei einer
+    // Galerie-Serie kam man an die übrigen sonst nicht mehr heran.
+    if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t);
   }
   if(_currentDetailTab==='tagebuch'){try{renderTagebuchTab(t);}catch(e){console.warn('[MTB]',e);}} // v124: frisches Foto sofort im Tagesblock
   // v109: EIN neues Foto (Kamera) → direkt Vollbild mit aufgeklapptem Textfeld öffnen
@@ -7378,6 +7460,23 @@ function _ensureFotoEingangTask(){
   const savedBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
   if(!savedBoard)return null;
   if(!boards[savedBoard])boards[savedBoard]=[];
+  // v153: Der Sammler von heute kann durch den Mobil-Filter aus `boards` gefallen sein
+  // (Spaltenfilter, archiviert, Board aus der Whitelist genommen). findTaskById oben sieht
+  // NUR `boards` – vorher wurde deshalb ein ZWEITER Task mit derselben ID angelegt und beim
+  // Speichern doppelt in die JSON geschrieben. Jetzt wird der vorhandene zurückgeholt statt
+  // geklont: aus seiner bisherigen Liste herausgenommen (splice – der Rest dieses Boards
+  // bleibt unangetastet) und ins Schnell-Board gehängt, wo der Tages-Sammler hingehört.
+  // `archiviert` wird dabei gelöscht, sonst schöbe ihn der nächste Poll sofort wieder
+  // hinaus und das Umhängen liefe bei jedem Foto erneut.
+  const _gef=_feFindeSammler(id);
+  if(_gef){
+    _gef.ablage[_gef.boardName].splice(_gef.i,1);
+    delete _gef.task.archiviert;
+    boards[savedBoard].push(_gef.task);
+    if(!_gef.task.fotos)_gef.task.fotos=[];
+    forceSave();
+    return _gef.task;
+  }
   const d=new Date();
   const titel='📷 Foto-Eingang '+String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.';
   const arr=(_remoteBoardStatuses[savedBoard]&&_remoteBoardStatuses[savedBoard].length)?_remoteBoardStatuses[savedBoard]:statuses;
@@ -7403,17 +7502,76 @@ async function _blitzFotoFiles(files){
   toast('📷 Blitz-Foto → „'+t.title+'"','info',2000);
   await uploadFoto(files,t.id);
 }
+// v153: Alle drei Ablagen durchsuchen, nicht nur die sichtbaren Boards.
+// `boards` enthält NUR, was der Mobil-Filter durchlässt (_applyMobileFilter): Boards
+// außerhalb der Desktop-Whitelist landen in `hiddenBoards`, Tasks mit nicht freigegebener
+// Spalte und archivierte in `_mobileFilteredOut`. Rutschte ein fe_-Sammler dort hinein,
+// nahm er seine losen Fotos wortlos aus dem Eingang mit – obwohl sie in Drive und in der
+// JSON weiter lagen. saveFile mischt beide Töpfe beim Speichern wieder ein (hiddenBoards
+// direkt, _mobileFilteredOut je Board angehängt), Änderungen an diesen Tasks gehen also
+// nicht verloren.
+function _feAblagen(){return[boards,hiddenBoards,_mobileFilteredOut];}
 // Alle losen Fotos aus sämtlichen Foto-Eingang-Sammlern (auch von Vortagen)
 function _feAlleFotos(){
-  const out=[];
-  for(const[,tasks]of Object.entries(boards||{})){
-    if(!Array.isArray(tasks))continue;
-    for(const task of tasks){
-      if(!task||!String(task.id||'').startsWith('fe_'))continue;
-      for(const fo of task.fotos||[])if(fo&&(fo.driveId||fo.localKey))out.push({feTask:task,fo});
+  const out=[],gesehen=new Set();
+  for(const ablage of _feAblagen()){
+    for(const[,tasks]of Object.entries(ablage||{})){
+      if(!Array.isArray(tasks))continue;
+      for(const task of tasks){
+        if(!task||!String(task.id||'').startsWith('fe_'))continue;
+        for(const fo of task.fotos||[]){
+          if(!fo||!(fo.driveId||fo.localKey))continue;
+          const k=fo.localKey||fo.driveId;
+          if(gesehen.has(k))continue; // Absicherung: derselbe Sammler in zwei Töpfen
+          gesehen.add(k);
+          out.push({feTask:task,fo});
+        }
+      }
     }
   }
   return out;
+}
+// v153: Sammler in ALLEN Ablagen suchen (siehe _feAlleFotos) – liefert die Fundstelle mit,
+// damit der Aufrufer ihn sauber umhängen kann.
+function _feFindeSammler(id){
+  for(const ablage of _feAblagen()){
+    for(const[boardName,tasks]of Object.entries(ablage||{})){
+      if(!Array.isArray(tasks))continue;
+      const i=tasks.findIndex(t=>t&&t.id===id);
+      if(i>=0)return{ablage,boardName,i,task:tasks[i]};
+    }
+  }
+  return null;
+}
+// v153: Gemeinsame Vorschau-Kette für die beiden Auswahl-Fenster (Foto-Eingang + Teilen).
+// Vorher setzten beide nur f.thumbnail / f.localUrl / die ÖFFENTLICHE Adresse
+// drive.google.com/thumbnail?id=… und fielen bei einem Fehler nur auf den Gerätespeicher
+// zurück. In der installierten App gibt es keine Google-Browser-Sitzung, die öffentliche
+// Adresse liefert dort also nichts – und Fotos vom anderen Gerät haben auf diesem Handy
+// keinen localKey. Ergebnis: dauerhaft leere Kachel, obwohl das Foto in Drive liegt und
+// im normalen Foto-Raster einwandfrei erscheint (das geht über _mobThumbFallback längst
+// den angemeldeten Weg). Gleiche Reihenfolge jetzt auch hier, mit Weiterreichen bei
+// jedem Fehlschlag: Speicher → Blob-Cache → haltbares Thumbnail → IndexedDB → Drive
+// ANGEMELDET (_mobFetchThumb, fällt intern auf _fetchFotoBlob zurück).
+function _fotoVorschauLaden(f,img){
+  if(!f||!img)return;
+  const id=f.editedDriveId||f.driveId||''; // bearbeitete Fassung hat Vorrang – wie in renderFotos
+  const quellen=[];
+  if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))quellen.push(()=>f.localUrl);
+  if(id&&_fotoBlobCache.get(id))quellen.push(()=>_fotoBlobCache.get(id));
+  const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
+  if(_ts)quellen.push(()=>_ts);
+  if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey));
+  if(id)quellen.push(()=>_mobFetchThumb(id).then(u=>{if(u)_thumbMerken(f,u);return u;}));
+  let n=0;
+  const weiter=()=>{
+    if(n>=quellen.length){img.style.display='none';return;} // wirklich nichts da → Kachel bleibt leer
+    const q=quellen[n++];
+    Promise.resolve().then(q).then(u=>{if(u)img.src=u;else weiter();}).catch(weiter);
+  };
+  img.onload=()=>{img.style.display='';};
+  img.onerror=()=>{weiter();}; // Quelle war tot (abgelaufene Adresse, kein Zugriff) → nächste
+  weiter();
 }
 let _feAuswahl=null;
 function _feImportOeffnen(){
@@ -7427,7 +7585,17 @@ function _feImportOeffnen(){
   ov.style.cssText='position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.88);display:flex;flex-direction:column;padding:14px;';
   ov.innerHTML='<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px;">📥 Foto-Eingang → „'+esc(ziel.title||'')+'"</div>'
     +'<div style="font-size:12px;color:#bbb;margin-bottom:10px;">Fotos antippen zum Auswählen – sie werden in den Fotos-Ordner dieses Tasks verschoben (kein Neu-Upload).</div>'
-    +'<div id="feImportGrid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start;"></div>'
+    // v153 FIX „Bilder liegen übereinander" (Befund Frank 03.08.), im Browser nachgemessen:
+    // Das Raster ist ein Flex-Kind mit FESTER Höhe. Bei grid-auto-rows:auto leitet der
+    // Browser die Zeilenhöhe aus dem Zell-INHALT ab (das <img> hat height:100% und trägt
+    // in einer auto-Zeile 0 bei, bleibt also nur die Beschriftung ≈ 34px), während die
+    // Zelle selbst per aspect-ratio:1 auf ~109px aufgeht. Ergebnis: Zeilenabstand 42px
+    // bei 109px hohen Kacheln → jede Reihe schiebt sich 67px in die nächste.
+    // Messung 40 Fotos, 390px breit:  vorher 42px Abstand · mit min-content 117px (korrekt).
+    // Fällt nur auf, sobald der Inhalt überläuft – darum blieb es bei wenigen Fotos unsichtbar.
+    // min-height:0 ist die übliche Absicherung für scrollende Flex-Kinder (hier bereits
+    // durch overflow-y:auto abgedeckt, schadet aber nicht).
+    +'<div id="feImportGrid" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:min-content;gap:8px;align-content:start;"></div>'
     +'<div style="display:flex;gap:8px;margin-top:12px;">'
     +'<button id="feImportOk" onclick="_feImportUebernehmen()" style="flex:1;min-height:50px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">✓ Übernehmen (0)</button>'
     +'<button onclick="document.getElementById(\'feImportOverlay\').remove()" style="min-height:50px;padding:0 18px;border-radius:10px;border:1px solid #666;background:transparent;color:#fff;font-size:15px;cursor:pointer;">Abbrechen</button>'
@@ -7440,10 +7608,7 @@ function _feImportOeffnen(){
     cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid transparent;cursor:pointer;';
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;';
-    const src=x.fo.thumbnail||x.fo.localUrl||(x.fo.driveId?'https://drive.google.com/thumbnail?id='+x.fo.driveId+'&sz=w400':'');
-    if(src)img.src=src;
-    else if(x.fo.localKey)_mobPhotoGet(x.fo.localKey).then(du=>{if(du)img.src=du;});
-    img.onerror=()=>{if(x.fo.localKey)_mobPhotoGet(x.fo.localKey).then(du=>{if(du)img.src=du;});};
+    _fotoVorschauLaden(x.fo,img); // v153: angemeldeter Drive-Weg statt öffentlicher Adresse
     const tag=document.createElement('div');
     tag.style.cssText='position:absolute;left:4px;bottom:4px;right:4px;font-size:10px;color:#fff;background:rgba(0,0,0,.55);border-radius:6px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
     tag.textContent=(x.fo.uploadedAt?_fmtTs(x.fo.uploadedAt)+' · ':'')+(x.feTask.title||'');
@@ -7512,6 +7677,19 @@ function _shrTagTeilen(dayKey){
   }).map(_shrKey).filter(Boolean);
   _shrOeffnen(keys);
 }
+// v153 FIX: 📤 an der EINZELNEN Foto-Kachel (renderFotos) rief seit jeher shareFoto(i)
+// auf – die Funktion gab es nie. Der Knopf warf still „shareFoto is not defined" und
+// tat gar nichts (gleicher Fehlertyp wie v109/openFotoViewer). Er öffnet jetzt das
+// normale Teilen-Fenster mit genau diesem Foto vorausgewählt, damit PDF/„bereinigt"
+// und der GPS-Schutz aus v147 erhalten bleiben (kein zweiter Teilen-Weg).
+function shareFoto(i){
+  const t=currentTask();if(!t||!t.fotos||!t.fotos[i])return;
+  const f=t.fotos[i];
+  if(_shrIstVideo(f)){toast('Videos lassen sich hier nicht teilen – bitte über ☁ Drive','info',4000);return;}
+  const k=_shrKey(f);
+  if(!k||!(f.driveId||f.localKey||f.localUrl)){toast('Foto ist noch nicht fertig – bitte kurz warten','info',3000);return;}
+  _shrOeffnen([k]);
+}
 function _shrOeffnen(preKeys){
   const t=currentTask();if(!t)return;
   const fotos=(t.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.driveId||f.localKey||f.localUrl));
@@ -7523,7 +7701,10 @@ function _shrOeffnen(preKeys){
   ov.style.cssText='position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.88);display:flex;flex-direction:column;padding:14px;';
   ov.innerHTML='<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px;">📤 Fotos teilen</div>'
     +'<div style="font-size:12px;color:#bbb;margin-bottom:10px;">Fotos antippen zum Aus-/Abwählen. Das Original in Drive bleibt unverändert – geteilt wird nur eine Kopie.</div>'
-    +'<div id="shrGrid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-content:start;"></div>'
+    // v153 FIX: grid-auto-rows:min-content – identischer Zeilen-Kollaps wie bei
+    // feImportGrid (dort ausführlich beschrieben). Genau deshalb sah die Foto-Auswahl
+    // beim Teilen „verschachtelt" aus und die unteren Reihen waren nicht antippbar.
+    +'<div id="shrGrid" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:min-content;gap:8px;align-content:start;"></div>'
     +'<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:#ddd;cursor:pointer;">'
     +'<input type="checkbox" id="shrMitText" style="width:20px;height:20px;">Beschriftung + Datum ins PDF (sonst neutral)</label>'
     +'<div style="display:flex;gap:8px;margin-top:10px;">'
@@ -7540,10 +7721,7 @@ function _shrOeffnen(preKeys){
     cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid '+(_shrSel.has(key)?'var(--accent)':'transparent')+';cursor:pointer;';
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;';
-    const src=f.thumbnail||f.thumbnailLink||f.localUrl||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
-    if(src)img.src=src;
-    else if(f.localKey)_mobPhotoGet(f.localKey).then(du=>{if(du)img.src=du;});
-    img.onerror=()=>{if(f.localKey)_mobPhotoGet(f.localKey).then(du=>{if(du)img.src=du;});};
+    _fotoVorschauLaden(f,img); // v153: angemeldeter Drive-Weg statt öffentlicher Adresse
     cell.appendChild(img);
     if(f.caption){
       const tag=document.createElement('div');
