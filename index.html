@@ -4425,26 +4425,16 @@ function _renderSchnellArchiv(t){
     div.style.cssText='aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;';
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;display:block;';
-    img.onload=function(){this.style.display='block';};
-    img.onerror=function(){this.style.display='none';};
     // v153 FIX: vorher `img.src=f.localUrl||f.url||''` und danach `if(!img.src&&…)`.
     // Die Eigenschaft img.src liefert nach dem Setzen NIE '' zurück – ein leerer Wert
     // wird gegen die Seiten-Adresse aufgelöst und ist damit immer wahr. Beide
     // Ersatzwege waren toter Code: Fotos ohne frisches localUrl (nach App-Neustart
     // ODER vom anderen Gerät) blieben als leerer grauer Kasten stehen, das Archiv
-    // wirkte leer. Jetzt dieselbe Kette wie im Baudoku-Raster (Zeile ~4690):
-    // Speicher → IndexedDB → Drive-Thumbnail (angemeldet).
-    if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
-    else if(f.url&&/^https?:/i.test(f.url)){img.src=f.url;}
-    else if(f.localKey){
-      _mobPhotoGet(f.localKey).then(dataUrl=>{
-        if(dataUrl){f.localUrl=dataUrl;img.src=dataUrl;}
-        // Foto vom anderen Gerät: localKey steht in der JSON, liegt hier aber nicht
-        // im Gerätespeicher → dann über Drive holen statt leer zu bleiben.
-        else if(f.driveId){const _ts=_thumbGespeichert(f);if(_ts)img.src=_ts;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;_thumbMerken(f,u);}});}
-      });
-    }
-    else if(f.driveId){const _ts=_thumbGespeichert(f);if(_ts)img.src=_ts;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;_thumbMerken(f,u);}});}
+    // wirkte leer.
+    // v154: läuft jetzt über dieselbe Kette wie die beiden Auswahl-Fenster – kleines
+    // Drive-Thumbnail statt Vollbild, gemerkte https-Adresse, Laden erst beim
+    // Sichtbarwerden. Spart hier die eigene, doppelt gepflegte Fassung.
+    _fotoVorschauLaden(f,img);
     div.appendChild(img);
     // v153: Beschriftung sichtbar machen – vorher sah man dem Raster nicht an, welches
     // Foto schon einen Text hat und welches noch bearbeitet werden muss.
@@ -7561,16 +7551,76 @@ function _feFindeSammler(id){
 // im normalen Foto-Raster einwandfrei erscheint (das geht über _mobThumbFallback längst
 // den angemeldeten Weg). Gleiche Reihenfolge jetzt auch hier, mit Weiterreichen bei
 // jedem Fehlschlag: Speicher → Blob-Cache → haltbares Thumbnail → IndexedDB → Drive
-// ANGEMELDET (_mobFetchThumb, fällt intern auf _fetchFotoBlob zurück).
+// ANGEMELDET.
+//
+// ── v154: TEMPO (Befund Frank nach dem v153-Deploy: „die Bilder laden nicht schnell",
+//    Teilen dauert ewig, Fingertipps kommen nicht an) ──────────────────────────────
+// Zwei Bremsen aus v153, beide hier behoben:
+//  1) _mobFetchThumb endet mit `return _fetchFotoBlob(driveId)` – das lädt das VOLLBILD
+//     (5-10 MB) für eine 109px-Kachel. Bei 30 Fotos zieht das Hunderte MB und blockiert
+//     das Gerät beim Dekodieren so, dass Fingertipps verschluckt werden. Neue Stufe
+//     _driveThumbLink davor: holt NUR die Metadaten (~2 KB) und lässt das Bild direkt
+//     von der kleinen thumbnailLink-Adresse laden. Das Vollbild bleibt letzte Not.
+//  2) _mobFetchThumb liefert eine blob:-Adresse, die _thumbMerken (zu Recht, v129)
+//     nicht dauerhaft speichern darf → jeder App-Start lud alles neu. _driveThumbLink
+//     gibt die https-Adresse zurück, die gemerkt werden DARF und den Neustart überlebt.
+// Dazu wird erst geladen, wenn die Kachel wirklich sichtbar ist (_vorschauBeobachten) –
+// vorher liefen bei 40 Fotos 40 Drive-Abrufe gleichzeitig los.
+const _thumbLinkCache=new Map(); // driveId → thumbnailLink (https) | '' = gibt es nicht
+const _thumbLinkInflight=new Map(); // v154: laufende Abrufe bündeln – wie _fotoBlobInflight
+function _driveThumbLink(id){
+  if(!id)return Promise.resolve('');
+  if(_thumbLinkCache.has(id))return Promise.resolve(_thumbLinkCache.get(id));
+  // Mehrere Kacheln derselben Datei fragen sonst gleichzeitig dieselben Metadaten ab
+  if(_thumbLinkInflight.has(id))return _thumbLinkInflight.get(id);
+  const p=_driveThumbLinkHolen(id).finally(()=>{_thumbLinkInflight.delete(id);});
+  _thumbLinkInflight.set(id,p);
+  return p;
+}
+async function _driveThumbLinkHolen(id){
+  try{
+    if(!(await ensureToken()))return '';
+    const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?fields=thumbnailLink',
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    if(r.ok){
+      const l=(await r.json()).thumbnailLink||'';
+      _thumbLinkCache.set(id,l);
+      return l;
+    }
+  }catch(e){console.warn('[Vorschau] thumbnailLink:',e);}
+  _thumbLinkCache.set(id,''); // nicht bei jedem Neuaufbau erneut fragen
+  return '';
+}
+// Laden erst beim Sichtbarwerden. rootMargin: der erste Bildschirm lädt sofort mit.
+let _vorschauObserver=null;
+function _vorschauBeobachten(img,starten){
+  if(typeof IntersectionObserver!=='function'){starten();return;} // alter Browser → wie bisher
+  if(!_vorschauObserver){
+    _vorschauObserver=new IntersectionObserver(function(eintraege){
+      for(const e of eintraege){
+        if(!e.isIntersecting)continue;
+        _vorschauObserver.unobserve(e.target);
+        const fn=e.target._vorschauStart;
+        if(fn){e.target._vorschauStart=null;fn();}
+      }
+    },{rootMargin:'300px'});
+  }
+  img._vorschauStart=starten;
+  _vorschauObserver.observe(img);
+}
 function _fotoVorschauLaden(f,img){
   if(!f||!img)return;
   const id=f.editedDriveId||f.driveId||''; // bearbeitete Fassung hat Vorrang – wie in renderFotos
   const quellen=[];
+  const ausSpeicher=!!((f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))||(id&&_fotoBlobCache.get(id)));
   if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))quellen.push(()=>f.localUrl);
   if(id&&_fotoBlobCache.get(id))quellen.push(()=>_fotoBlobCache.get(id));
   const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
   if(_ts)quellen.push(()=>_ts);
   if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey));
+  // v154: kleines Drive-Thumbnail (~20-50 KB) statt Vollbild – und die Adresse merken
+  if(id)quellen.push(()=>_driveThumbLink(id).then(l=>{if(l)_thumbMerken(f,l);return l;}));
+  // letzte Not: der alte Weg inkl. Vollbild-Rückfall (selten, z.B. Datei ohne Thumbnail)
   if(id)quellen.push(()=>_mobFetchThumb(id).then(u=>{if(u)_thumbMerken(f,u);return u;}));
   let n=0;
   const weiter=()=>{
@@ -7579,8 +7629,18 @@ function _fotoVorschauLaden(f,img){
     Promise.resolve().then(q).then(u=>{if(u)img.src=u;else weiter();}).catch(weiter);
   };
   img.onload=()=>{img.style.display='';};
-  img.onerror=()=>{weiter();}; // Quelle war tot (abgelaufene Adresse, kein Zugriff) → nächste
-  weiter();
+  img.onerror=()=>{
+    // v154: Drive-thumbnailLink-Adressen laufen nach Stunden ab. Die gemerkte Fassung
+    // sonst stehen zu lassen hieße: bei JEDEM Neuaufbau erst ein Fehlversuch, dann
+    // eskalieren. Beim Scheitern also aus den Daten räumen (geht beim nächsten
+    // Speichern mit, wie in _thumbGespeichert bei toten blob:-Adressen).
+    try{const s=img.getAttribute('src')||'';if(s&&(f.thumbnail===s||f.thumbnailLink===s)){if(f.thumbnail===s)f.thumbnail=null;if(f.thumbnailLink===s)f.thumbnailLink=null;_thumbLinkCache.delete(id);}}catch(_e){}
+    weiter(); // Quelle war tot (abgelaufene Adresse, kein Zugriff) → nächste
+  };
+  // v154: was schon im Speicher liegt, sofort zeigen – alles mit Netzweg erst, wenn die
+  // Kachel in Sichtweite kommt. Sonst starten bei 40 Fotos 40 Abrufe gleichzeitig.
+  if(ausSpeicher)weiter();
+  else _vorschauBeobachten(img,weiter);
 }
 let _feAuswahl=null;
 function _feImportOeffnen(){
