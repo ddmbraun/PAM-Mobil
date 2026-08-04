@@ -173,7 +173,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .timer-pulse-dot{width:9px;height:9px;border-radius:50%;background:var(--accent2);flex-shrink:0;animation:pulse-dot 1.4s ease-in-out infinite;}
 .timer-pulse-dot.running{background:var(--orange);}
 /* ── Baudoku: Foto-Grid (4-Spalten) ── */
-.bau-foto-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;}
+/* v158: wie .foto-grid – minmax(78px) hält auf dem Handy die gewohnten 4 Spalten. */
+.bau-foto-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px;margin-bottom:10px;}
 .bau-foto-grid-thumb{aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--bg3);cursor:pointer;position:relative;}
 .bau-foto-grid-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
 .bau-foto-grid-add{aspect-ratio:1;border-radius:8px;border:1.5px dashed var(--accent);background:rgba(106,138,255,.08);display:flex;align-items:center;justify-content:center;font-size:26px;cursor:pointer;color:var(--accent2);}
@@ -326,10 +327,20 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .qa-photo-btn{flex:1;background:#f0f4ff;border:1.5px solid var(--accent);border-radius:9px;padding:10px 4px 8px;font-size:26px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;min-width:0}
 .qa-photo-btn span{font-size:11px;font-weight:700;color:var(--accent)}
 /* ── FOTOS ── */
-.foto-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+/* v158: Spaltenzahl nach Breite statt fest 3. Auf dem Handy (≈340px nutzbar) ergibt
+   minmax(104px) weiterhin genau 3 Spalten – dort ändert sich also nichts. Auf Franks
+   Tablet (Tab S10 FE, quer über 1000px) wurden aus 3 riesigen Kacheln bisher endlose
+   Scrollwege; jetzt passen 6 und mehr Reihen ins Bild. */
+.foto-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px;margin-top:8px}
 .foto-thumb{position:relative;aspect-ratio:1;background:var(--bg3);border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid var(--border)}
 .foto-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.foto-thumb .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:white;border:none;width:22px;height:22px;border-radius:11px;font-size:12px;cursor:pointer;z-index:2}
+/* v158: Kachel-Knöpfe waren 22px – im Rest der App sind Knöpfe bewusst 48px. Vor allem
+   saßen Löschen (✕) und Teilen (📤) DIREKT nebeneinander in derselben Ecke; ein
+   danebengegangener Tipp auf dem Dach traf statt „Teilen" das Löschen. Jetzt 30px und
+   in gegenüberliegende Ecken: ✕ oben rechts, 📤 unten rechts. Voll auf 48px zu gehen
+   ginge nicht – auf einer 104px-Kachel bliebe vom Bild nichts übrig. */
+.foto-thumb .del{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.62);color:white;border:none;width:30px;height:30px;border-radius:15px;font-size:14px;line-height:1;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center}
+.foto-thumb .foto-share-btn{position:absolute;bottom:3px;right:3px;background:rgba(0,0,0,.62);color:#fff;border:none;width:30px;height:30px;border-radius:15px;font-size:14px;line-height:1;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center}
 .foto-thumb.fallback::before{content:'🖼️';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--text2)}
 /* ── LIGHTBOX (Vollbild-Vorschau) ── */
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:none;align-items:center;justify-content:center;padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);touch-action:none;overflow:hidden;}
@@ -372,7 +383,8 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .lb-draw-btn.save{background:rgba(74,222,128,.25);border-color:#4ade80;color:#4ade80;width:auto;padding:0 12px;font-size:13px;}
 .lb-draw-btn.discard{background:rgba(248,113,113,.2);border-color:#f87171;color:#f87171;width:auto;padding:0 10px;font-size:13px;}
 /* Beschreibung unter dem Grid-Thumbnail */
-.foto-thumb .cap-badge{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;line-height:1.2;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
+/* v158: rechts Platz lassen – dort sitzt jetzt der Teilen-Knopf. */
+.foto-thumb .cap-badge{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;line-height:1.2;padding:2px 36px 2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
 .foto-placeholder{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--text2)}
 .foto-upload-overlay{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;pointer-events:none;}
 .foto-upload-overlay .up-icon{font-size:20px;animation:upbounce .8s infinite alternate;}
@@ -383,8 +395,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .attach-thumb-mob{width:54px;height:54px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--bg2);cursor:pointer}
 .attach-icon-mob{width:54px;height:54px;display:flex;align-items:center;justify-content:center;font-size:28px;background:var(--bg2);border-radius:6px;flex-shrink:0}
 .attach-meta-mob{flex:1;min-width:0}
-.attach-name-mob{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* v156: Dateiname war EINZEILIG abgeschnitten – bei 54px Symbol + Knopf blieben auf dem
+   Handy ~25 Zeichen übrig, damit ließen sich die (bewusst 40 Zeichen langen, b557)
+   PAM-Dateinamen nicht mehr unterscheiden. Jetzt zwei Zeilen, dann erst Auslassung. */
+.attach-name-mob{font-size:13px;font-weight:500;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;line-height:1.25}
 .attach-size-mob{font-size:11px;color:var(--text2);margin-top:2px}
+/* v156: echte Vorschau (Bild ODER erste PDF-Seite) legt sich über das Symbol.
+   Ohne src ist sie unsichtbar – das Symbol bleibt sichtbar, bis wirklich ein Bild da ist. */
+.attach-thumb-ovl{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:6px;}
 /* ── NOTIZ VERLAUF ── */
 .notiz-entry{background:var(--bg3);border-left:3px solid var(--accent);padding:10px 12px;margin-bottom:8px;border-radius:6px;font-size:15px}
 .notiz-entry .ts{display:block;color:var(--text2);font-size:13px;margin-bottom:3px}
@@ -600,6 +618,13 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
         <div class="field"><label>Verbundene Datei</label><div id="settFileName" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px"></div></div>
         <div class="field"><label>Eingeloggt als</label><div id="settUserEmail" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)"></div></div>
         <div class="field"><label>App-Version</label><div id="settAppVersion" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)">–</div></div>
+        <!-- v157: bisher gab es keinerlei Einblick, wie viel die App im Gerät ablegt –
+             und keine Möglichkeit, das aufzuräumen. -->
+        <div class="field"><label>Gerätespeicher</label>
+          <div id="settSpeicher" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)">wird ermittelt…</div>
+          <button class="inline-btn" style="width:100%;min-height:44px;margin-top:6px;font-size:14px;" onclick="_speicherAufraeumenKnopf()">🧹 Zwischenspeicher leeren</button>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;">Wirft nur zwischengespeicherte Bilder weg. Fotos in Drive, offline mitgenommene Dateien und noch nicht hochgeladene Fotos bleiben unangetastet.</div>
+        </div>
       </div>
     </div>
     <div class="sect open">
@@ -782,7 +807,12 @@ async function _mobPhotoSave(key,dataUrl,meta){
       tx.oncomplete=()=>{db.close();res();};
       tx.onerror=e=>{db.close();rej(e.target.error);};
     });
-  }catch(e){console.warn('[MobPhoto] Speichern:',e);}
+  }catch(e){
+    // v157: war nur eine Konsolenzeile. Scheitert das hier, liegt ein FOTO nicht im
+    // Gerät – bei vollem Speicher muss das sichtbar sein, nicht bloß protokolliert.
+    if(typeof _speicherProblemMelden==='function')_speicherProblemMelden(e,'Foto ablegen');
+    else console.warn('[MobPhoto] Speichern:',e);
+  }
 }
 // v143: Meta-Felder eines Eintrags nachträglich setzen (z.B. done:1 nach Upload/Verwerfen)
 async function _mobPhotoSetMeta(key,patch){
@@ -4351,7 +4381,7 @@ function renderSchnellTab(t){
         // „Aufgenommene Fotos" – „Archiv" klang nach Ablage, nicht nach Arbeitsvorrat.
         +(fotos.length
           ?'<div id="schnellArchivToggle" onclick="_toggleSchnellArchiv()" style="margin-top:10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--accent2);padding:4px 0;">'+(_schnellArchivOffen?'▾':'▸')+' Aufgenommene Fotos ('+fotos.length+')</div>'
-          +'<div id="schnellArchivList" style="display:'+(_schnellArchivOffen?'grid':'none')+';grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;"></div>'
+          +'<div id="schnellArchivList" style="display:'+(_schnellArchivOffen?'grid':'none')+';grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px;margin-top:8px;"></div>'
           +(_schnellArchivOffen?'<div style="font-size:11px;color:var(--text2);margin-top:6px;">Foto antippen → Vollbild mit 📝 Text und ✏️ Malen.</div>':'')
           :'<div style="margin-top:10px;font-size:12px;color:var(--text2);">Noch keine Fotos.</div>')
         +'</div>'
@@ -4760,11 +4790,11 @@ function _renderBauFotoGrid(t){
     cell.appendChild(ph);
     const img=document.createElement('img');
     img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
-    img.onload=()=>{ph.style.display='none';};
-    img.onerror=()=>{};
-    if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:'))){img.src=f.localUrl;}
-    else if(f.localKey){_mobPhotoGet(f.localKey).then(u=>{if(u){f.localUrl=u;img.src=u;}});}
-    else if(f.driveId){const _ts=_thumbGespeichert(f);if(_ts)img.src=_ts;else _mobFetchThumb(f.driveId).then(u=>{if(u){img.src=u;_thumbMerken(f,u);}});} // v129: tote blob:-Adressen ignorieren
+    // v156: eigene Kette raus. Sie kannte weder die Geräte-Ablage (_thumbBytes) noch das
+    // Laden erst beim Sichtwerden noch den 4er-Riegel – und endete über _mobFetchThumb
+    // im Vollbild-Download. Jetzt dieselbe Kette wie überall; das 📷-Platzhalterzeichen
+    // verschwindet über opts.beiBild.
+    _fotoVorschauLaden(f,img,{beiBild:()=>{ph.style.display='none';}});
     cell.appendChild(img);
     grid.appendChild(cell);
   });
@@ -5722,7 +5752,7 @@ function renderDetail(t){
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte in Einstellungen einen Standard-Fotoordner hinterlegen.</div>')
     +'</div></div>'
     // ── DOKUMENTE (nur Baustelle) – v152: wie Desktop-Sektion, gruppiert nach Drive-Unterordner ──
-    +(!isNotiz?'<div class="sect'+oc('Anhaenge')+'" data-sect="Anhaenge"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📂 Dokumente'+(attachments.length?' ('+attachments.length+')':'')+'</span>'+(attachments.length?'<button onclick="event.stopPropagation();_openAttachThumbnailGridMob()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">🖼 Alle ansehen</button>':'')+'</div><div class="sect-body">'
+    +(!isNotiz?'<div class="sect'+oc('Anhaenge')+'" data-sect="Anhaenge"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📂 Dokumente'+(attachments.length?' ('+attachments.length+')':'')+'</span>'+(attachments.length?'<button onclick="event.stopPropagation();_openAttachThumbnailGridMob()" style="font-size:11px;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:600;">🗂 Übersicht</button>':'')+'</div><div class="sect-body">'
       +(attachments.length?'<div id="attachListMob">'+renderAttachmentsMob(attachments)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Dokumente – am PC per 🔄 aus dem Dokumente-Ordner nachtragen.</div>')
     +'</div></div>':'')
     // ── PRÜFFORMULARE (nur Baustelle) ──
@@ -5753,8 +5783,12 @@ function renderDetail(t){
         +'</div></div>';
     })():'')
 ;
-  // Authentifizierte Thumbnails nachladen (Blob-URL via Drive API)
-  try{hydrateFotoThumbs();}catch(e){console.warn('hydrateFotoThumbs:',e);}
+  // v156: Vorschau an die Kacheln hängen – dieselbe Kette wie in den Auswahl-Fenstern.
+  // Vorher stand hier hydrateFotoThumbs(): das griff sich per Attribut JEDES Foto der
+  // ganzen Seite und lud ungefragt das VOLLBILD, ohne Rücksicht auf Sichtbarkeit und
+  // ohne Mengenriegel – bei 40 Fotos also 40 gleichzeitige Vollbild-Downloads.
+  try{_fotoRasterHydrieren('fotoGrid',fotos);}catch(e){console.warn('[Fotos] Raster:',e);}
+  try{_attachListeHydrieren('attachListMob',attachments);}catch(e){console.warn('[Dokumente] Liste:',e);}
   // Gespeicherte Textgröße und Helligkeit anwenden; Regler-Leiste nur wenn zuletzt offen (v102)
   try{applyStoredMobileScale();}catch(e){}
   try{applyStoredBrightness();}catch(e){}
@@ -6571,6 +6605,39 @@ function removeMCkItem(i){
 // Cache für Blob-URLs (driveId -> ObjectURL). Einträge werden beim Verlassen des Detail-Screens NICHT freigegeben,
 // damit bei Re-Renders nicht jedes Mal neu geladen wird. Bei Logout/Reload gibt der Browser sie automatisch frei.
 const _fotoBlobCache=new Map();
+// ── v157: Arbeitsspeicher begrenzen ──────────────────────────────────────────
+// Bisher wurde eine mit URL.createObjectURL erzeugte Adresse NIE wieder freigegeben.
+// Solange die App offen war, blieb damit jedes je geladene Vollbild im Arbeitsspeicher –
+// über mehrere geöffnete Aufträge summierte sich das und machte das Gerät träge.
+// Ältestes zuerst freigeben (Map behält die Einfügereihenfolge). Die Grenze ist bewusst
+// großzügig: was gerade auf dem Bildschirm liegt, darf NICHT freigegeben werden, sonst
+// bliebe eine sichtbare Kachel leer. Seit v156 füllt sich diese Ablage ohnehin nur noch
+// aus Großansicht/Teilen/Offline – nicht mehr aus jedem Raster.
+const _BLOB_CACHE_MAX=120;
+function _blobCacheEinfuegen(map,id,url){
+  map.set(id,url);
+  while(map.size>_BLOB_CACHE_MAX){
+    const aeltester=map.keys().next().value;
+    const alt=map.get(aeltester);
+    map.delete(aeltester);
+    try{if(alt&&String(alt).startsWith('blob:'))URL.revokeObjectURL(alt);}catch(_e){}
+  }
+}
+// Alles zu EINEM Foto vergessen – nach dem Löschen des Fotos.
+function _fotoSpuerenLoeschen(f){
+  if(!f)return;
+  [f.driveId,f.editedDriveId].filter(Boolean).forEach(id=>{
+    try{const u=_fotoBlobCache.get(id);if(u&&String(u).startsWith('blob:'))URL.revokeObjectURL(u);}catch(_e){}
+    _fotoBlobCache.delete(id);
+    try{const t=_mobThumbCache.get(id);if(t&&String(t).startsWith('blob:'))URL.revokeObjectURL(t);}catch(_e){}
+    _mobThumbCache.delete(id);
+    _thumbBytesCache.delete(id);
+    _thumbLinkCache.delete(id);
+    // v157: das dauerhaft abgelegte Vorschaubild blieb bisher für IMMER liegen –
+    // removeFoto entfernte nur den Eintrag am Auftrag.
+    _mobPhotoDelete(_thumbCacheKey(id)).catch(()=>{});
+  });
+}
 
 // ── HV-Bild Cache (geteilt mit Desktop über localStorage) ────────────
 const _HV_CACHE_MAX_AGE_MOB = 24 * 60 * 60 * 1000; // 24 Stunden
@@ -6629,12 +6696,11 @@ window.addEventListener('storage', function(e){
   if(e.key !== 'hv_bild_cache_v1') return;
   _hvBildCacheMapMob = null; // In-Memory-Map zurücksetzen
   console.info('[PAM-Mobil] HV-Bild-Cache aktualisiert – neu eingelesen.');
-  // Sichtbare Thumbnails neu laden
+  // v156: Kacheln des offenen Rasters neu anstoßen. Was schon ein Bild hat, holt seine
+  // Quelle sofort aus dem Speicher – es entsteht also kein neuer Netzverkehr.
   try{
-    document.querySelectorAll('img[data-foto-id]').forEach(function(img){
-      delete img.dataset.hydrated;
-    });
-    hydrateFotoThumbs();
+    const _t=(typeof currentTask==='function')?currentTask():null;
+    if(_t)_fotoRasterHydrieren('fotoGrid',_t.fotos||[]);
   }catch(e2){}
 });
 
@@ -6660,20 +6726,87 @@ const _fotoBlobInflight=new Map();
 // ── DrivePhotoCache: IndexedDB-Caching für Drive-Fotos ───────────────────
 // Speichert heruntergeladene Blobs lokal. Vor erneutem Download wird
 // das modifiedTime aus Drive-Metadaten geprüft – nur bei Änderung neu laden.
+// ── v157: Warnung bei vollem Gerätespeicher ──────────────────────────────────
+// Bis v156 verschluckten BEIDE Schreibstellen (DrivePhotoCache.put und _mobPhotoSave)
+// jeden Fehler – die eine völlig stumm, die andere nur als Konsolenzeile. Ist der
+// Speicher voll, gelingt also kein Ablegen mehr: jede Vorschau wird geholt, angezeigt
+// und nicht behalten, beim nächsten App-Start geht alles von vorne los. Genau der
+// Befund „nach dem Neustarten laden die Vorschauen immer wieder" – nur ohne
+// erkennbaren Auslöser und ohne dass v155 dagegen hilft.
+let _speicherWarnungGezeigt=false;
+function _speicherProblemMelden(e,wo){
+  const voll=e&&(e.name==='QuotaExceededError'||/quota/i.test(String(e.message||e.name||'')));
+  console.warn('[Speicher] '+wo+':',e);
+  if(!voll||_speicherWarnungGezeigt)return;
+  _speicherWarnungGezeigt=true;
+  try{toast('⚠ Gerätespeicher voll – Bilder können nicht mehr zwischengespeichert werden. Einstellungen → „Zwischenspeicher leeren"','error',9000);}catch(_e){}
+}
 const DrivePhotoCache = {
   _db: null,
   _DB_NAME: 'drive-photo-cache-v1',
   _STORE: 'blobs',
+  // v157: Obergrenze. Vorher wuchs diese Ablage UNBEGRENZT – sie füllt sich nebenbei,
+  // ohne dass jemand etwas anklickt, und es gab weder Verfallsdatum noch Löschfunktion.
+  // Grenze über die ANZAHL statt über Bytes: die Größe stünde nur im Datensatz selbst,
+  // und den zu lesen hieße, jedes Vollbild in den Arbeitsspeicher zu laden. Über den
+  // Index auf cachedAt lassen sich die ältesten Einträge dagegen allein anhand ihrer
+  // Schlüssel finden (openKeyCursor lädt die Bilddaten NICHT).
+  _MAX: 400,          // ~400 Vollbilder ≈ 250 MB
+  _seitAufraeumen: 0,
   async _open() {
     if (this._db) return this._db;
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(this._DB_NAME, 1);
+      const req = indexedDB.open(this._DB_NAME, 2); // v157: Version 2 – Index auf cachedAt
       req.onupgradeneeded = e => {
-        e.target.result.createObjectStore(this._STORE, { keyPath: 'id' });
+        const db = e.target.result;
+        const store = db.objectStoreNames.contains(this._STORE)
+          ? e.target.transaction.objectStore(this._STORE)
+          : db.createObjectStore(this._STORE, { keyPath: 'id' });
+        if (!store.indexNames.contains('cachedAt')) store.createIndex('cachedAt', 'cachedAt');
       };
       req.onsuccess = e => { this._db = e.target.result; resolve(this._db); };
       req.onerror = () => reject(req.error);
     });
+  },
+  // Ältestes zuerst wegwerfen, bis wieder Luft ist. Läuft nur gelegentlich mit.
+  async aufraeumen(erzwingen) {
+    try {
+      if (!erzwingen && ++this._seitAufraeumen < 25) return 0;
+      this._seitAufraeumen = 0;
+      const db = await this._open();
+      const anzahl = await new Promise(res => {
+        const rq = db.transaction(this._STORE, 'readonly').objectStore(this._STORE).count();
+        rq.onsuccess = () => res(rq.result || 0);
+        rq.onerror = () => res(0);
+      });
+      if (anzahl <= this._MAX) return 0;
+      const wegDamit = anzahl - Math.floor(this._MAX * 0.8); // auf 80% herunter, nicht knapp an die Grenze
+      return await new Promise(res => {
+        let weg = 0;
+        const tx = db.transaction(this._STORE, 'readwrite');
+        const st = tx.objectStore(this._STORE);
+        const rq = st.index('cachedAt').openKeyCursor(); // aufsteigend = ältestes zuerst
+        rq.onsuccess = e => {
+          const c = e.target.result;
+          if (!c || weg >= wegDamit) return;
+          st.delete(c.primaryKey); weg++;
+          c.continue();
+        };
+        tx.oncomplete = () => { console.info('[Speicher] ' + weg + ' alte Vollbilder verworfen (' + anzahl + ' → ' + (anzahl - weg) + ').'); res(weg); };
+        tx.onerror = () => res(weg);
+      });
+    } catch (e) { console.warn('[Speicher] Aufräumen:', e); return 0; }
+  },
+  async leeren() {
+    try {
+      const db = await this._open();
+      return await new Promise(res => {
+        const tx = db.transaction(this._STORE, 'readwrite');
+        tx.objectStore(this._STORE).clear();
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => res(false);
+      });
+    } catch (e) { return false; }
   },
   async get(driveId) {
     try {
@@ -6688,19 +6821,22 @@ const DrivePhotoCache = {
   async put(driveId, arrayBuffer, mimeType, modifiedTime) {
     try {
       const db = await this._open();
-      return new Promise(resolve => {
+      await new Promise(resolve => {
         const tx = db.transaction(this._STORE,'readwrite');
         tx.objectStore(this._STORE).put({
           id: driveId,
           buf: arrayBuffer,
           mime: mimeType || 'image/jpeg',
           modifiedTime: modifiedTime || '',
+          size: (arrayBuffer && arrayBuffer.byteLength) || 0, // v157: für die Anzeige „Belegt"
           cachedAt: Date.now()
         });
         tx.oncomplete = () => resolve();
-        tx.onerror = () => resolve();
+        // v157: Fehler NICHT mehr stumm schlucken – „voll" ist eine Nachricht wert
+        tx.onerror = () => { _speicherProblemMelden(tx.error, 'Vollbild ablegen'); resolve(); };
       });
-    } catch(e) {}
+      this.aufraeumen(); // v157: gelegentlich die ältesten Einträge wegwerfen
+    } catch(e) { _speicherProblemMelden(e, 'Vollbild ablegen'); }
   },
   createBlobUrl(entry) {
     if (!entry || !entry.buf) return null;
@@ -6757,16 +6893,16 @@ async function _fetchFotoBlob(driveId){
   if(_fotoBlobCache.has(driveId))return _fotoBlobCache.get(driveId);
   if(_fotoBlobInflight.has(driveId))return _fotoBlobInflight.get(driveId);
   // Offline-Ablage zuerst: „mitgenommene" Fotos ohne Netz/Token anzeigen
-  try{const _off=await _mobOfflineGet(driveId);if(_off&&_off.blob){const _u=URL.createObjectURL(_off.blob);_fotoBlobCache.set(driveId,_u);return _u;}}catch(_e){}
+  try{const _off=await _mobOfflineGet(driveId);if(_off&&_off.blob){const _u=URL.createObjectURL(_off.blob);_blobCacheEinfuegen(_fotoBlobCache,driveId,_u);return _u;}}catch(_e){}
   // HV-Bild IndexedDB pruefen: wenn HV-Bild das Vorschaubild bereits gecacht hat
   // (gleiche Origin -> gleiche IndexedDB), sofort zurueckgeben ohne API-Call.
   const hvCached = await _hvBildIdbLookup(driveId);
-  if (hvCached) { _fotoBlobCache.set(driveId, hvCached); return hvCached; }
+  if (hvCached) { _blobCacheEinfuegen(_fotoBlobCache,driveId,hvCached); return hvCached; }
   const p=(async()=>{
     if(!(await ensureToken()))throw new Error('Kein Token');
     // IndexedDB-Cache mit modifiedTime-Vergleich
     const url=await _fetchFotoBlobCached(driveId, gdriveToken);
-    if(url)_fotoBlobCache.set(driveId,url);
+    if(url)_blobCacheEinfuegen(_fotoBlobCache,driveId,url);
     return url;
   })();
   _fotoBlobInflight.set(driveId,p);
@@ -6824,7 +6960,7 @@ async function _mobFetchThumb(driveId) {
           const blob = await thumbR.blob();
           if (blob.size > 1000) { // Winzige Platzhalter-Bilder überspringen
             const url = URL.createObjectURL(blob);
-            _mobThumbCache.set(driveId, url);
+            _blobCacheEinfuegen(_mobThumbCache,driveId,url);
             return url;
           }
         }
@@ -6835,96 +6971,143 @@ async function _mobFetchThumb(driveId) {
   return _fetchFotoBlob(driveId);
 }
 
-async function loadFotoThumb(imgEl,driveId){
-  if(!imgEl||!driveId)return;
-  const url=await _fetchFotoBlob(driveId);
-  if(url){
-    imgEl.style.display='';
-    if(imgEl.parentElement)imgEl.parentElement.classList.remove('fallback');
-    imgEl.src=url;
-  }
-  else{imgEl.style.display='none';const p=imgEl.parentElement;if(p)p.classList.add('fallback');}
-}
-function hydrateFotoThumbs(){
-  document.querySelectorAll('img[data-foto-id]').forEach(img=>{
-    if(img.dataset.hydrated==='1')return;
-    const id=img.getAttribute('data-foto-id');
-    if(id){img.dataset.hydrated='1';loadFotoThumb(img,id);}
-  });
-}
-// Fallback wenn thumbnail-URL abgelaufen: Auth-Fetch (blob) nachladen
-function _mobThumbFallback(img){
-  if(img.dataset.fbDone==='1')return;
-  img.dataset.fbDone='1';
-  const id=img.getAttribute('data-foto-id');
-  const localKey=img.getAttribute('data-local-key');
-  if(id){
-    // Drive-Blob holen (bzw. Offline-Ablage, falls „mitgenommen")
-    img.removeAttribute('onerror');
-    _fetchFotoBlob(id).then(u=>{
-      if(u){img.src=u;img.style.display='';}
-      else if(localKey){
-        // Drive fehlgeschlagen → IndexedDB-Fallback
-        _mobPhotoGet(localKey).then(dataUrl=>{
-          if(dataUrl){img.src=dataUrl;img.style.display='';}
-          else{img.style.display='none';if(img.parentElement)img.parentElement.classList.add('fallback');}
-        });
-      } else {
-        img.style.display='none';if(img.parentElement)img.parentElement.classList.add('fallback');
-      }
-    });
-  } else if(localKey){
-    // Kein driveId → direkt aus IndexedDB laden
-    _mobPhotoGet(localKey).then(dataUrl=>{
-      if(dataUrl){img.src=dataUrl;img.style.display='';}
-      else{img.style.display='none';if(img.parentElement)img.parentElement.classList.add('fallback');}
-    });
-  } else {
-    img.style.display='none';
-    if(img.parentElement)img.parentElement.classList.add('fallback');
-  }
+// v156: loadFotoThumb / hydrateFotoThumbs / _mobThumbFallback sind ERSATZLOS entfallen.
+// Alle drei gehörten zum alten Weg „öffentliche Adresse zuerst, bei Fehler Vollbild
+// nachladen". Ihre Aufgabe erledigt jetzt _fotoVorschauLaden (siehe weiter unten), das
+// Gerätespeicher, kleines Drive-Vorschaubild, Sichtbarkeits-Steuerung und den 4er-Riegel
+// mitbringt. Damit gibt es in der ganzen App nur noch EINE Vorschau-Kette.
+// ── v156: Hauptraster über DIESELBE Kette wie die Auswahl-Fenster ─────────────
+// Bis v155 setzte die Kachel als Startbild die ÖFFENTLICHE Adresse
+// drive.google.com/thumbnail – die liefert in der installierten App nichts (dort gibt
+// es keine Google-Browser-Sitzung). Jedes Bild scheiterte also erst einmal, danach zog
+// onerror="_mobThumbFallback" das VOLLBILD nach. Zusammen mit hydrateFotoThumbs (das
+// für JEDES Foto ungefragt das Vollbild holte) war das der Grund, warum ausgerechnet
+// das meistgenutzte Raster das langsamste war – während die beiden Auswahl-Fenster
+// seit v154/v155 längst klein, sichtbarkeitsgesteuert und mit Geräte-Ablage laufen.
+// Jetzt trägt die Kachel nur ihre laufende Nummer; _fotoRasterHydrieren hängt danach
+// _fotoVorschauLaden an. WICHTIG: das <img> darf hier NICHT display:none bekommen –
+// ein ausgeblendetes Element wird vom IntersectionObserver nie als sichtbar gemeldet
+// und die Kachel bliebe für immer leer.
+function _fotoIstVideo(f){
+  return /^video\//i.test((f&&f.mimeType)||'')||/\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test((f&&f.name)||'');
 }
 function renderFotos(list){
   if(!list||!list.length)return '';
   return list.map((f,i)=>{
     const name=f.name||'';
-    // Bearbeitete Version bevorzugen (editedDriveId)
-    const id=(f.editedDriveId||f.driveId)||'';
     const caption=f.caption||'';
-    const cached=id?_fotoBlobCache.get(id):null;
-    // COMPAT-FIX: Desktop speichert 'thumbnailLink', Mobile speichert 'thumbnail' –
-    // beide Feldnamen prüfen, damit Fotos aus beiden Apps korrekt angezeigt werden.
-    const thumbSrc=_thumbGespeichert(f)||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':''); // v129: tote blob:-Adressen ignorieren
-    // localUrl als Sofort-Vorschau wenn kein Cache und keine Drive-ID (Upload läuft noch)
-    const localFallback=(!cached&&!id&&f.localUrl)?f.localUrl:'';
-    // localKey für IndexedDB-Fallback nach Reload (localUrl wird beim Speichern entfernt)
-    const localKeyAttr=(!id&&!localFallback&&f.localKey)?('data-local-key="'+escAttr(f.localKey)+'" '):'';
-    const srcAttr=cached?('src="'+escAttr(cached)+'" ')
-                 :(id?'data-foto-id="'+escAttr(id)+'" src="'+escAttr(thumbSrc)+'" '
-                     :(localFallback?'src="'+escAttr(localFallback)+'" '
-                     :(localKeyAttr?'src="" '+localKeyAttr
-                     :(thumbSrc?'src="'+escAttr(thumbSrc)+'" ':''))));
     const tip=caption?(caption+' — '+name):name;
     const editedBadge=f.editedDriveId?'<span style="position:absolute;top:3px;left:3px;background:var(--accent);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;">✏</span>':'';
     const uploadOverlay=f._uploading?'<div class="foto-upload-overlay"><span class="up-icon">⬆</span><span class="up-lbl">lädt hoch…</span></div>':'';
+    // v156: Videos waren im Hauptraster eine kaputte Kachel (das Tagebuch zeigt ▶ seit je).
+    // Der Desktop-Foto-Picker holt ausdrücklich auch mimeType video/ – sie liegen also
+    // wirklich in t.fotos. Drive liefert für Videos ein Vorschaubild, deshalb läuft die
+    // normale Kette weiter; obendrauf kommt nur das ▶-Zeichen.
+    const vid=_fotoIstVideo(f);
+    const videoBadge=vid?'<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;"><span style="background:rgba(0,0,0,.55);color:#fff;width:34px;height:34px;border-radius:17px;display:flex;align-items:center;justify-content:center;font-size:15px;">▶</span></div>':'';
     return '<div class="foto-thumb" onclick="openFotoFullscreen('+i+')" title="'+escAttr(tip)+'">'
-      +'<img '+srcAttr+'alt="" loading="lazy" onerror="_mobThumbFallback(this)">'
+      +'<img data-foto-idx="'+i+'" alt="">'
+      +videoBadge
       +editedBadge
       +uploadOverlay
       +'<button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button>'
-      +'<button style="position:absolute;top:2px;right:26px;background:rgba(0,0,0,.6);color:#fff;border:none;width:22px;height:22px;border-radius:11px;font-size:11px;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center;" onclick="event.stopPropagation();shareFoto('+i+')" title="Teilen">📤</button>'
+      +'<button class="foto-share-btn" onclick="event.stopPropagation();shareFoto('+i+')" title="Teilen">📤</button>'
       +(caption?'<div class="cap-badge">'+esc(caption)+'</div>':'')
       +'</div>';
   }).join('');
+}
+// Hängt an jede Kachel eines gerade neu aufgebauten Rasters die Vorschau-Kette.
+// `liste` ist die Liste, deren laufende Nummern in data-foto-idx stehen.
+function _fotoRasterHydrieren(wurzelId,liste){
+  const box=document.getElementById(wurzelId);
+  if(!box||!liste)return;
+  box.querySelectorAll('img[data-foto-idx]').forEach(img=>{
+    const i=parseInt(img.getAttribute('data-foto-idx'),10);
+    const f=liste[i];
+    if(f)_fotoVorschauLaden(f,img);
+  });
+}
+// ── v156: Dateityp zuverlässig bestimmen ─────────────────────────────────────
+// Die ganze Dokumenten-Ansicht hing an a.type – aber nur ein Teil der Einträge hat das
+// Feld überhaupt: E-Mail-Anhänge vom PC bekommen weder `type` noch `size` (Desktop
+// schreibt dort nur name/fileId/url/uploadedAt), der Ordner-Abgleich schreibt `type`
+// aber kein `size`, und nur von Hand am PC hochgeladene Dateien haben beides.
+// Folge bisher: PDF zeigte 📄 statt 📕, ein Bild-Anhang bekam keine Vorschau und öffnete
+// im externen Drive-Betrachter statt in der Lightbox, und die Zeile unter dem Namen war
+// fast immer leer. Fehlt der Typ, wird er jetzt aus der Dateiendung abgeleitet.
+const _ATTACH_TYP_MAP={
+  pdf:'application/pdf',
+  jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',
+  heic:'image/heic',heif:'image/heif',bmp:'image/bmp',tif:'image/tiff',tiff:'image/tiff',
+  doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  odt:'application/vnd.oasis.opendocument.text',rtf:'application/rtf',
+  xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ods:'application/vnd.oasis.opendocument.spreadsheet',csv:'text/csv',
+  ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip:'application/zip',rar:'application/vnd.rar','7z':'application/x-7z-compressed',
+  eml:'message/rfc822',msg:'application/vnd.ms-outlook',
+  txt:'text/plain',dwg:'image/vnd.dwg',dxf:'image/vnd.dxf'
+};
+function _attachTypMob(a){
+  const t=String((a&&(a.type||a.mimeType))||'').trim();
+  if(t)return t;
+  const e=(String((a&&a.name)||'').toLowerCase().match(/\.([a-z0-9]{1,5})$/)||[])[1]||'';
+  return _ATTACH_TYP_MAP[e]||'';
+}
+function _attachIstBildMob(a){return /^image\//.test(_attachTypMob(a));}
+// Kurzform für die Zeile unter dem Namen („PDF", „Word", „Bild" …)
+function _attachKurzTypMob(a){
+  const t=_attachTypMob(a);
+  if(!t)return '';
+  if(t==='application/pdf')return 'PDF';
+  if(t.startsWith('image/'))return 'Bild';
+  if(t==='message/rfc822'||t.includes('ms-outlook'))return 'E-Mail';
+  if(t.includes('word')||t==='application/rtf'||t.includes('opendocument.text'))return 'Word';
+  if(t.includes('excel')||t.includes('sheet')||t==='text/csv')return 'Tabelle';
+  if(t.includes('presentation')||t.includes('powerpoint'))return 'Präsentation';
+  if(t.includes('zip')||t.includes('rar')||t.includes('7z'))return 'Archiv';
+  if(t.startsWith('text/'))return 'Text';
+  const e=(String((a&&a.name)||'').toLowerCase().match(/\.([a-z0-9]{1,5})$/)||[])[1]||'';
+  return e?e.toUpperCase():'';
 }
 function attachIconMob(type){
   if(!type)return'📄';
   if(type.startsWith('image/'))return'🖼️';
   if(type==='application/pdf')return'📕';
-  if(type.includes('word'))return'📝';
+  if(type==='message/rfc822'||type.includes('ms-outlook'))return'📧';
+  if(type.includes('word')||type.includes('opendocument.text'))return'📝';
   if(type.includes('excel')||type.includes('sheet'))return'📊';
-  if(type.includes('zip')||type.includes('rar'))return'🗜️';
+  if(type.includes('presentation')||type.includes('powerpoint'))return'📽️';
+  if(type.includes('zip')||type.includes('rar')||type.includes('7z'))return'🗜️';
   return'📄';
+}
+// ── v156: echte Vorschau für Dokumente ───────────────────────────────────────
+// Bisher stand als Vorschau die ÖFFENTLICHE Adresse drive.google.com/thumbnail im
+// Markup – die liefert in der installierten App nichts, das Bild scheiterte und wurde
+// durch das Symbol ersetzt. Es gab also faktisch NIE eine Dokument-Vorschau.
+// Über _thumbBytes läuft das jetzt denselben Weg wie bei den Fotos: Gerät zuerst,
+// sonst EINMAL das kleine Drive-Vorschaubild holen und dauerhaft im Gerät ablegen,
+// höchstens 4 gleichzeitig, Laden erst beim Sichtwerden. Drive erzeugt so ein
+// Vorschaubild auch für PDF (erste Seite) – deshalb sieht man jetzt auch die.
+// Das <img> startet BEWUSST ohne src und ohne display:none: ein ausgeblendetes
+// Element meldet der IntersectionObserver nie als sichtbar; ohne src ist es
+// unsichtbar und das Symbol dahinter bleibt stehen.
+function _attachVorschauLaden(a,img){
+  if(!a||!img)return;
+  const fid=(a.driveId||a.fileId)||'';
+  const sofort=(typeof a.data==='string'&&/^data:image\//.test(a.data))?a.data:'';
+  const holen=()=>{
+    (async()=>{
+      if(sofort)return sofort;
+      if(fid){
+        try{const off=await _mobOfflineGet(fid);
+            if(off&&off.blob&&/^image\//.test(off.blob.type||''))return URL.createObjectURL(off.blob);}catch(e){}
+        return await _thumbBytes(fid);
+      }
+      return '';
+    })().then(u=>{if(u)img.src=u;}).catch(()=>{});
+  };
+  if(sofort)holen(); else _vorschauBeobachten(img,holen);
 }
 function formatBytesMob(n){if(!n)return'';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
 // ── v152: Dokumente nach Ordner gruppieren – wie die Desktop-Sektion (b556/b587) ──
@@ -6954,20 +7137,31 @@ function _attachGrpToggle(el){
   if(!key)return;
   _attachGrpZu[key]=!_attachGrpZu[key];
   const t=currentTask();const box=document.getElementById('attachListMob');
-  if(t&&box)box.innerHTML=renderAttachmentsMob(t.attachments||[]);
+  if(t&&box){
+    box.innerHTML=renderAttachmentsMob(t.attachments||[]);
+    _attachListeHydrieren('attachListMob',t.attachments||[]); // v156: Vorschau/Offline nach dem Auf-/Zuklappen erneut anhängen
+  }
 }
 function renderAttachmentsMob(list){
   if(!list||!list.length)return '';
   const zeile=(a,i)=>{
-    const isImg=a.type&&a.type.startsWith('image/');
     const fid=a.driveId||a.fileId||'';
-    // Thumbnail: data-URL (desktop-Uploads) ODER Drive-Thumbnail-URL über fileId
-    const thumbSrc=a.data||(fid?'https://drive.google.com/thumbnail?id='+fid+'&sz=w120':'');
+    // v156: zweite Zeile war fast immer leer (size fehlt bei E-Mail-Anhängen UND beim
+    // Ordner-Abgleich). Jetzt: Typ · Größe-falls-bekannt · Datum-falls-bekannt.
+    const teile=[];
+    const kurz=_attachKurzTypMob(a); if(kurz)teile.push(kurz);
+    const gr=formatBytesMob(a.size); if(gr)teile.push(gr);
+    if(a.uploadedAt)teile.push(esc(String(a.uploadedAt)));
     return '<div class="attach-row-mob" onclick="openAttachMob('+i+')" style="cursor:pointer">'
-      +(isImg&&thumbSrc
-        ?'<img class="attach-thumb-mob" src="'+escAttr(thumbSrc)+'" onerror="this.outerHTML=\'<div class=\\\'attach-icon-mob\\\'>'+attachIconMob(a.type)+'</div>\'">'
-        :'<div class="attach-icon-mob">'+attachIconMob(a.type)+'</div>')
-      +'<div class="attach-meta-mob"><div class="attach-name-mob">'+esc(a.name||'Datei')+'</div><div class="attach-size-mob">'+formatBytesMob(a.size)+'</div></div>'
+      +'<div class="attach-icon-mob" style="position:relative;overflow:hidden;">'+attachIconMob(_attachTypMob(a))
+        +(fid||a.data?'<img class="attach-thumb-ovl" data-att-prev="'+i+'" alt="">':'')
+      +'</div>'
+      +'<div class="attach-meta-mob">'
+        +'<div class="attach-name-mob">'+esc(a.name||'Datei')+'</div>'
+        +'<div class="attach-size-mob">'+teile.join(' · ')
+          +'<span class="attach-off-mob" data-att-off="'+i+'" style="display:none;"> · 📴 offline</span>'
+        +'</div>'
+      +'</div>'
       +'<button class="inline-btn" style="padding:6px 10px;font-size:12px" onclick="event.stopPropagation();downloadAttachMob('+i+')">↓</button>'
       +'</div>';
   };
@@ -6984,6 +7178,69 @@ function renderAttachmentsMob(list){
       +(zu?'':g.items.map(x=>zeile(x.a,x.i)).join(''));
   }).join('');
 }
+// v156: hängt Vorschau und Offline-Kennzeichnung an eine frisch aufgebaute Dokumentenliste.
+function _attachListeHydrieren(wurzelId,list){
+  const box=document.getElementById(wurzelId);
+  if(!box||!list)return;
+  box.querySelectorAll('img[data-att-prev]').forEach(img=>{
+    const a=list[parseInt(img.getAttribute('data-att-prev'),10)];
+    if(a)_attachVorschauLaden(a,img);
+  });
+  // „Was habe ich eigentlich dabei?" war bisher nicht erkennbar – man merkte es erst
+  // ohne Empfang an der Fehlermeldung. Die Prüfung liest nur die Geräte-Ablage.
+  box.querySelectorAll('[data-att-off]').forEach(el=>{
+    const a=list[parseInt(el.getAttribute('data-att-off'),10)];
+    if(!a)return;
+    if(a.data){el.style.display='';return;} // eingebettete Kopie ist immer verfügbar
+    const fid=a.driveId||a.fileId||'';
+    if(!fid)return;
+    _mobOfflineHas(fid).then(ja=>{if(ja)el.style.display='';}).catch(()=>{});
+  });
+}
+// ── v156: „🖼 Alle ansehen" – der Knopf existierte seit jeher, die Funktion NICHT ──
+// _openAttachThumbnailGridMob stand in keiner Datei; der Knopf in der Kopfzeile der
+// Dokumente-Sektion warf still einen ReferenceError und tat gar nichts (gleicher
+// Fehlertyp wie shareFoto in v153 und openFotoViewer in v109). Beim Gegenzählen aller
+// Klick-Handler war er der einzige tote Aufruf der ganzen App.
+// Er zeigt jetzt alle Dokumente als große Kacheln, nach Ordner gruppiert wie die Liste –
+// mit echter Vorschau, wo Drive eine liefert (Bilder UND erste PDF-Seite). Antippen
+// öffnet dieselbe Datei wie die Liste (openAttachMob), damit es nur einen Öffnen-Weg gibt.
+function _openAttachThumbnailGridMob(){
+  const t=currentTask();
+  const list=(t&&t.attachments)||[];
+  if(!list.length){toast('Keine Dokumente','info');return;}
+  let ov=document.getElementById('attGridOverlay');if(ov)ov.remove();
+  ov=document.createElement('div');
+  ov.id='attGridOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.9);display:flex;flex-direction:column;padding:14px;';
+  const grp=_attachNachOrdnerMob(list);
+  let inhalt='';
+  grp.forEach(g=>{
+    if(g.mehrere)inhalt+='<div style="grid-column:1/-1;font-size:12px;font-weight:700;color:var(--accent2);padding:10px 2px 2px;">📂 '+esc(g.name)+' <span style="font-weight:400;color:#999;">('+g.items.length+')</span></div>';
+    g.items.forEach(x=>{
+      const a=x.a;
+      inhalt+='<div onclick="_attGridOeffnen('+x.i+')" style="cursor:pointer;">'
+        +'<div style="position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;display:flex;align-items:center;justify-content:center;font-size:34px;">'
+          +attachIconMob(_attachTypMob(a))
+          +'<img class="attach-thumb-ovl" data-att-prev="'+x.i+'" alt="" style="border-radius:0;">'
+        +'</div>'
+        +'<div style="font-size:11px;color:#ddd;line-height:1.25;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;">'+esc(a.name||'Datei')+'</div>'
+        +'</div>';
+    });
+  });
+  ov.innerHTML='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">'
+    +'<div style="flex:1;font-size:16px;font-weight:700;color:#fff;">🗂 Dokumente – Übersicht <span style="font-weight:400;font-size:13px;color:#aaa;">('+list.length+')</span></div>'
+    +'<button onclick="document.getElementById(\'attGridOverlay\').remove()" style="min-height:44px;min-width:44px;border-radius:10px;border:1px solid #666;background:transparent;color:#fff;font-size:18px;cursor:pointer;">✕</button>'
+    +'</div>'
+    +'<div id="attGridBody" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));grid-auto-rows:min-content;gap:10px;align-content:start;">'+inhalt+'</div>';
+  document.body.appendChild(ov);
+  // grid-auto-rows:min-content – derselbe Zeilen-Kollaps wie in v153 bei feImportGrid/shrGrid
+  _attachListeHydrieren('attGridBody',list);
+}
+function _attGridOeffnen(i){
+  const ov=document.getElementById('attGridOverlay');if(ov)ov.remove();
+  openAttachMob(i);
+}
 function openAttachMob(i){
   _openAttachGalleryMob(i);
 }
@@ -6993,8 +7250,8 @@ async function _openAttachGalleryMob(i){
   const a=t.attachments[i];
   const fid=a.driveId||a.fileId||'';
   const name=a.name||'Datei';
-  const isImg=a.type&&a.type.startsWith('image/');
-  const isPdf=(a.type==='application/pdf')||(name.toLowerCase().endsWith('.pdf'));
+  const isImg=_attachIstBildMob(a); // v156: erkennt Bilder auch ohne a.type (E-Mail-Anhänge)
+  const isPdf=(_attachTypMob(a)==='application/pdf')||(name.toLowerCase().endsWith('.pdf'));
   // Offline-Ablage zuerst: „mitgenommene" Datei ohne Netz/Token öffnen
   const _off=fid?await _mobOfflineGet(fid):null;
 
@@ -7005,8 +7262,15 @@ async function _openAttachGalleryMob(i){
     if(!fid){toast('Bild nicht verfügbar','error');return;}
     if(!(await ensureToken())){toast('Bild ist nicht offline gespeichert – online „📴 Offline mitnehmen"','error');return;}
     const viewUrl='https://drive.google.com/file/d/'+fid+'/view';
-    const thumbSrc=a.data||('https://drive.google.com/thumbnail?id='+fid+'&sz=w400');
-    openLightbox(thumbSrc,name,viewUrl,{});
+    // v156: kein öffentliches drive.google.com/thumbnail mehr als Startbild – das scheitert
+    // in der installierten App und die Lightbox meldete „Vorschau nicht verfügbar", bis
+    // Sekunden später das Vollbild kam. Stattdessen das im Gerät liegende Vorschaubild.
+    const thumbSrc=a.data||_thumbBytesCache.get(fid)||'';
+    openLightbox(thumbSrc,name,viewUrl,{}); // viewUrl ist hier immer gesetzt → openLightbox steigt nicht aus
+    if(!thumbSrc)_thumbBytes(fid).then(du=>{
+      const _i=document.getElementById('lbImg'),_l=document.getElementById('lightbox');
+      if(du&&_i&&_l&&_l.classList.contains('open')&&!_i.getAttribute('src')){_i.src=du;_i.style.display='';}
+    }).catch(()=>{});
     const blob=await _fetchFotoBlob(fid);
     const lb=document.getElementById('lightbox');
     const img=document.getElementById('lbImg');
@@ -7384,7 +7648,7 @@ async function uploadFoto(files,_zielTaskId){
       // v146: die HOCHGELADENE Fassung cachen (komprimiert + ggf. GPS-gestempelt) – vorher
       // lag das rohe Kamera-Original im Cache und der 📍-Dialog zeigte „KEIN Aufnahmeort",
       // obwohl die Drive-Datei längst Koordinaten hatte (Befund Frank 31.07.).
-      try{_fotoBlobCache.set(meta.id,URL.createObjectURL(file));}catch(e){_fotoBlobCache.set(meta.id,fo.localUrl);}
+      try{_blobCacheEinfuegen(_fotoBlobCache,meta.id,URL.createObjectURL(file));}catch(e){_blobCacheEinfuegen(_fotoBlobCache,meta.id,fo.localUrl);}
       const live=_fotoLive(_taskId,fo);
       live.driveId=meta.id;
       live.name=meta.name||fo.name;
@@ -7578,6 +7842,15 @@ const _thumbLinkInflight=new Map(); // v154: laufende Abrufe bündeln – wie _f
 // done:1 und KEIN taskId: die Waisen-Rettung (_mobPhotoListMeta, filtert auf
 // `taskId && !done`) fasst diese Einträge damit nicht an.
 const _thumbBytesCache=new Map();   // driveId → dataUrl (Sitzung, spart den DB-Zugriff)
+// v157: auch diese Ablage wuchs unbegrenzt. Es sind zwar nur ~30 KB je Eintrag, bei
+// vielen Aufträgen in einer Sitzung summiert sich das aber ebenfalls. Die Bilder liegen
+// dauerhaft in der Geräte-Ablage – ein verworfener Eintrag kostet also nur einen
+// Datenbank-Zugriff, kein Netz.
+const _THUMB_BYTES_MAX=500;
+function _thumbBytesMerken(id,du){
+  _thumbBytesCache.set(id,du);
+  while(_thumbBytesCache.size>_THUMB_BYTES_MAX)_thumbBytesCache.delete(_thumbBytesCache.keys().next().value);
+}
 const _thumbBytesInflight=new Map();
 function _thumbCacheKey(id){return 'thumb_'+id;}
 // Nicht mehr als 4 Vorschauen gleichzeitig aus dem Netz holen – beim Scrollen liefen
@@ -7601,7 +7874,7 @@ async function _thumbBytes(id){
     // 1) schon im Gerät?
     try{
       const du=await _mobPhotoGet(_thumbCacheKey(id));
-      if(du){_thumbBytesCache.set(id,du);return du;}
+      if(du){_thumbBytesMerken(id,du);return du;}
     }catch(e){}
     // 2) sonst einmal aus Drive holen und dauerhaft ablegen
     await _thumbSchlitz();
@@ -7616,7 +7889,7 @@ async function _thumbBytes(id){
       if(!blob||blob.size<1000)return ''; // winzige Platzhalter überspringen
       const du=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result||'');fr.onerror=()=>res('');fr.readAsDataURL(blob);});
       if(!du)return '';
-      _thumbBytesCache.set(id,du);
+      _thumbBytesMerken(id,du);
       _mobPhotoSave(_thumbCacheKey(id),du,{done:1,art:'thumb'}).catch(()=>{});
       return du;
     }catch(e){console.warn('[Vorschau] Bytes:',e);return '';}
@@ -7665,8 +7938,13 @@ function _vorschauBeobachten(img,starten){
   img._vorschauStart=starten;
   _vorschauObserver.observe(img);
 }
-function _fotoVorschauLaden(f,img){
+// v156: dritter Parameter `opts` – damit auch die Raster mit Platzhalter-Symbol
+// (Baudoku) und die Kacheln mit „🖼️"-Rückfall (Hauptraster) diese EINE Kette nutzen
+// können, statt sich je eine eigene zu bauen. opts.beiBild läuft, sobald eine Quelle
+// wirklich ein Bild geliefert hat; opts.beiNichts, wenn alle Quellen durch sind.
+function _fotoVorschauLaden(f,img,opts){
   if(!f||!img)return;
+  opts=opts||{};
   const id=f.editedDriveId||f.driveId||''; // bearbeitete Fassung hat Vorrang – wie in renderFotos
   const quellen=[];
   const ausSpeicher=!!((f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))||(id&&_fotoBlobCache.get(id)));
@@ -7682,15 +7960,30 @@ function _fotoVorschauLaden(f,img){
   if(id)quellen.push(()=>_thumbBytes(id)); // Gerät → einmalig Drive → bleibt liegen
   const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
   if(_ts)quellen.push(()=>_ts);
+  // v156: der HV-Bilder-Cache (gleiche Herkunft, kennt zu manchen Drive-Ids bereits eine
+  // fertige Vorschau-Adresse) hing bisher nur am alten renderFotos-Weg. Er steht hier
+  // BEWUSST hinter _thumbBytes: eine funktionierende Fernadresse weiter vorn hieße, die
+  // Geräte-Ablage wird nie gefüllt und nach dem nächsten App-Start lädt alles neu (v155).
+  if(id){const _hv=_hvBildCacheLookupMob(id);if(_hv)quellen.push(()=>_hv);}
   // letzte Not: der alte Weg inkl. Vollbild-Rückfall (selten, z.B. Datei ohne Thumbnail)
   if(id)quellen.push(()=>_mobFetchThumb(id).then(u=>{if(u)_thumbMerken(f,u);return u;}));
   let n=0;
   const weiter=()=>{
-    if(n>=quellen.length){img.style.display='none';return;} // wirklich nichts da → Kachel bleibt leer
+    if(n>=quellen.length){
+      // wirklich nichts da → Kachel leer lassen und dem Aufrufer Bescheid geben
+      img.style.display='none';
+      const p=img.parentElement;if(p&&p.classList)p.classList.add('fallback'); // v156: 🖼️-Symbol wie bisher in renderFotos
+      if(typeof opts.beiNichts==='function'){try{opts.beiNichts();}catch(_e){}}
+      return;
+    }
     const q=quellen[n++];
     Promise.resolve().then(q).then(u=>{if(u)img.src=u;else weiter();}).catch(weiter);
   };
-  img.onload=()=>{img.style.display='';};
+  img.onload=()=>{
+    img.style.display='';
+    const p=img.parentElement;if(p&&p.classList)p.classList.remove('fallback');
+    if(typeof opts.beiBild==='function'){try{opts.beiBild();}catch(_e){}}
+  };
   img.onerror=()=>{
     // v154: Drive-thumbnailLink-Adressen laufen nach Stunden ab. Die gemerkte Fassung
     // sonst stehen zu lassen hieße: bei JEDEM Neuaufbau erst ein Fehlversuch, dann
@@ -7726,7 +8019,7 @@ function _feImportOeffnen(){
     // Fällt nur auf, sobald der Inhalt überläuft – darum blieb es bei wenigen Fotos unsichtbar.
     // min-height:0 ist die übliche Absicherung für scrollende Flex-Kinder (hier bereits
     // durch overflow-y:auto abgedeckt, schadet aber nicht).
-    +'<div id="feImportGrid" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:min-content;gap:8px;align-content:start;"></div>'
+    +'<div id="feImportGrid" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));grid-auto-rows:min-content;gap:8px;align-content:start;"></div>'
     +'<div style="display:flex;gap:8px;margin-top:12px;">'
     +'<button id="feImportOk" onclick="_feImportUebernehmen()" style="flex:1;min-height:50px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;">✓ Übernehmen (0)</button>'
     +'<button onclick="document.getElementById(\'feImportOverlay\').remove()" style="min-height:50px;padding:0 18px;border-radius:10px;border:1px solid #666;background:transparent;color:#fff;font-size:15px;cursor:pointer;">Abbrechen</button>'
@@ -7799,7 +8092,7 @@ async function _feImportUebernehmen(){
 // ══════════════════════════════════════════════
 let _shrSel=null;
 function _shrKey(f){return f.localKey||f.driveId||f.id||'';}
-const _shrIstVideo=f=>/^video\//i.test(f&&f.mimeType||'')||/\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(f&&f.name||'');
+const _shrIstVideo=_fotoIstVideo; // v156: eine Video-Erkennung für die ganze App (war zweimal gleich da)
 function _shrTagTeilen(dayKey){
   const t=currentTask();if(!t)return;
   const keys=(t.fotos||[]).filter(f=>{
@@ -7836,7 +8129,7 @@ function _shrOeffnen(preKeys){
     // v153 FIX: grid-auto-rows:min-content – identischer Zeilen-Kollaps wie bei
     // feImportGrid (dort ausführlich beschrieben). Genau deshalb sah die Foto-Auswahl
     // beim Teilen „verschachtelt" aus und die unteren Reihen waren nicht antippbar.
-    +'<div id="shrGrid" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:min-content;gap:8px;align-content:start;"></div>'
+    +'<div id="shrGrid" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));grid-auto-rows:min-content;gap:8px;align-content:start;"></div>'
     +'<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:#ddd;cursor:pointer;">'
     +'<input type="checkbox" id="shrMitText" style="width:20px;height:20px;">Beschriftung + Datum ins PDF (sonst neutral)</label>'
     +'<div style="display:flex;gap:8px;margin-top:10px;">'
@@ -8106,13 +8399,25 @@ async function _feDriveMove(fileId,newParent){
 }
 // Tap auf Thumbnail → Lightbox in der App (mit Fallback-Link zum Drive-Viewer)
 // ── Mobile Lightbox ──────────────────────────────────────────────
+let _lbLadeMarke=0; // v156: verhindert, dass ein spät eintreffendes Vorschaubild das schon gezeigte Vollbild überschreibt
 async function openFotoFullscreen(i){
   const t=currentTask();if(!t||!t.fotos||!t.fotos[i])return;
   const f=t.fotos[i];
   const _vid=f.editedDriveId||f.driveId||'';
   const viewUrl=_vid?'https://drive.google.com/file/d/'+_vid+'/view':(f.url||'');
+  // v156: Videos gehören nicht in die Bild-Lightbox – dort erschien bisher nur
+  // „Vorschau nicht verfügbar". Drive kann sie abspielen, also direkt dorthin.
+  if(_fotoIstVideo(f)){
+    if(viewUrl){window.open(viewUrl,'_blank');}
+    else toast('Video lässt sich hier nicht abspielen – bitte über ☁ Drive','info',4000);
+    return;
+  }
   const cached=_vid?_fotoBlobCache.get(_vid):null;
-  const _thumbFb=f.thumbnail||f.thumbnailLink||(f.driveId?'https://drive.google.com/thumbnail?id='+f.driveId+'&sz=w400':'');
+  // v156: als Startbild NICHT mehr die öffentliche drive.google.com-Adresse. Die
+  // funktioniert in der installierten App nie – die Beschriftung meldete deshalb sofort
+  // „Vorschau nicht verfügbar" und erst Sekunden später kam das Vollbild. Stattdessen
+  // das bereits im Gerät liegende Vorschaubild (aus v155), sofern schon im Speicher.
+  const _thumbFb=(_vid?_thumbBytesCache.get(_vid):'')||_thumbGespeichert(f)||'';
   let _localFallback=f.localUrl||'';
   // v109: Lokal bearbeitete Version (Zeichnung ohne Drive-Upload) hat VORRANG – vorher
   // überdeckte das Drive-ORIGINAL die Bearbeitung wieder. Nach Reload liegt sie nur
@@ -8125,14 +8430,23 @@ async function openFotoFullscreen(i){
   const _first=(_hasLocalEdit&&_localFallback)?_localFallback:(cached||_thumbFb||_localFallback);
   openLightbox(_first,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
   if(!cached&&_vid&&!(_hasLocalEdit&&_localFallback)){
+    const marke=++_lbLadeMarke;
+    // Läuft die Ansicht noch und zeigt sie noch DIESES Foto? Sonst nichts anfassen –
+    // sonst blitzt beim Blättern das Bild des vorigen Fotos auf.
+    const zeigen=(url,nurWennLeer)=>{
+      if(!url||marke!==_lbLadeMarke||_lbFotoIdx!==i)return false;
+      const lb=document.getElementById('lightbox'),img=document.getElementById('lbImg');
+      if(!img||!lb||!lb.classList.contains('open'))return false;
+      if(nurWennLeer&&img.getAttribute('src'))return false;
+      img.src=url;
+      if(img.style.display==='none')img.style.display='';
+      return true;
+    };
+    // Zwischenschritt: das im Gerät abgelegte Vorschaubild (kein Netz nötig) – damit
+    // steht sofort ETWAS auf dem Schirm, während das Vollbild noch lädt.
+    if(!_first)_thumbBytes(_vid).then(du=>zeigen(du,true)).catch(()=>{});
     const url=await _fetchFotoBlob(_vid);
-    if(url){
-      const img=document.getElementById('lbImg');
-      if(img&&document.getElementById('lightbox').classList.contains('open')){
-        img.src=url;
-        if(img.style.display==='none')img.style.display='';
-      }
-    }
+    zeigen(url,false);
   }
 }
 async function removeFoto(i){
@@ -8144,6 +8458,7 @@ async function removeFoto(i){
     : 'Foto-Eintrag entfernen?';
   if(!confirm(msg))return;
   if(f.localKey)_mobPhotoSetMeta(f.localKey,{done:1}); // v143: bewusst entfernt → Waisen-Rettung fasst es nicht mehr an
+  _fotoSpuerenLoeschen(f); // v157: Vorschaubild im Gerät + Arbeitsspeicher-Adressen mit entfernen
   t.fotos.splice(i,1);
   _mOpenSections['Fotos']=true;
   forceSave();
@@ -8291,27 +8606,15 @@ function _mtbSysZeile(x){
 }
 function _mtbFotoTile(x){
   const f=x.f;
-  const id=(f.editedDriveId||f.driveId)||'';
-  const cached=id?_fotoBlobCache.get(id):null;
-  const thumb=_thumbGespeichert(f)||_hvBildCacheLookupMob(id)||(id?'https://drive.google.com/thumbnail?id='+id+'&sz=w400':''); // v129: tote blob:-Adressen ignorieren
-  const src=cached||f.localUrl||thumb||'';
   const zeit=_mtbZeit(x.d);
   const cap=f.caption||'';
-  const isVid=String(f.mimeType||'').indexOf('video/')===0;
+  const isVid=_fotoIstVideo(f); // v156: erkennt jetzt auch .mov/.mp4 ohne mimeType
+  // v156: keine öffentliche drive.google.com-Adresse und kein Vollbild-Rückfall mehr –
+  // die Kachel trägt nur ihre Nummer, renderTagebuchTab hängt _fotoVorschauLaden an
+  // (Geräte-Ablage zuerst, kleines Vorschaubild, Laden erst beim Sichtwerden, 4er-Riegel).
   const inner=isVid
     ?'<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#1a1a2e;color:#fff;"><span style="font-size:26px;">▶</span></div>'
-    // v154 FIX: onerror blendete das Bild nur aus. Die Adresse oben ist im Zweifel die
-    // ÖFFENTLICHE drive.google.com/thumbnail – in der installierten App gibt es keine
-    // Google-Browser-Sitzung, sie liefert dort nichts, und Fotos vom anderen Gerät hatten
-    // damit im Tagebuch dauerhaft eine leere Kachel. Jetzt derselbe angemeldete Rückfall
-    // wie im normalen Foto-Raster: _mobThumbFallback → _fetchFotoBlob (Bearer-Token) →
-    // IndexedDB. Dafür braucht es die beiden data-Attribute. Leeres src (nur localKey
-    // vorhanden) löst den Rückfall ebenfalls aus – gleiches Muster wie in renderFotos.
-    :'<img id="mtbImg_'+x.i+'" '
-      +(src?'src="'+escAttr(src)+'" ':(f.localKey?'src="" ':''))
-      +(id?'data-foto-id="'+escAttr(id)+'" ':'')
-      +(f.localKey?'data-local-key="'+escAttr(f.localKey)+'" ':'')
-      +'loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="_mobThumbFallback(this)">';
+    :'<img id="mtbImg_'+x.i+'" data-foto-idx="'+x.i+'" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">';
   return '<div onclick="openFotoFullscreen('+x.i+')" style="position:relative;width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);flex-shrink:0;cursor:pointer;">'
     +inner
     +((zeit||cap)?'<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:2px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+zeit+(cap?(zeit?' · ':'')+esc(cap):'')+'</div>':'')
@@ -8484,13 +8787,10 @@ function renderTagebuchTab(t){
     +'</div>';
   body.innerHTML=html;
   _mtbPinFotosLaden(); // v129: Vorschaubilder der aufgeklappten Pin-Zeilen
-  // Nur-lokale Bilder (Skizzen/frische Fotos ohne Drive) aus IndexedDB nachladen
-  fotos.forEach(x=>{
-    const f=x.f;
-    if(f.localKey&&!f.localUrl&&!(f.editedDriveId||f.driveId)){
-      _mobPhotoGet(f.localKey).then(d=>{const el=document.getElementById('mtbImg_'+x.i);if(d&&el){el.src=d;el.style.display='';}}).catch(e=>{});
-    }
-  });
+  // v156: eine Kette für alle Kacheln. Der frühere Sonderweg für „nur lokal vorhandene"
+  // Bilder (Skizzen/frische Fotos) entfällt – _fotoVorschauLaden fragt den Gerätespeicher
+  // ohnehin als Erstes ab, und zwar auch dann, wenn zusätzlich eine driveId vorhanden ist.
+  try{_fotoRasterHydrieren('detailBodyTagebuch',t.fotos||[]);}catch(e){console.warn('[Tagebuch] Raster:',e);}
 }
 
 function renderSkizzeTab(t){
@@ -9216,7 +9516,7 @@ async function _submitQuickAdd(){
       o.fo._uploading=true;
       const meta=await _uploadOneFotoToDrive(o.f,_qaFolderId);
       // v146: hochgeladene Fassung cachen statt Roh-Original (s. uploadFoto)
-      try{if(typeof _fotoBlobCache!=='undefined')_fotoBlobCache.set(meta.id,URL.createObjectURL(o.f));}catch(e){}
+      try{if(typeof _fotoBlobCache!=='undefined')_blobCacheEinfuegen(_fotoBlobCache,meta.id,URL.createObjectURL(o.f));}catch(e){}
       const live=_fotoLive(newT.id,o.fo);
       live.driveId=meta.id;live.name=meta.name||o.fo.name;
       live.thumbnail=meta.thumbnailLink||('https://drive.google.com/thumbnail?id='+meta.id+'&sz=w400');
@@ -9329,6 +9629,47 @@ function openSettings(){
       el.textContent=k?'PAM Mobile – '+k.replace('pam-mobil-',''):'PAM Mobile';
     }catch(e){const el=document.getElementById('settAppVersion');if(el)el.textContent='PAM Mobile';}
   })();
+  _speicherAnzeigeAktualisieren(); // v157
+}
+// ── v157: Speicher-Anzeige und Aufräumen ─────────────────────────────────────
+async function _speicherAnzeigeAktualisieren(){
+  const el=document.getElementById('settSpeicher');
+  if(!el)return;
+  try{
+    if(!(navigator.storage&&navigator.storage.estimate)){el.textContent='Nicht ermittelbar (Browser meldet es nicht).';return;}
+    const {usage,quota}=await navigator.storage.estimate();
+    const mb=n=>(n/1024/1024).toFixed(n<10*1024*1024?1:0)+' MB';
+    let geschuetzt='';
+    try{if(navigator.storage.persisted)geschuetzt=(await navigator.storage.persisted())?' · 🔒 dauerhaft geschützt':' · ⚠ nicht geschützt (kann bei Platzmangel geleert werden)';}catch(_e){}
+    el.textContent='Belegt: '+mb(usage||0)+(quota?' von '+mb(quota):'')+geschuetzt;
+  }catch(e){el.textContent='Nicht ermittelbar.';}
+}
+async function _speicherAufraeumenKnopf(){
+  if(!confirm('Zwischengespeicherte Bilder wegwerfen?\n\nFotos in Drive, offline mitgenommene Dateien und noch nicht hochgeladene Fotos bleiben erhalten. Die Vorschauen werden beim nächsten Ansehen neu geholt.'))return;
+  const el=document.getElementById('settSpeicher');
+  if(el)el.textContent='wird geleert…';
+  try{
+    await DrivePhotoCache.leeren();          // Vollbilder
+    await _thumbAblageLeeren();              // Vorschaubilder (thumb_…)
+    _fotoBlobCache.forEach(u=>{try{if(String(u).startsWith('blob:'))URL.revokeObjectURL(u);}catch(_e){}});
+    _fotoBlobCache.clear();
+    _mobThumbCache.forEach(u=>{try{if(String(u).startsWith('blob:'))URL.revokeObjectURL(u);}catch(_e){}});
+    _mobThumbCache.clear();
+    _thumbBytesCache.clear();_thumbLinkCache.clear();
+    _speicherWarnungGezeigt=false;
+    toast('✓ Zwischenspeicher geleert','success',3000);
+  }catch(e){console.warn('[Speicher] Leeren:',e);toast('Konnte nicht vollständig leeren','error');}
+  _speicherAnzeigeAktualisieren();
+}
+// Nur die Vorschau-Einträge (Schlüssel „thumb_…") aus der Foto-Ablage entfernen.
+// Die echten Fotos in derselben Ablage bleiben dabei unangetastet.
+async function _thumbAblageLeeren(){
+  try{
+    const metas=await _mobPhotoListMeta();
+    const thumbs=metas.filter(m=>m&&typeof m.key==='string'&&m.key.indexOf('thumb_')===0);
+    for(const m of thumbs)await _mobPhotoDelete(m.key);
+    return thumbs.length;
+  }catch(e){console.warn('[Speicher] Vorschauen leeren:',e);return 0;}
 }
 function closeSettings(){
   document.getElementById('settingsScreen').classList.add('hidden');
@@ -9943,6 +10284,23 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
       .then(reg => console.log('[SW] registriert:', reg.scope))
       .catch(e  => console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message));
+  });
+}
+// ── v156: Geräte-Ablage als DAUERHAFT anmelden ───────────────────────────────
+// Ohne diese Anmeldung gilt die Ablage der App für Android/iOS als „verzichtbar":
+// wird der Gerätespeicher knapp, darf das Betriebssystem sie KOMPLETT wegwerfen –
+// ohne Rückfrage. Weg wären dann nicht nur die Vorschaubilder und die offline
+// mitgenommenen Dateien, sondern auch Fotos, die noch NICHT in Drive liegen
+// (mob-photo-cache-v1, siehe _mobPhotoSave). Genau die Verlust-Art vom 30.07.
+// Bei einer installierten App gewährt Chrome das in aller Regel stillschweigend.
+if (navigator.storage && navigator.storage.persist) {
+  window.addEventListener('load', () => {
+    navigator.storage.persisted().then(schon => {
+      if (schon) { console.info('[Speicher] Ablage ist dauerhaft geschützt.'); return; }
+      navigator.storage.persist().then(ok => {
+        console.info('[Speicher] Dauerhafte Ablage ' + (ok ? 'gewährt.' : 'ABGELEHNT – Ablage kann bei Platzmangel geleert werden.'));
+      }).catch(() => {});
+    }).catch(() => {});
   });
 }
 </script>
@@ -10616,7 +10974,7 @@ async function _uploadEditedFoto(t,f,dataUrl){
     const file=new File([blob],f.editedName||'Foto_bearbeitet.jpg',{type:'image/jpeg'});
     const meta=await _uploadOneFotoToDrive(file,folderId);
     f.editedDriveId=meta.id;
-    _fotoBlobCache.set(meta.id,dataUrl);
+    _blobCacheEinfuegen(_fotoBlobCache,meta.id,dataUrl);
     forceSave();
     toast('✏ Bearbeitete Kopie in Drive gespeichert','success');
     if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);
