@@ -28,6 +28,13 @@ body.light{--bg:#ffffff;--bg2:#f2f2f7;--bg3:#e5e5ea;--text:#1c1c1e;--text2:#6c6c
    kommt aus demselben Grund mit: Hellblau auf Weiß war 3,4:1. */
 #heuteList{--border:#6e6e7a}
 body.light #heuteList{--border:#000000;--accent2:#2b5fd0}
+/* v172: dasselbe im Task-Fenster (Befund Frank per Bildschirmfoto: die Sektionen
+   OBJEKTADRESSE/KONTAKTE/NOTIZPROTOKOLL … standen ohne sichtbare Kästen unter-
+   einander). Hier sitzen die Linien in CSS-Klassen statt inline – .sect,
+   .sect-body, die Reiterleiste, Eingabefelder und Knöpfe teilen sich aber
+   dieselbe --border, also reicht wieder die Variable am Fenster. */
+#detailScreen{--border:#6e6e7a}
+body.light #detailScreen{--border:#000000;--accent2:#2b5fd0}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:17px;height:100%;overflow:hidden}
 .screen{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg)}
