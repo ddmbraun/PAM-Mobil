@@ -1816,6 +1816,96 @@ function switchMobView(view){
   if(view==='heute')renderHeuteMobil();
   else renderList(true); // baut auch Status-Leiste/Board-Chips wieder auf
 }
+// ══════════════════════════════════════════════════════════════════════════
+// v168 – WIEDERKEHRENDE LEISTUNGEN AN OBJEKTEN (Gegenstück zu Desktop b610–b618)
+//
+// Wunsch Frank: „Fürs Handy wollte ich eigentlich nur die Aufgaben haben, damit
+// ich weiß, ich muss die jetzt erfüllen, und hab sie erledigt." Genau zwei
+// Dinge also: sehen was dran ist, und abhaken. Kein Anlegen, kein Jahresraster
+// (12 Monatsspalten sind auf dem Handy unlesbar) – das bleibt am Desktop.
+//
+// Datenform am Task (vom Desktop angelegt):
+//   task.turnusListe = [{id,name,intervall,eintraege:[{datum,notiz,skip}]}]
+// Die Mobil-App speichert Tasks unverändert durch – das Feld überlebt hier
+// automatisch, es braucht keinen Eintrag in einer Feldliste wie am Desktop.
+// ══════════════════════════════════════════════════════════════════════════
+var TU_INTERVALLE={woechentlich:{label:'wöchentlich',tage:7},monatlich:{label:'monatlich',tage:30},
+  zweimonatlich:{label:'2-monatlich',tage:61},quartal:{label:'vierteljährlich',tage:91},
+  halbjahr:{label:'halbjährlich',tage:182},jaehrlich:{label:'jährlich',tage:365}};
+var TU_FARBE={gruen:'#4CAF50',gelb:'#EF9F27',rot:'#E24B4A'};
+function _tuIntervall(k){return TU_INTERVALLE[k]||TU_INTERVALLE.monatlich;}
+// bewusst NICHT toISOString(): das rechnet nach UTC und liefert nachts noch den Vortag
+function _tuHeute(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function _tuDe(iso){var p=String(iso||'').split('-');return p.length===3?(p[2]+'.'+p[1]+'.'+p[0]):'';}
+function _tuLetzter(l){var e=((l&&l.eintraege)||[]).filter(function(x){return x&&!x.skip;});return e.length?e[0].datum:'';}
+function _tuBezug(l){var e=((l&&l.eintraege)||[])[0];return e?e.datum:'';}
+function _tuTageSeit(iso){
+  var p=String(iso||'').split('-'); if(p.length!==3)return null;
+  var a=new Date(+p[0],+p[1]-1,+p[2]); if(isNaN(a.getTime()))return null;
+  a.setHours(0,0,0,0); var h=new Date(); h.setHours(0,0,0,0);
+  return Math.round((h-a)/86400000);
+}
+function _tuAmpel(l){
+  var t=_tuTageSeit(_tuBezug(l)); if(t===null)return 'gelb';
+  var soll=_tuIntervall(l&&l.intervall).tage;
+  if(t<soll)return 'gruen';
+  return t<soll*1.5?'gelb':'rot';
+}
+function _tuFaellig(l){return _tuAmpel(l)!=='gruen';}
+function _tuStatusText(l){
+  var d=_tuLetzter(l); if(!d)return 'noch nie erledigt';
+  var t=_tuTageSeit(d);
+  var tage=(t===0)?'heute':(t===1?'gestern':'vor '+t+' Tagen');
+  return 'zuletzt '+_tuDe(d)+' · '+tage;
+}
+// Fällige Leistungen, gebündelt nach Objekt – wie am Desktop eine Kachel je Task
+function _tuMobSammle(){
+  var flach=[];
+  Object.keys(boards||{}).forEach(function(bn){
+    if(bn.startsWith('_'))return;
+    (boards[bn]||[]).forEach(function(t){
+      if(!t||t.archiviert||t.spaeterBearbeiten)return;
+      (t.turnusListe||[]).forEach(function(l){ if(l&&_tuFaellig(l))flach.push({t:t,board:bn,l:l}); });
+    });
+  });
+  flach.sort(function(a,b){
+    var ta=_tuTageSeit(_tuBezug(a.l)),tb=_tuTageSeit(_tuBezug(b.l));
+    if(ta===null&&tb===null)return 0;
+    if(ta===null)return -1;
+    if(tb===null)return 1;
+    return tb-ta;
+  });
+  var out=[],idx={};
+  flach.forEach(function(x){
+    var k=x.t.id;
+    if(idx[k]===undefined){idx[k]=out.length;out.push({t:x.t,board:x.board,leistungen:[]});}
+    out[idx[k]].leistungen.push(x.l);
+  });
+  return out;
+}
+var _tuMobOffen={};
+function _tuMobToggle(id){_tuMobOffen[id]=!_tuMobOffen[id];renderHeuteMobil();}
+function _tuMobErledigt(taskId,lId){
+  var t=findTaskById(taskId); if(!t)return;
+  var l=(t.turnusListe||[]).find(function(x){return x&&x.id===lId;}); if(!l)return;
+  var heute=_tuHeute();
+  if(!Array.isArray(l.eintraege))l.eintraege=[];
+  if(l.eintraege.some(function(e){return e.datum===heute;})){
+    if(typeof toast==='function')toast('Für heute steht schon ein Eintrag');
+    return;
+  }
+  l.eintraege.push({datum:heute,notiz:'',skip:false});
+  l.eintraege.sort(function(a,b){return String(b.datum||'').localeCompare(String(a.datum||''));});
+  // Bautagebuch mitschreiben – genau wie am Desktop, damit der Nachweis überall gleich aussieht
+  if(!Array.isArray(t.notizVerlauf))t.notizVerlauf=[];
+  t.notizVerlauf.push({ts:new Date().toISOString(),text:'🔁 Leistung erledigt: '+(l.name||'')+' – '+_tuDe(heute)});
+  // forceSave statt scheduleSave: draußen zählt, dass es sofort oben ist –
+  // wer nach dem Haken das Funkloch betritt, hätte sonst nichts gespeichert
+  try{forceSave();}catch(e){console.warn('[TU-Mob] speichern:',e);}
+  renderHeuteMobil();
+  if(typeof toast==='function')toast('✓ '+(l.name||'')+' erledigt');
+}
+
 function renderHeuteMobil(){
   var el=document.getElementById('heuteList');if(!el)return;
   var today=new Date().toISOString().split('T')[0];
@@ -1956,11 +2046,48 @@ function renderHeuteMobil(){
   // v133: eigener Zoom-Regler raus – die App-Größe regelt der „Aa"-Knopf in der Kopfzeile
   var html='<div id="heuteZoomContent">'
     +'<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:12px;">📅 '+ds+'</div>';
-  if(!unterwegs.length&&!heuteFaellig.length){
+  // v168: fällige wiederkehrende Leistungen, eine Kachel je Objekt.
+  // Eigener Abschnitt UNTEN – erst die echten Fristen, dann was „mal wieder dran wäre".
+  var tuObjekte=_tuMobSammle();
+  function objektRow(g){
+    var t=g.t, ls=g.leistungen||[];
+    var farbe=ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb;
+    var auf=!!_tuMobOffen[t.id];
+    var h='<div style="background:var(--bg2);border-radius:12px;border:0.5px solid var(--border);border-left:4px solid #7F77DD;margin-bottom:8px;overflow:hidden;">'
+      + '<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:9px 11px 6px;cursor:pointer;">'
+      +   '<div style="display:flex;align-items:flex-start;gap:6px;">'
+      +     '<span style="width:9px;height:9px;border-radius:50%;background:'+farbe+';flex-shrink:0;margin-top:5px;"></span>'
+      +     '<span style="font-size:15px;font-weight:600;color:var(--text);line-height:1.3;">'+esc(t.title||'')+'</span>'
+      +   '</div>'
+      +   '<div style="font-size:12px;color:'+farbe+';font-weight:600;margin-top:3px;padding-left:15px;">🔁 '+ls.length+' Leistung'+(ls.length!==1?'en':'')+' fällig</div>'
+      + '</div>';
+    if(!auf){
+      h+='<div style="font-size:12px;color:var(--text2);padding:0 11px 8px 26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        + esc(ls.slice(0,3).map(function(l){return l.name||'';}).filter(Boolean).join(' · ')+(ls.length>3?' · +'+(ls.length-3):''))+'</div>'
+        + '<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:0.5px solid var(--border);cursor:pointer;">▾ Aufklappen</div>';
+    }else{
+      ls.forEach(function(l){
+        var lf=TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb;
+        h+='<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-top:0.5px solid var(--border);">'
+          + '<span style="width:8px;height:8px;border-radius:50%;background:'+lf+';flex-shrink:0;"></span>'
+          + '<div style="flex:1;min-width:0;">'
+          +   '<div style="font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(l.name||'')+'</div>'
+          +   '<div style="font-size:11px;color:var(--text2);">'+esc(_tuStatusText(l))+'</div>'
+          + '</div>'
+          // Großer Knopf: das hier wird mit Handschuhen auf der Baustelle getippt
+          + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:40px;border-radius:20px;background:#7F77DD;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
+          + '</div>';
+      });
+      h+='<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:0.5px solid var(--border);cursor:pointer;">▴ Zuklappen</div>';
+    }
+    return h+'</div>';
+  }
+  if(!unterwegs.length&&!heuteFaellig.length&&!tuObjekte.length){
     html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Heute keine Termine und nichts fällig 🎉</div>';
   }else{
     html+=section('Heute unterwegs','#5a86f5',unterwegs,function(i){return terminRow(i);});
     html+=section('Heute fällig','#EF9F27',heuteFaellig,function(i){return taskRow(i,'#EF9F27');});
+    html+=section('Objekte','#7F77DD',tuObjekte,objektRow);
   }
   html+='</div>';
   el.innerHTML=html;
