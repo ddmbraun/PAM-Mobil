@@ -625,6 +625,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
           <button class="inline-btn" style="width:100%;min-height:44px;margin-top:6px;font-size:14px;" onclick="_speicherAufraeumenKnopf()">🧹 Zwischenspeicher leeren</button>
           <div style="font-size:12px;color:var(--text2);margin-top:4px;">Wirft nur zwischengespeicherte Bilder weg. Fotos in Drive, offline mitgenommene Dateien und noch nicht hochgeladene Fotos bleiben unangetastet.</div>
         </div>
+        <!-- v161: Woher kamen die angezeigten Vorschaubilder? Damit „lädt immer wieder"
+             beim nächsten Mal ablesbar ist statt geraten. -->
+        <div class="field"><label>Vorschaubilder (seit App-Start)</label>
+          <div id="settVorschau" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--text2);line-height:1.5">–</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;">„Gerät" ist gut – dann kommt nichts aus dem Netz. Steht hier dauerhaft „gemerkte Adresse" oder „Netz", stimmt etwas nicht.</div>
+        </div>
       </div>
     </div>
     <div class="sect open">
@@ -7889,6 +7895,22 @@ function _thumbSchlitzFrei(){
 //     gilt in _fotoVorschauLaden als „liegt im Speicher" und wird ohne Umweg gezeigt.
 // Was NICHT geht: ein Foto, das dieses Gerät noch nie gesehen hat, kann nicht sofort da
 // sein – es muss einmal geholt werden. Das bleibt so.
+// ── v161: Herkunfts-Zählung ──────────────────────────────────────────────────
+// Bei „die Bilder laden immer wieder" habe ich dreimal hintereinander die Ursache
+// geraten und zweimal danebengelegen. Ab jetzt zählt die App mit, welche Quelle die
+// Kacheln tatsächlich bedient hat; abzulesen in den Einstellungen. Kostet einen Zähler.
+const _vorschauHerkunftZaehler=new Map();
+function _vorschauHerkunft(name){
+  if(!name)return;
+  _vorschauHerkunftZaehler.set(name,(_vorschauHerkunftZaehler.get(name)||0)+1);
+}
+function _vorschauHerkunftText(){
+  if(!_vorschauHerkunftZaehler.size)return 'noch keine Bilder angezeigt';
+  return [..._vorschauHerkunftZaehler.entries()]
+    .sort((a,b)=>b[1]-a[1])
+    .map(([k,v])=>k+': '+v)
+    .join(' · ');
+}
 async function _thumbVorladen(liste){
   try{
     const schluessel=[...new Set((liste||[]).map(f=>_thumbSchluessel(f)).filter(k=>k&&!_thumbBytesCache.has(k)))];
@@ -7926,33 +7948,102 @@ function _thumbSchluessel(f){return (f&&(f.editedDriveId||f.driveId||f.localKey)
 // fehl, bleibt einfach alles wie vorher.
 const _thumbBauInflight=new Set();
 const THUMB_KANTE=320, THUMB_QUALITAET=0.7;
-function _thumbAusVollbild(schluessel,dataUrl){
-  if(!schluessel||!dataUrl||_thumbBauInflight.has(schluessel))return;
-  if(_thumbBytesCache.has(schluessel))return;
+// ── v161: Vorschaubild aus JEDER brauchbaren Quelle erzeugen ─────────────────
+// Befund Frank nach dem v160-Deploy: „Bilder werden trotzdem immer wieder neu geladen,
+// auch wenn ich das Teilen nur schließe und wieder öffne."
+// URSACHE – und sie ist ÄLTER als v155: Die BYTES eines Google-Vorschaubilds lassen sich
+// aus dieser App nicht lesen. Der Browser erlaubt das quellübergreifend nicht; anzeigen
+// (<img src=…>) ja, auslesen (fetch/canvas) nein. `_thumbBytes` konnte für Fotos ohne
+// lokale Kopie also NIE etwas ablegen – die Kachel wurde von der gemerkten Adresse
+// bedient, und die kommt bei jedem Öffnen frisch aus dem Netz.
+// BELEG dafür, dass das schon vor v155 so war: `_mobFetchThumb` macht denselben Abruf
+// und fällt bei Misserfolg auf das Vollbild zurück. Genau dieses Vollbild (5–10 MB je
+// Kachel) hat Frank in v153 beobachtet – der Vorschau-Abruf davor muss also gescheitert
+// sein, sonst wäre es nie so weit gekommen.
+// Stub-Tests konnten das nicht finden: ein Stub kennt keine Herkunfts-Sperre.
+//
+// Konsequenz: Das Vorschaubild wird jetzt aus dem erzeugt, was wir tatsächlich lesen
+// dürfen – in dieser Reihenfolge:
+//   1. lokale Kopie im Gerät (data:) – immer lesbar,
+//   2. die Vorschau-Adresse MIT crossOrigin-Anfrage – klappt, wenn Google es erlaubt,
+//   3. das über die Drive-Schnittstelle geholte Vollbild (eigener Abruf → lesbar).
+// Was einmal erzeugt ist, liegt im Gerät und wird nie wieder geholt.
+function _thumbBauen(schluessel,quelle,opts){
+  opts=opts||{};
+  if(!schluessel||!quelle||_thumbBauInflight.has(schluessel))return Promise.resolve(false);
+  if(_thumbBytesCache.has(schluessel))return Promise.resolve(false);
   _thumbBauInflight.add(schluessel);
-  const fertig=()=>_thumbBauInflight.delete(schluessel);
-  try{
-    const bild=new Image();
-    bild.onload=()=>{
-      try{
-        const skala=Math.min(1,THUMB_KANTE/Math.max(bild.naturalWidth||1,bild.naturalHeight||1));
-        if(!bild.naturalWidth||!bild.naturalHeight){fertig();return;}
-        const cv=document.createElement('canvas');
-        cv.width=Math.max(1,Math.round(bild.naturalWidth*skala));
-        cv.height=Math.max(1,Math.round(bild.naturalHeight*skala));
-        cv.getContext('2d').drawImage(bild,0,0,cv.width,cv.height);
-        const klein=cv.toDataURL('image/jpeg',THUMB_QUALITAET);
-        // Nur ablegen, wenn es sich lohnt – sonst lieber gar nichts merken.
-        if(klein&&klein.length<dataUrl.length*0.6){
+  return new Promise(res=>{
+    const fertig=w=>{_thumbBauInflight.delete(schluessel);res(!!w);};
+    try{
+      const bild=new Image();
+      // Nur bei fremden Adressen nötig – bei data:/blob: würde es nichts verbessern und
+      // manche Browser lehnen die Anfrage dann sogar ab.
+      if(opts.fremd)bild.crossOrigin='anonymous';
+      bild.onload=()=>{
+        try{
+          if(!bild.naturalWidth||!bild.naturalHeight){fertig(false);return;}
+          const skala=Math.min(1,THUMB_KANTE/Math.max(bild.naturalWidth,bild.naturalHeight));
+          const cv=document.createElement('canvas');
+          cv.width=Math.max(1,Math.round(bild.naturalWidth*skala));
+          cv.height=Math.max(1,Math.round(bild.naturalHeight*skala));
+          cv.getContext('2d').drawImage(bild,0,0,cv.width,cv.height);
+          // Wirft eine Sicherheitsausnahme, wenn die Zeichenfläche durch ein fremdes
+          // Bild „eingefärbt" ist – genau der Fall, der uns hier jahrelang unterlaufen ist.
+          const klein=cv.toDataURL('image/jpeg',THUMB_QUALITAET);
+          if(!klein){fertig(false);return;}
+          // Bei einer data:-Vorlage nur ablegen, wenn es sich lohnt.
+          if(opts.vergleichsLaenge&&klein.length>=opts.vergleichsLaenge*0.6){fertig(false);return;}
           _thumbBytesMerken(schluessel,klein);
           _mobPhotoSave(_thumbCacheKey(schluessel),klein,{done:1,art:'thumb'}).catch(()=>{});
+          fertig(true);
+        }catch(e){
+          // Eingefärbte Zeichenfläche o.ä. – kein Beinbruch, nächste Quelle ist dran.
+          console.info('[Vorschau] nicht auslesbar ('+(opts.name||'?')+'):',e&&e.name);
+          fertig(false);
         }
-      }catch(e){console.warn('[Vorschau] aus Vollbild:',e);}
-      fertig();
-    };
-    bild.onerror=fertig;
-    bild.src=dataUrl;
-  }catch(e){fertig();}
+      };
+      bild.onerror=()=>fertig(false);
+      bild.src=quelle;
+    }catch(e){fertig(false);}
+  });
+}
+// Aus der lokalen Vollfassung (data:-Adresse aus dem Gerät)
+function _thumbAusVollbild(schluessel,dataUrl){
+  return _thumbBauen(schluessel,dataUrl,{name:'lokal',vergleichsLaenge:(dataUrl||'').length});
+}
+// Aus einer fremden Adresse (gemerktes Drive-Vorschaubild). Darf scheitern.
+// Wenn Google es nicht erlaubt, scheitert es für ALLE Bilder gleich – dann nach drei
+// Fehlversuchen nicht weiter probieren, sonst hinge an jeder Kachel ein zweiter,
+// nutzloser Abruf. Der Weg über das eigene Vollbild bleibt davon unberührt.
+let _thumbAdresseFehl=0;
+function _thumbAusAdresse(schluessel,url){
+  if(_thumbAdresseFehl>=3)return Promise.resolve(false);
+  if(!url||String(url).slice(0,4)!=='http')return Promise.resolve(false);
+  return _thumbBauen(schluessel,url,{name:'adresse',fremd:true}).then(w=>{
+    if(w)_thumbAdresseFehl=0;else _thumbAdresseFehl++;
+    if(_thumbAdresseFehl===3)console.info('[Vorschau] Fremde Vorschau-Adressen sind nicht auslesbar – ab jetzt nur noch über das eigene Vollbild.');
+    return w;
+  });
+}
+// Letzter, teurer, aber zuverlässiger Weg: das Vollbild EINMAL über die Drive-Schnittstelle
+// holen (eigener Abruf → auslesbar) und daraus das Vorschaubild bauen.
+// Warum das sein muss: zeigt die gemerkte Adresse das Bild erfolgreich an, endet die
+// Anzeige-Kette dort – der lesbare Weg würde nie erreicht und es bliebe wieder nichts
+// liegen. Genau diese Lücke hatte die erste Fassung von v161 noch.
+// Kosten: einmal je Foto, danach nie wieder Netz. Nur online, und durch denselben
+// 4er-Riegel gebremst wie die übrigen Abrufe, damit das Gerät bedienbar bleibt.
+async function _thumbAusVollbildNetz(schluessel,driveId){
+  if(!schluessel||!driveId)return false;
+  if(_thumbBytesCache.has(schluessel))return false;
+  if(typeof navigator!=='undefined'&&navigator.onLine===false)return false;
+  await _thumbSchlitz();
+  try{
+    const u=await _fetchFotoBlob(driveId);
+    if(!u)return false;
+    return await _thumbBauen(schluessel,u,{name:'vollbild-netz'});
+  }catch(e){return false;}
+  finally{_thumbSchlitzFrei();}
 }
 async function _thumbBytes(id){
   if(!id)return '';
@@ -8072,38 +8163,60 @@ function _fotoVorschauLaden(f,img,opts){
   // in Drive (editedName ohne editedDriveId), darf Drive gar nicht gefragt werden – dort
   // liegt noch die ALTE, unbearbeitete Fassung. Gleiche Bedingung wie _hasLocalEdit in
   // openFotoFullscreen.
+  // v161: jede Quelle bekommt einen Namen. Erstens, damit nach dem Anzeigen entschieden
+  // werden kann, ob aus ihr ein dauerhaftes Vorschaubild gebaut werden darf. Zweitens für
+  // die Herkunfts-Zählung in den Einstellungen – damit beim nächsten „lädt immer wieder"
+  // ablesbar ist, WER die Kacheln bedient, statt es zu erraten (dreimal danebengelegen).
   const _lokalBearbeitet=!!(f.editedName&&!f.editedDriveId);
   const _tk=_tkVorab;
-  if(_tk)quellen.push(()=>_thumbGeraet(_tk));
-  if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey).then(du=>{
+  if(_tk)quellen.push({name:'Gerät (Vorschau)',holen:()=>_thumbGeraet(_tk)});
+  if(f.localKey)quellen.push({name:'Gerät (Vollbild)',holen:()=>_mobPhotoGet(f.localKey).then(du=>{
     if(du&&_tk)_thumbAusVollbild(_tk,du); // Hintergrund, blockiert die Anzeige nicht
     return du;
-  }));
-  if(id&&!_lokalBearbeitet)quellen.push(()=>_thumbBytes(id)); // Gerät → einmalig Drive → bleibt liegen
+  })});
+  if(id&&!_lokalBearbeitet)quellen.push({name:'Drive (Vorschau-Bytes)',holen:()=>_thumbBytes(id)});
   const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
-  if(_ts)quellen.push(()=>_ts);
+  if(_ts)quellen.push({name:'gemerkte Adresse',holen:()=>_ts,bauen:true});
   // v156: der HV-Bilder-Cache (gleiche Herkunft, kennt zu manchen Drive-Ids bereits eine
-  // fertige Vorschau-Adresse) hing bisher nur am alten renderFotos-Weg. Er steht hier
-  // BEWUSST hinter _thumbBytes: eine funktionierende Fernadresse weiter vorn hieße, die
-  // Geräte-Ablage wird nie gefüllt und nach dem nächsten App-Start lädt alles neu (v155).
-  if(id){const _hv=_hvBildCacheLookupMob(id);if(_hv)quellen.push(()=>_hv);}
-  // letzte Not: der alte Weg inkl. Vollbild-Rückfall (selten, z.B. Datei ohne Thumbnail)
-  if(id)quellen.push(()=>_mobFetchThumb(id).then(u=>{if(u)_thumbMerken(f,u);return u;}));
-  let n=0;
+  // fertige Vorschau-Adresse) hing bisher nur am alten renderFotos-Weg.
+  if(id){const _hv=_hvBildCacheLookupMob(id);if(_hv)quellen.push({name:'HV-Adresse',holen:()=>_hv,bauen:true});}
+  // letzte Not: der alte Weg inkl. Vollbild-Rückfall (selten, z.B. Datei ohne Thumbnail).
+  // Das Ergebnis ist ein EIGENER Abruf (blob:) und damit auslesbar – daraus lässt sich das
+  // Vorschaubild bauen, das über die fremde Adresse nicht zu bekommen war.
+  if(id)quellen.push({name:'Netz (Vollbild)',holen:()=>_mobFetchThumb(id).then(u=>{if(u)_thumbMerken(f,u);return u;}),bauen:true});
+  let n=0,_aktuelle=null;
   const weiter=()=>{
     if(n>=quellen.length){
       // wirklich nichts da → Kachel leer lassen und dem Aufrufer Bescheid geben
       img.style.display='none';
       const p=img.parentElement;if(p&&p.classList)p.classList.add('fallback'); // v156: 🖼️-Symbol wie bisher in renderFotos
+      _vorschauHerkunft('nichts gefunden');
       if(typeof opts.beiNichts==='function'){try{opts.beiNichts();}catch(_e){}}
       return;
     }
     const q=quellen[n++];
-    Promise.resolve().then(q).then(u=>{if(u)img.src=u;else weiter();}).catch(weiter);
+    _aktuelle=q;
+    Promise.resolve().then(q.holen).then(u=>{if(u)img.src=u;else weiter();}).catch(weiter);
   };
   img.onload=()=>{
     img.style.display='';
     const p=img.parentElement;if(p&&p.classList)p.classList.remove('fallback');
+    _vorschauHerkunft(_aktuelle?_aktuelle.name:'?');
+    // v161: Kam das Bild aus dem Netz, EINMAL ein dauerhaftes Vorschaubild daraus bauen.
+    // Bei der fremden Adresse ist das ein Versuch (Google muss es erlauben), beim eigenen
+    // Abruf über die Drive-Schnittstelle klappt es zuverlässig. Danach bedient „Gerät
+    // (Vorschau)" die Kachel – ohne Netz, auch nach App-Neustart.
+    if(_aktuelle&&_aktuelle.bauen&&_tk&&!_thumbBytesCache.has(_tk)){
+      const q=img.getAttribute('src')||'';
+      if(q.slice(0,5)==='blob:'||q.slice(0,5)==='data:'){
+        _thumbBauen(_tk,q,{name:'netz'});
+      }else{
+        // Erst der billige Versuch über die Adresse selbst; klappt der nicht (Google
+        // erlaubt das Auslesen nicht), EINMAL das Vollbild holen. Sonst würde die Kette
+        // hier enden und beim nächsten Öffnen wieder aus dem Netz geladen.
+        _thumbAusAdresse(_tk,q).then(w=>{if(!w&&id)_thumbAusVollbildNetz(_tk,id);});
+      }
+    }
     if(typeof opts.beiBild==='function'){try{opts.beiBild();}catch(_e){}}
   };
   img.onerror=()=>{
@@ -9766,6 +9879,8 @@ async function _speicherAnzeigeAktualisieren(){
   const el=document.getElementById('settSpeicher');
   if(!el)return;
   try{
+    const hEl=document.getElementById('settVorschau'); // v161
+    if(hEl)hEl.textContent=_vorschauHerkunftText();
     if(!(navigator.storage&&navigator.storage.estimate)){el.textContent='Nicht ermittelbar (Browser meldet es nicht).';return;}
     const {usage,quota}=await navigator.storage.estimate();
     const mb=n=>(n/1024/1024).toFixed(n<10*1024*1024?1:0)+' MB';
