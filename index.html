@@ -402,7 +402,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .attach-size-mob{font-size:11px;color:var(--text2);margin-top:2px}
 /* v156: echte Vorschau (Bild ODER erste PDF-Seite) legt sich über das Symbol.
    Ohne src ist sie unsichtbar – das Symbol bleibt sichtbar, bis wirklich ein Bild da ist. */
-.attach-thumb-ovl{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:6px;}
+/* v163: object-fit war `cover`. Bei einer 54-px-Kachel heißt das: eine A4-Seite wird
+   quadratisch mittig beschnitten – man sieht das leere Mittelstück und nicht mehr,
+   dass es ein PDF ist, weil das Symbol darunter verdeckt wird. `contain` zeigt die
+   ganze Seite; der helle Grund dahinter, damit eine weiße Seite nicht im dunklen
+   Kachelhintergrund verschwimmt. */
+.attach-thumb-ovl{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;border-radius:6px;}
 /* ── NOTIZ VERLAUF ── */
 .notiz-entry{background:var(--bg3);border-left:3px solid var(--accent);padding:10px 12px;margin-bottom:8px;border-radius:6px;font-size:15px}
 .notiz-entry .ts{display:block;color:var(--text2);font-size:13px;margin-bottom:3px}
@@ -624,6 +629,16 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
           <div id="settSpeicher" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)">wird ermittelt…</div>
           <button class="inline-btn" style="width:100%;min-height:44px;margin-top:6px;font-size:14px;" onclick="_speicherAufraeumenKnopf()">🧹 Zwischenspeicher leeren</button>
           <div style="font-size:12px;color:var(--text2);margin-top:4px;">Wirft nur zwischengespeicherte Bilder weg. Fotos in Drive, offline mitgenommene Dateien und noch nicht hochgeladene Fotos bleiben unangetastet.</div>
+        </div>
+        <!-- v166: Was ist eigentlich offline mitgenommen? Das ließ sich bisher nirgends
+             ablesen, und freigeben konnte man es nur, indem man jeden Auftrag einzeln
+             aufsuchte. Diese Ablage wächst als einzige unbegrenzt – „Zwischenspeicher
+             leeren" lässt sie ausdrücklich stehen (zu Recht: es sind die Dateien fürs
+             Dach). Deshalb hier Übersicht und ein Sammel-Freigeben. -->
+        <div class="field"><label>Offline mitgenommen</label>
+          <div id="settOffline" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2);line-height:1.5">wird ermittelt…</div>
+          <button class="inline-btn" style="width:100%;min-height:44px;margin-top:6px;font-size:14px;" onclick="_offlineAllesFreigeben()">📴 Alle Offline-Kopien freigeben</button>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;">Gibt nur den Platz frei. In Drive bleibt alles; mit Empfang lässt sich jeder Auftrag wieder mitnehmen.</div>
         </div>
         <!-- v161: Woher kamen die angezeigten Vorschaubilder? Damit „lädt immer wieder"
              beim nächsten Mal ablesbar ist statt geraten. -->
@@ -894,6 +909,46 @@ async function _mobOfflinePut(key,blob,mime,name){
       tx.oncomplete=()=>{db.close();res();};tx.onerror=e=>{db.close();rej(e.target.error);};});
   }catch(e){console.warn('[MobOffline] Speichern:',e);}
 }
+// ── v166: Übersicht über die Offline-Ablage ─────────────────────────────────
+// Diese Ablage ist die einzige, die unbegrenzt wächst: v157 hat Vollbild-Cache und
+// Vorschaubilder gedeckelt, die offline mitgenommenen Dateien absichtlich nicht – es
+// sind ja die Dateien für den Einsatz ohne Empfang. Nur: es gab keine Stelle, an der
+// man sah, WAS mitgenommen ist und WIE VIEL Platz das kostet, und freigeben ließ es
+// sich nur, indem man jeden Auftrag einzeln aufsuchte und erneut auf „Offline
+// mitnehmen" tippte. Wer über den Sommer zwanzig Aufträge gepinnt hat, kommt so nicht
+// mehr heraus.
+// Liest nur Schlüssel und Größe – die Blobs bleiben ungelesen, sonst läge die ganze
+// Ablage im Arbeitsspeicher.
+async function _mobOfflineListe(){
+  try{
+    const db=await _mobOfflineDbOpen();
+    return await new Promise(res=>{
+      const raus=[];
+      const tx=db.transaction(_MOB_OFFLINE_STORE,'readonly');
+      const rq=tx.objectStore(_MOB_OFFLINE_STORE).openCursor();
+      rq.onsuccess=e=>{
+        const c=e.target.result;
+        if(!c){return;}
+        const v=c.value||{};
+        raus.push({key:v.key||c.primaryKey,name:v.name||'',groesse:(v.blob&&v.blob.size)||0});
+        c.continue();
+      };
+      tx.oncomplete=()=>{db.close();res(raus);};
+      tx.onerror=()=>{db.close();res(raus);};
+    });
+  }catch(e){console.warn('[MobOffline] Liste:',e);return [];}
+}
+async function _mobOfflineLeeren(){
+  try{
+    const db=await _mobOfflineDbOpen();
+    return await new Promise(res=>{
+      const tx=db.transaction(_MOB_OFFLINE_STORE,'readwrite');
+      tx.objectStore(_MOB_OFFLINE_STORE).clear();
+      tx.oncomplete=()=>{db.close();res(true);};
+      tx.onerror=()=>{db.close();res(false);};
+    });
+  }catch(e){return false;}
+}
 async function _mobOfflineGet(key){
   try{const db=await _mobOfflineDbOpen();
     return await new Promise(res=>{const tx=db.transaction(_MOB_OFFLINE_STORE,'readonly');
@@ -918,6 +973,11 @@ function _mobCollectOfflineIds(t){
   const ids=[],seen=new Set();
   (t.fotos||[]).forEach(f=>{const id=f.editedDriveId||f.driveId;if(id&&!seen.has(id)){seen.add(id);ids.push({key:id,name:f.name||'',mime:f.type||'image/jpeg'});}});
   (t.attachments||[]).forEach(a=>{const id=a.driveId||a.fileId;if(id&&!seen.has(id)){seen.add(id);ids.push({key:id,name:a.name||'',mime:a.type||''});}});
+  // v165: die Mail-PDFs gehören mit. Ohne sie half die neue E-Mail-Sektion auf dem Dach
+  // nichts: der Textauszug stand da, aber „📄 Mail als PDF" lief ins Leere.
+  // Die .eml-Originale bleiben bewusst draußen – die kann das Handy ohnehin nicht
+  // anzeigen, sie würden nur Platz belegen.
+  (t.emailPdfs||[]).forEach(p=>{const id=p.driveId||p.fileId;if(id&&!seen.has(id)){seen.add(id);ids.push({key:id,name:p.name||'',mime:'application/pdf'});}});
   return ids;
 }
 // „Offline mitnehmen"/„entfernen" – lädt (online) alle Drive-Dateien des Tasks in die
@@ -1080,7 +1140,10 @@ let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
 
 // ── UTILS ──
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
-function escAttr(s){return String(s==null?'':s).replace(/"/g,'&quot;').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+// v163: Reihenfolge korrigiert. Vorher wurde erst " durch &quot; ersetzt und DANACH &
+// durch &amp; – aus einem Anführungszeichen wurde damit sichtbar `&amp;quot;`. Das
+// kaufmännische Und muss zuerst dran, sonst verdoppelt es die eigenen Ersetzungen.
+function escAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 // Notiz-Zeitstempel anzeigen: NUR echte ISO-Strings (2026-06-10T…) per Date formatieren.
 // Alles andere (z.B. „10.06.2026, 14:32" aus Altbestand) unverändert durchreichen –
 // new Date('10.06.2026') würde als Monat.Tag.Jahr fehlinterpretiert!
@@ -5578,14 +5641,14 @@ function renderDetail(t){
         if(infoOpen){
           h+='<div style="background:#FFFBF0;border:0.5px solid #EAB308;border-left:3px solid #CA8A04;border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:10px;">'
             +'<div onclick="toggleInfoBaustelle()" style="display:flex;align-items:center;gap:8px;cursor:pointer;">'
-              +'<span style="'+fsc(12)+'font-weight:700;color:#633806;text-transform:uppercase;letter-spacing:.06em;flex:1;">📋 Info Baustelle</span>'
+              +'<span style="'+fsc(12)+'font-weight:700;color:#633806;text-transform:uppercase;letter-spacing:.06em;flex:1;">'+(isEmail?'📧 Mail-Info':'📋 Info Baustelle')+'</span>'
               +'<span style="color:#633806;font-size:14px;">▾</span>'
             +'</div>'
             +'<textarea rows="2" style="width:100%;resize:none;background:transparent;border:none;border-bottom:0.5px solid #EAB308;padding:4px 0;'+fsc(16)+'color:#412402;font-family:inherit;outline:none;margin-top:4px;" placeholder="Dauerhafte Infos zur Baustelle…" oninput="updateField(\'desc\',this.value);this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\';" onfocus="this.style.borderBottomColor=\'#CA8A04\'" onblur="this.style.borderBottomColor=\'#EAB308\'" autocomplete="off">'+esc(t.desc||'')+'</textarea>'
           +'</div>';
         }else{
           h+='<div onclick="toggleInfoBaustelle()" style="display:flex;align-items:center;gap:8px;background:#FFFBF0;border:0.5px solid #EAB308;border-left:3px solid #CA8A04;border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:10px;cursor:pointer;'+(preview?'':'opacity:.75;')+'">'
-            +'<span style="'+fsc(13)+'font-weight:700;color:#633806;white-space:nowrap;">📋 Info Baustelle</span>'
+            +'<span style="'+fsc(13)+'font-weight:700;color:#633806;white-space:nowrap;">'+(isEmail?'📧 Mail-Info':'📋 Info Baustelle')+'</span>'
             +'<span style="flex:1;'+fsc(13)+'color:#78350F;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+(preview?esc(preview):'Antippen zum Ausfüllen…')+'</span>'
             +'<span style="color:#633806;font-size:14px;">▸</span>'
           +'</div>';
@@ -5701,6 +5764,11 @@ function renderDetail(t){
         +'<div style="font-size:12px;color:var(--text2);margin-top:8px;padding:6px;background:var(--bg3);border-radius:6px;">ℹ️ Aufgaben am Desktop bearbeiten</div>'
         +'</div></div>';
     })():'')
+    // ── E-MAILS (v165) ──
+    // Bei einem Posteingang-Board IST die Mail der Inhalt des Tasks – dort steht die
+    // Sektion deshalb weit oben. Bei einer Baustelle gehört sie zu den Unterlagen und
+    // sitzt weiter unten, hinter den Dokumenten.
+    +(isEmail?_renderMailSektion(t,oc):'')
     // ── KONTAKTE (nur Baustelle) ──
     +(!isNotiz?'<div class="sect'+oc('Kontakte')+'" data-sect="Kontakte"><div class="sect-head" onclick="toggleMSect(this.parentElement)">Kontakte ('+kontakte.length+')</div><div class="sect-body">'
       +'<div id="kontakteList">'+kontakteHtml+'</div>'
@@ -5740,8 +5808,11 @@ function renderDetail(t){
       +'<button class="add-btn" onclick="addZeit()">+ Zeit manuell hinzufügen</button>'
       +'<div id="zeitGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderZeitGesamtText(zeiten)+'</div>'
     +'</div></div>'
-    // ── VERKNÜPFUNGEN + E-MAIL ORIGINALE: auf Mobil ausgeblendet ──
-    
+    // ── E-MAILS bei Baustellen-Tasks (v165) – bei Posteingang-Tasks steht die
+    //    Sektion weiter oben, siehe dort. Vorher stand hier nur der Vermerk
+    //    „VERKNÜPFUNGEN + E-MAIL ORIGINALE: auf Mobil ausgeblendet" und darunter nichts.
+    +(!isEmail&&!isNotiz?_renderMailSektion(t,oc):'')
+
         // ── FOTOS (nur Baustelle) ──
     +'<div class="sect'+oc('Fotos')+' open" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span></div><div class="sect-body">'
       +(fotos.length?'<div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos.</div>')
@@ -7106,22 +7177,41 @@ function attachIconMob(type){
 // Das <img> startet BEWUSST ohne src und ohne display:none: ein ausgeblendetes
 // Element meldet der IntersectionObserver nie als sichtbar; ohne src ist es
 // unsichtbar und das Symbol dahinter bleibt stehen.
+// v163: Dokumente laufen jetzt durch dieselbe Kette wie die Fotos.
+// Der entscheidende Unterschied zu vorher: die fremde Vorschau-Adresse wird ANGEZEIGT
+// statt ausgelesen. Anzeigen erlaubt der Browser quellübergreifend, Auslesen nicht –
+// deshalb lieferte der alte Weg über `_thumbBytes` für Dokumente nie ein Bild. Erst
+// nach dem Anzeigen wird EINMAL versucht, daraus ein dauerhaftes Vorschaubild zu
+// bauen (Bau-Weg der Kette). Drive erzeugt eine Vorschau auch für PDF = erste Seite.
 function _attachVorschauLaden(a,img){
   if(!a||!img)return;
   const fid=(a.driveId||a.fileId)||'';
-  const sofort=(typeof a.data==='string'&&/^data:image\//.test(a.data))?a.data:'';
-  const holen=()=>{
-    (async()=>{
-      if(sofort)return sofort;
-      if(fid){
-        try{const off=await _mobOfflineGet(fid);
-            if(off&&off.blob&&/^image\//.test(off.blob.type||''))return URL.createObjectURL(off.blob);}catch(e){}
-        return await _thumbBytes(fid);
-      }
+  const eingebettet=(typeof a.data==='string'&&/^data:image\//.test(a.data))?a.data:'';
+  const istBild=_attachIstBildMob(a);
+  const quellen=[];
+  if(eingebettet)quellen.push({name:'Dokument (eingebettet)',holen:()=>eingebettet});
+  if(fid){
+    // 1. das kleine Vorschaubild aus dem Gerät – nie Netz, überlebt den App-Neustart
+    quellen.push({name:'Gerät (Vorschau)',holen:()=>_thumbGeraet(fid)});
+    // 2. die offline mitgenommene Datei, sofern es ein Bild ist
+    quellen.push({name:'Dokument (offline)',holen:async()=>{
+      try{const off=await _mobOfflineGet(fid);
+          if(off&&off.blob&&/^image\//.test(off.blob.type||''))return URL.createObjectURL(off.blob);}catch(e){}
       return '';
-    })().then(u=>{if(u)img.src=u;}).catch(()=>{});
-  };
-  if(sofort)holen(); else _vorschauBeobachten(img,holen);
+    }});
+    // 3. die Vorschau-Adresse von Drive – anzeigen ja, auslesen nein (siehe oben)
+    quellen.push({name:'Drive (Vorschau-Adresse)',holen:()=>_driveThumbLink(fid),bauen:true});
+  }
+  if(!quellen.length)return;
+  _vorschauKetteStarten(img,quellen,{
+    tk:fid,
+    // Der teure Rückfall der Kette (ganze Datei holen und daraus ein Bild bauen) ergibt
+    // nur bei Bildern Sinn – eine PDF-Datei lässt sich nicht in eine Zeichenfläche malen.
+    // Für PDFs bleibt es beim Anzeigen der Adresse; das kostet zwar bei jedem Öffnen
+    // einen Abruf, aber nicht den Download der ganzen Datei.
+    bauId:istBild?fid:'',
+    sofort:!!eingebettet||(!!fid&&_thumbBytesCache.has(fid))
+  });
 }
 function formatBytesMob(n){if(!n)return'';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
 // ── v152: Dokumente nach Ordner gruppieren – wie die Desktop-Sektion (b556/b587) ──
@@ -7193,9 +7283,20 @@ function renderAttachmentsMob(list){
   }).join('');
 }
 // v156: hängt Vorschau und Offline-Kennzeichnung an eine frisch aufgebaute Dokumentenliste.
-function _attachListeHydrieren(wurzelId,list){
-  const box=document.getElementById(wurzelId);
-  if(!box||!list)return;
+// v163: vorher wie beim Foto-Raster ALLE bekannten Vorschaubilder in EINER
+// Datenbankverbindung holen (v160). Bisher fragte jedes Dokument einzeln – bei 30
+// Dokumenten also 30 Öffnen/Schließen-Vorgänge nacheinander, genau der v160-Befund,
+// nur eine Sektion weiter unten. `_thumbVorladen` erwartet Foto-Objekte, deshalb die
+// kleine Umschlüsselung: Dokumente vom PC tragen ihre Kennung meist in `fileId`.
+async function _attachListeHydrieren(wurzelId,list){
+  const box0=document.getElementById(wurzelId);
+  if(!box0||!list)return;
+  await Promise.race([
+    _thumbVorladen(list.map(a=>({driveId:((a&&(a.driveId||a.fileId))||'')}))),
+    new Promise(r=>setTimeout(r,400)) // Notbremse wie in _fotoRasterHydrieren
+  ]);
+  const box=document.getElementById(wurzelId); // kann inzwischen neu aufgebaut sein
+  if(!box)return;
   box.querySelectorAll('img[data-att-prev]').forEach(img=>{
     const a=list[parseInt(img.getAttribute('data-att-prev'),10)];
     if(a)_attachVorschauLaden(a,img);
@@ -7258,6 +7359,150 @@ function _attGridOeffnen(i){
 function openAttachMob(i){
   _openAttachGalleryMob(i);
 }
+// ── v165: E-MAILS AM HANDY ───────────────────────────────────────────────────
+// Bis v164 war auf dem Handy von den E-Mails eines Auftrags NICHTS zu sehen. In
+// renderDetail stand an der Stelle nur „VERKNÜPFUNGEN + E-MAIL ORIGINALE: auf Mobil
+// ausgeblendet", und die drei früher zuständigen Funktionen gab es längst nicht mehr.
+// Dabei liegt alles bereits auf dem Gerät: der Desktop schreibt Betreff, Absender,
+// Datum, Richtung und die ersten Zeilen des Mailtextes in `msThreadMessages` bzw.
+// `gmailThreadMessages`, die zugehörigen PDFs in `emailPdfs` und die .eml-Originale in
+// `emailOriginals`. Alle drei stehen in der `_pcOnly`-Liste – sie kommen also
+// unverändert mit und werden vom Handy nie überschrieben.
+// Diese Sektion ist deshalb reine ANZEIGE: kein Outlook-Login, kein Graph-Abruf,
+// keine neue Schnittstelle. Nur lesen, was ohnehin schon da ist.
+let _mailOffen={};        // aufgeklappte Mails, pro Sitzung: Schlüssel → true
+function _mailMsgId(s){return String(s||'').replace(/^<|>$/g,'').trim().toLowerCase();}
+function _mailZeit(iso){
+  if(!iso)return '';
+  try{
+    const d=new Date(iso);
+    if(isNaN(d))return String(iso);
+    return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'})
+      +' · '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+  }catch(e){return String(iso);}
+}
+// Verlauf + Originale zu EINER Liste zusammenführen, neueste zuerst.
+function _mailListe(t){
+  const raus=[],gesehen=new Set();
+  const merk=m=>{
+    const k=_mailMsgId(m.messageId)||('nr'+raus.length);
+    if(gesehen.has(k))return;
+    gesehen.add(k);raus.push(m);
+  };
+  const ausVerlauf=m=>({
+    subject:m.subject||'',
+    von:(m.fromName||m.from||'').trim(),
+    datum:m.date||'',
+    text:m.preview||'',
+    richtung:(m.direction==='gesendet')?'gesendet':'eingang',
+    messageId:(m.internetMessageId||m.messageId||''),
+    anhang:!!m.hasAttachments
+  });
+  ((t&&t.msThreadMessages)||[]).forEach(m=>merk(ausVerlauf(m)));
+  ((t&&t.gmailThreadMessages)||[]).forEach(m=>merk(ausVerlauf(m)));
+  // Originale ergänzen: bei Tasks, die per .eml-Ablage entstanden sind, gibt es gar
+  // keinen Verlauf – dann ist das hier die einzige Quelle für Betreff und Absender.
+  ((t&&t.emailOriginals)||[]).forEach(o=>merk({
+    subject:o.subject||'',von:(o.sender||'').trim(),datum:o.date||'',text:'',
+    richtung:'eingang',messageId:o.messageId||'',anhang:false
+  }));
+  raus.sort((a,b)=>String(b.datum||'').localeCompare(String(a.datum||'')));
+  return raus;
+}
+// Passendes PDF / Original zu einer Mail finden – der Desktop legt die Kennung je nach
+// Herkunft in messageId, msMessageId oder gmailMessageId ab.
+function _mailDateiZu(liste,m){
+  const id=_mailMsgId(m&&m.messageId);
+  if(!id)return null;
+  return (liste||[]).find(x=>x&&(
+    _mailMsgId(x.messageId)===id||_mailMsgId(x.msMessageId)===id||_mailMsgId(x.gmailMessageId)===id
+  ))||null;
+}
+function _mailToggle(el){
+  const k=el&&el.dataset?el.dataset.mailkey:'';
+  if(!k)return;
+  _mailOffen[k]=!_mailOffen[k];
+  const t=currentTask();
+  const box=document.getElementById('mailListMob');
+  if(t&&box)box.innerHTML=_renderMailZeilen(t);
+}
+function _renderMailZeilen(t){
+  const mails=_mailListe(t);
+  if(!mails.length)return '';
+  const pdfs=(t&&t.emailPdfs)||[];
+  const originale=(t&&t.emailOriginals)||[];
+  return mails.map((m,i)=>{
+    const key=_mailMsgId(m.messageId)||('nr'+i);
+    const offen=!!_mailOffen[key];
+    const pdf=_mailDateiZu(pdfs,m);
+    const eml=_mailDateiZu(originale,m);
+    const raus=m.richtung==='gesendet';
+    const pfeil=raus?'↗':'↙';
+    const farbe=raus?'var(--text2)':'var(--accent2)';
+    const betreff=m.subject||'(ohne Betreff)';
+    let h='<div data-mailkey="'+escAttr(key)+'" onclick="_mailToggle(this)" style="padding:9px 4px;border-bottom:1px solid var(--border);cursor:pointer;">'
+      +'<div style="display:flex;align-items:baseline;gap:7px;">'
+        +'<span style="color:'+farbe+';font-size:15px;flex-shrink:0;" title="'+(raus?'gesendet':'eingegangen')+'">'+pfeil+'</span>'
+        +'<span style="flex:1;min-width:0;font-size:14px;font-weight:600;color:var(--text);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;line-height:1.25;">'+esc(betreff)+'</span>'
+        +(m.anhang?'<span style="flex-shrink:0;font-size:12px;" title="hat Anhänge">📎</span>':'')
+      +'</div>'
+      +'<div style="display:flex;gap:8px;font-size:11px;color:var(--text2);margin:3px 0 0 22px;">'
+        +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(m.von||'')+'</span>'
+        +'<span style="flex-shrink:0;">'+esc(_mailZeit(m.datum))+'</span>'
+      +'</div>';
+    if(offen){
+      h+='<div style="margin:8px 0 2px 22px;">'
+        +(m.text
+          ? '<div style="font-size:13px;color:var(--text);white-space:pre-wrap;word-break:break-word;line-height:1.45;background:var(--bg3);border-radius:8px;padding:9px 10px;">'+esc(m.text)+'</div>'
+          : '<div style="font-size:12px;color:var(--text2);font-style:italic;">Kein Textauszug vorhanden – der ganze Text steht im PDF.</div>')
+        +'<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;">'
+        // Bewusst NUR die laufende Nummer ins onclick – Dateinamen enthalten
+        // Anführungszeichen und Apostrophe und würden das Attribut zerlegen.
+        // Die Datei wird beim Antippen erneut nachgeschlagen (_mailListe ist eindeutig).
+        +(pdf?'<button class="inline-btn" style="min-height:44px;flex:1;min-width:130px;" onclick="event.stopPropagation();_mailDateiOeffnen('+i+',\'pdf\')">📄 Mail als PDF</button>':'')
+        +(eml?'<button class="inline-btn" style="min-height:44px;flex:1;min-width:130px;" onclick="event.stopPropagation();_mailDateiOeffnen('+i+',\'eml\')">📧 Original</button>':'')
+        +((!pdf&&!eml)?'<span style="font-size:12px;color:var(--text2);">Keine Datei zu dieser Mail gespeichert.</span>':'')
+        +'</div>'
+      +'</div>';
+    }
+    return h+'</div>';
+  }).join('');
+}
+function _renderMailSektion(t,oc){
+  const mails=_mailListe(t);
+  const ordner=(t&&t.emailOrdner)||'';
+  if(!mails.length&&!ordner)return '';
+  return '<div class="sect'+oc('EMails')+'" data-sect="EMails"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📧 E-Mails'+(mails.length?' ('+mails.length+')':'')+'</div><div class="sect-body">'
+    +(mails.length
+      ? '<div id="mailListMob">'+_renderMailZeilen(t)+'</div>'
+        +'<div style="font-size:11px;color:var(--text2);margin-top:8px;">Antippen zeigt den Textauszug. Bearbeiten und Antworten am PC.</div>'
+      : '<div style="color:var(--text2);font-size:13px;padding:6px 0">Kein Mailverlauf am Auftrag.</div>')
+    +(ordner?'<a href="'+escAttr(ordner)+'" target="_blank" class="add-btn" style="display:block;text-align:center;text-decoration:none;margin-top:10px;">📂 Mail-Ordner in Drive</a>':'')
+  +'</div></div>';
+}
+// Mail-PDF bzw. .eml öffnen – gleicher Weg wie bei den Dokumenten: erst die offline
+// mitgenommene Kopie, dann Drive, und ohne Empfang eine klare Ansage.
+async function _mailDateiOeffnen(i,art){
+  const t=currentTask();if(!t)return;
+  const m=_mailListe(t)[i];
+  if(!m){toast('Mail nicht gefunden','error');return;}
+  const datei=_mailDateiZu(art==='pdf'?(t.emailPdfs||[]):(t.emailOriginals||[]),m);
+  if(!datei){toast('Zu dieser Mail ist keine Datei gespeichert','error');return;}
+  const fileId=datei.driveId||datei.fileId||'';
+  const name=datei.name||(art==='pdf'?'Mail.pdf':'Mail.eml');
+  const url=datei.url||'';
+  if(!fileId&&url){window.open(url,'_blank');return;}
+  if(!fileId){toast('Datei nicht verfügbar','error');return;}
+  try{
+    const off=await _mobOfflineGet(fileId);
+    if(off&&off.blob){_dateiBlobOeffnen(off.blob,name||'mail');return;}
+  }catch(e){console.warn('[Mail] Offline-Kopie',e);}
+  if((typeof navigator!=='undefined'&&navigator.onLine===false)||!tokenValid()){
+    toast('Diese Mail ist nicht offline gespeichert – bitte mit Empfang „📴 Offline mitnehmen"','error');
+    return;
+  }
+  window.open(url||('https://drive.google.com/file/d/'+fileId+'/view'),'_blank');
+}
 // ── Anhang öffnen/anzeigen ────────────────────────────────────────────────────
 async function _openAttachGalleryMob(i){
   const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
@@ -7298,25 +7543,7 @@ async function _openAttachGalleryMob(i){
   let _docBlob=null;
   if(_off&&_off.blob)_docBlob=_off.blob;
   else if(a.data){try{_docBlob=_dataUrlToBlob(a.data);}catch(e){console.warn('[MobOffline] data→blob',e);}}
-  if(_docBlob){
-    // iOS: window.open(blob) bleibt weiß → Download-/Vorschau-Link. Android/Desktop:
-    // direkt im Browser-PDF-Betrachter öffnen (kein Umweg über Downloads).
-    const _ios=/iPad|iPhone|iPod/.test(navigator.userAgent||'')||(/Mac/.test(navigator.platform||'')&&(navigator.maxTouchPoints||0)>1);
-    try{
-      const url=URL.createObjectURL(_docBlob);
-      if(_ios){
-        const link=document.createElement('a');
-        link.href=url;link.download=name||'dokument';link.rel='noopener';
-        document.body.appendChild(link);link.click();
-        setTimeout(()=>{try{link.remove();}catch(_e){}},1500);
-      }else{
-        const w=window.open(url,'_blank');
-        if(!w){const link=document.createElement('a');link.href=url;link.download=name||'dokument';document.body.appendChild(link);link.click();setTimeout(()=>{try{link.remove();}catch(_e){}},1500);}
-      }
-      setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_e){}},120000);
-    }catch(e){console.warn('[MobOffline] Dokument öffnen',e);toast('Konnte Dokument nicht öffnen','error');}
-    return;
-  }
+  if(_docBlob){_dateiBlobOeffnen(_docBlob,name);return;}
   // Keine lokale Kopie: offline klare Meldung statt Google-Login/weißer Seite
   if((typeof navigator!=='undefined'&&navigator.onLine===false)||!tokenValid()){
     toast('Dokument ist nicht offline gespeichert – bitte mit Empfang „📴 Offline mitnehmen"','error');
@@ -7326,6 +7553,25 @@ async function _openAttachGalleryMob(i){
   const driveUrl=a.url||(fid?'https://drive.google.com/file/d/'+fid+'/view':'');
   if(driveUrl){window.open(driveUrl,'_blank');return;}
   toast('Datei nicht verfügbar','error');
+}
+// v165: aus _openAttachGalleryMob herausgelöst, weil die Mail-PDFs denselben Weg
+// brauchen. iOS: window.open(blob) bleibt weiß → Download-/Vorschau-Link.
+// Android/Desktop: direkt im Browser-PDF-Betrachter öffnen (kein Umweg über Downloads).
+function _dateiBlobOeffnen(blob,name){
+  if(!blob)return;
+  const _ios=/iPad|iPhone|iPod/.test(navigator.userAgent||'')||(/Mac/.test(navigator.platform||'')&&(navigator.maxTouchPoints||0)>1);
+  try{
+    const url=URL.createObjectURL(blob);
+    const alsDatei=()=>{
+      const link=document.createElement('a');
+      link.href=url;link.download=name||'dokument';link.rel='noopener';
+      document.body.appendChild(link);link.click();
+      setTimeout(()=>{try{link.remove();}catch(_e){}},1500);
+    };
+    if(_ios)alsDatei();
+    else{const w=window.open(url,'_blank');if(!w)alsDatei();}
+    setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_e){}},120000);
+  }catch(e){console.warn('[MobOffline] Datei öffnen',e);toast('Konnte Datei nicht öffnen','error');}
 }
 function _showTextViewer(name,text){
   let ov=document.getElementById('mobTextViewerOverlay');
@@ -7343,23 +7589,47 @@ function _showTextViewer(name,text){
     </div>`;
   document.body.appendChild(ov);
 }
-function downloadAttachMob(i){
+// v163: Der ↓-Knopf ging bisher stumpf auf Drive, auch wenn die Datei über
+// „📴 Offline mitnehmen" längst im Gerät lag. Ohne Empfang kam damit nichts – während
+// dieselbe Datei über den Zeilen-Tipp (_openAttachGalleryMob) einwandfrei aufging.
+// Jetzt fragen beide Wege zuerst die Geräte-Ablage.
+async function downloadAttachMob(i){
   const t=currentTask();if(!t||!t.attachments||!t.attachments[i])return;
   const a=t.attachments[i];
-  if(a.data){
+  const name=a.name||'datei';
+  const fid=a.driveId||a.fileId||'';
+  const speichern=url=>{
     const link=document.createElement('a');
-    link.href=a.data;link.download=a.name||'datei';
-    document.body.appendChild(link);link.click();document.body.removeChild(link);
-  } else if(a.driveId||a.fileId){
-    window.open('https://drive.google.com/file/d/'+(a.driveId||a.fileId)+'/view','_blank');
-  } else if(a.url){
-    window.open(a.url,'_blank');
-  } else {
-    toast('Keine Datei verfügbar','error');
+    link.href=url;link.download=name;link.rel='noopener';
+    document.body.appendChild(link);link.click();
+    setTimeout(()=>{try{link.remove();}catch(_e){}},1500);
+  };
+  if(a.data){speichern(a.data);return;}
+  if(fid){
+    try{
+      const off=await _mobOfflineGet(fid);
+      if(off&&off.blob){
+        const url=URL.createObjectURL(off.blob);
+        speichern(url);
+        setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_e){}},120000);
+        return;
+      }
+    }catch(e){console.warn('[MobOffline] Herunterladen',e);}
   }
+  // Keine lokale Kopie: ohne Empfang klar sagen, statt eine weiße Seite zu öffnen
+  if((typeof navigator!=='undefined'&&navigator.onLine===false)||!tokenValid()){
+    toast('Datei ist nicht offline gespeichert – bitte mit Empfang „📴 Offline mitnehmen"','error');
+    return;
+  }
+  if(fid){window.open('https://drive.google.com/file/d/'+fid+'/view','_blank');return;}
+  if(a.url){window.open(a.url,'_blank');return;}
+  toast('Keine Datei verfügbar','error');
 }
-// ── E-Mail Originale: Vorschau / Download / Ordner ───────────────────────────
-// Fix 2026-05-24: Alte doppelte Definitionen entfernt. Aktive Versionen stehen weiter unten (async _mobOpenEmailPreview, _mobDownloadEml, _mobOpenEmailFolder).
+// ── E-Mail Originale ─────────────────────────────────────────────────────────
+// v163: Hier stand ein Verweis auf `_mobOpenEmailPreview`, `_mobDownloadEml` und
+// `_mobOpenEmailFolder` – „stehen weiter unten". Keine der drei Funktionen existiert
+// noch; sie sind irgendwann mit der E-Mail-Sektion entfallen. Der Kommentar hat beim
+// Suchen nur Zeit gekostet und ist deshalb raus.
 // ── v123 Paket 1 (Bautagebuch-Vorbereitung): Aufnahme-Zeitstempel f.ts ──
 // Jedes Task-Foto bekommt ein ISO-Aufnahmedatum: beim Aufnehmen/Hochladen aus der
 // Datei (lastModified = Aufnahmezeit bei Kamera-Dateien), beim Ordner-Picker aus
@@ -7968,13 +8238,26 @@ const THUMB_KANTE=320, THUMB_QUALITAET=0.7;
 //   2. die Vorschau-Adresse MIT crossOrigin-Anfrage – klappt, wenn Google es erlaubt,
 //   3. das über die Drive-Schnittstelle geholte Vollbild (eigener Abruf → lesbar).
 // Was einmal erzeugt ist, liegt im Gerät und wird nie wieder geholt.
+// ── v162: drei Antworten statt zwei ──────────────────────────────────────────
+// Bis v161 hieß die Rückgabe nur „geklappt / nicht geklappt". Damit war „nicht
+// auslesbar" nicht von „ein anderer baut dasselbe Bild gerade schon" zu unterscheiden –
+// und genau das kommt ständig vor: dasselbe Foto hängt gleichzeitig im Hauptraster, im
+// Bautagebuch-Tagesblock und im Teilen-Fenster. Die zweite Kachel bekam sofort ein
+// „nicht geklappt", obwohl niemand etwas verweigert hatte. Folgen: der Zähler in
+// _thumbAusAdresse war nach drei solchen Begegnungen am Anschlag und schaltete den
+// billigen Weg für die ganze Sitzung ab, und in _fotoVorschauLaden löste dasselbe
+// Signal einen Vollbild-Download (5–10 MB) für eine Vorschau aus, die im selben
+// Moment schon gebaut wurde.
+// Ab jetzt:  true = gebaut · false = versucht, nicht lesbar · null = nichts getan
+// (läuft schon oder liegt schon vor) – null ist ausdrücklich KEIN Urteil und darf
+// weder gezählt werden noch etwas Teures auslösen.
 function _thumbBauen(schluessel,quelle,opts){
   opts=opts||{};
-  if(!schluessel||!quelle||_thumbBauInflight.has(schluessel))return Promise.resolve(false);
-  if(_thumbBytesCache.has(schluessel))return Promise.resolve(false);
+  if(!schluessel||!quelle)return Promise.resolve(false);
+  if(_thumbBauInflight.has(schluessel)||_thumbBytesCache.has(schluessel))return Promise.resolve(null);
   _thumbBauInflight.add(schluessel);
   return new Promise(res=>{
-    const fertig=w=>{_thumbBauInflight.delete(schluessel);res(!!w);};
+    const fertig=w=>{_thumbBauInflight.delete(schluessel);res(w===true);};
     try{
       const bild=new Image();
       // Nur bei fremden Adressen nötig – bei data:/blob: würde es nichts verbessern und
@@ -8021,7 +8304,10 @@ function _thumbAusAdresse(schluessel,url){
   if(_thumbAdresseFehl>=3)return Promise.resolve(false);
   if(!url||String(url).slice(0,4)!=='http')return Promise.resolve(false);
   return _thumbBauen(schluessel,url,{name:'adresse',fremd:true}).then(w=>{
-    if(w)_thumbAdresseFehl=0;else _thumbAdresseFehl++;
+    // v162: NUR echte Versuche zählen. `null` heißt „gar nicht erst probiert, weil für
+    // diesen Schlüssel schon gebaut wird" – das ist kein Fehlversuch von Google.
+    if(w===true)_thumbAdresseFehl=0;
+    else if(w===false)_thumbAdresseFehl++;
     if(_thumbAdresseFehl===3)console.info('[Vorschau] Fremde Vorschau-Adressen sind nicht auslesbar – ab jetzt nur noch über das eigene Vollbild.');
     return w;
   });
@@ -8035,7 +8321,11 @@ function _thumbAusAdresse(schluessel,url){
 // 4er-Riegel gebremst wie die übrigen Abrufe, damit das Gerät bedienbar bleibt.
 async function _thumbAusVollbildNetz(schluessel,driveId){
   if(!schluessel||!driveId)return false;
-  if(_thumbBytesCache.has(schluessel))return false;
+  // v162: zweiter Riegel an der teuersten Stelle. Läuft für denselben Schlüssel schon ein
+  // Bau, wäre dieser Download reine Verschwendung – der Zwischenspeicher ist zu diesem
+  // Zeitpunkt noch leer, die Prüfung darunter greift also nicht.
+  if(_thumbBauInflight.has(schluessel))return null;
+  if(_thumbBytesCache.has(schluessel))return null;
   if(typeof navigator!=='undefined'&&navigator.onLine===false)return false;
   await _thumbSchlitz();
   try{
@@ -8184,6 +8474,42 @@ function _fotoVorschauLaden(f,img,opts){
   // Das Ergebnis ist ein EIGENER Abruf (blob:) und damit auslesbar – daraus lässt sich das
   // Vorschaubild bauen, das über die fremde Adresse nicht zu bekommen war.
   if(id)quellen.push({name:'Netz (Vollbild)',holen:()=>_mobFetchThumb(id).then(u=>{if(u)_thumbMerken(f,u);return u;}),bauen:true});
+  // v163: ab hier läuft alles über die gemeinsame Kette (siehe _vorschauKetteStarten).
+  _vorschauKetteStarten(img,quellen,{
+    tk:_tk,
+    bauId:id,
+    sofort:ausSpeicher,
+    beiBild:opts.beiBild,
+    beiNichts:opts.beiNichts,
+    // v154: Drive-thumbnailLink-Adressen laufen nach Stunden ab. Die gemerkte Fassung
+    // sonst stehen zu lassen hieße: bei JEDEM Neuaufbau erst ein Fehlversuch, dann
+    // eskalieren. Beim Scheitern also aus den Daten räumen (geht beim nächsten
+    // Speichern mit, wie in _thumbGespeichert bei toten blob:-Adressen).
+    beiFehler:s=>{
+      if(s&&(f.thumbnail===s||f.thumbnailLink===s)){
+        if(f.thumbnail===s)f.thumbnail=null;
+        if(f.thumbnailLink===s)f.thumbnailLink=null;
+        _thumbLinkCache.delete(id);
+      }
+    }
+  });
+}
+// ── v163: EINE Kette für Fotos UND Dokumente ─────────────────────────────────
+// Bis v162 hatten Fotos (_fotoVorschauLaden) und Dokumente (_attachVorschauLaden)
+// getrennte Wege. Die Dokumente hatten dadurch von v155 bis v162 nichts abbekommen:
+// kein „Gerät zuerst", kein Sammel-Vorladen, keine Herkunfts-Zählung – und vor allem
+// keinen Bau-Weg. Sie endeten bei `_thumbBytes`, also genau bei der Funktion, von der
+// v161 nachweist, dass sie fremde Vorschaubilder NICHT auslesen kann. Folge: die
+// „echte Vorschau" aus v156 konnte für Dokumente überhaupt nie erscheinen – außer bei
+// eingebetteten Bildern und offline mitgenommenen Bild-Anhängen.
+// Ab jetzt reichen beide Seiten nur noch ihre Quellenliste herein.
+//   quellen: [{name, holen:()=>Promise<Adresse>, bauen?:true}]
+//   opts:    {tk, bauId, sofort, beiBild, beiNichts, beiFehler}
+function _vorschauKetteStarten(img,quellen,opts){
+  opts=opts||{};
+  if(!img||!quellen||!quellen.length)return;
+  const _tk=opts.tk||'';
+  const id=opts.bauId||'';
   let n=0,_aktuelle=null;
   const weiter=()=>{
     if(n>=quellen.length){
@@ -8206,7 +8532,10 @@ function _fotoVorschauLaden(f,img,opts){
     // Bei der fremden Adresse ist das ein Versuch (Google muss es erlauben), beim eigenen
     // Abruf über die Drive-Schnittstelle klappt es zuverlässig. Danach bedient „Gerät
     // (Vorschau)" die Kachel – ohne Netz, auch nach App-Neustart.
-    if(_aktuelle&&_aktuelle.bauen&&_tk&&!_thumbBytesCache.has(_tk)){
+    // v162: `_thumbBauInflight` zusätzlich abfragen. Dieselbe Kachel hängt oft mehrfach
+    // auf dem Schirm (Hauptraster + Tagebuch + Teilen); ohne diese Zeile liefe der Block
+    // je Vorkommen einmal und die zweite Runde wäre reine Arbeit ohne Ergebnis.
+    if(_aktuelle&&_aktuelle.bauen&&_tk&&!_thumbBytesCache.has(_tk)&&!_thumbBauInflight.has(_tk)){
       const q=img.getAttribute('src')||'';
       if(q.slice(0,5)==='blob:'||q.slice(0,5)==='data:'){
         _thumbBauen(_tk,q,{name:'netz'});
@@ -8214,22 +8543,20 @@ function _fotoVorschauLaden(f,img,opts){
         // Erst der billige Versuch über die Adresse selbst; klappt der nicht (Google
         // erlaubt das Auslesen nicht), EINMAL das Vollbild holen. Sonst würde die Kette
         // hier enden und beim nächsten Öffnen wieder aus dem Netz geladen.
-        _thumbAusAdresse(_tk,q).then(w=>{if(!w&&id)_thumbAusVollbildNetz(_tk,id);});
+        // v162: NUR bei einem echten Fehlversuch (`false`) eskalieren – bei `null` baut
+        // gerade schon jemand dasselbe Bild, dann wäre der Vollbild-Download vergebens.
+        _thumbAusAdresse(_tk,q).then(w=>{if(w===false&&id)_thumbAusVollbildNetz(_tk,id);});
       }
     }
     if(typeof opts.beiBild==='function'){try{opts.beiBild();}catch(_e){}}
   };
   img.onerror=()=>{
-    // v154: Drive-thumbnailLink-Adressen laufen nach Stunden ab. Die gemerkte Fassung
-    // sonst stehen zu lassen hieße: bei JEDEM Neuaufbau erst ein Fehlversuch, dann
-    // eskalieren. Beim Scheitern also aus den Daten räumen (geht beim nächsten
-    // Speichern mit, wie in _thumbGespeichert bei toten blob:-Adressen).
-    try{const s=img.getAttribute('src')||'';if(s&&(f.thumbnail===s||f.thumbnailLink===s)){if(f.thumbnail===s)f.thumbnail=null;if(f.thumbnailLink===s)f.thumbnailLink=null;_thumbLinkCache.delete(id);}}catch(_e){}
+    if(typeof opts.beiFehler==='function'){try{opts.beiFehler(img.getAttribute('src')||'');}catch(_e){}}
     weiter(); // Quelle war tot (abgelaufene Adresse, kein Zugriff) → nächste
   };
   // v154: was schon im Speicher liegt, sofort zeigen – alles mit Netzweg erst, wenn die
   // Kachel in Sichtweite kommt. Sonst starten bei 40 Fotos 40 Abrufe gleichzeitig.
-  if(ausSpeicher)weiter();
+  if(opts.sofort)weiter();
   else _vorschauBeobachten(img,weiter);
 }
 let _feAuswahl=null;
@@ -8660,18 +8987,43 @@ async function openFotoFullscreen(i){
   // funktioniert in der installierten App nie – die Beschriftung meldete deshalb sofort
   // „Vorschau nicht verfügbar" und erst Sekunden später kam das Vollbild. Stattdessen
   // das bereits im Gerät liegende Vorschaubild (aus v155), sofern schon im Speicher.
-  const _thumbFb=(_vid?_thumbBytesCache.get(_vid):'')||_thumbGespeichert(f)||'';
+  // v164: Vorschau-Schlüssel statt nur der Drive-Id. Ein noch nicht hochgeladenes Foto
+  // hat seit v159 ein Vorschaubild unter `thumb_<localKey>` – das war hier nicht
+  // erreichbar, weil nur unter `_vid` nachgesehen wurde.
+  const _tk=_thumbSchluessel(f);
+  const _thumbFb=(_tk?_thumbBytesCache.get(_tk):'')||_thumbGespeichert(f)||'';
   let _localFallback=f.localUrl||'';
   // v109: Lokal bearbeitete Version (Zeichnung ohne Drive-Upload) hat VORRANG – vorher
   // überdeckte das Drive-ORIGINAL die Bearbeitung wieder. Nach Reload liegt sie nur
   // noch in der IndexedDB (localKey), localUrl wird beim Speichern entfernt.
   const _hasLocalEdit=!!(f.editedName&&!f.editedDriveId);
-  if(_hasLocalEdit&&!_localFallback&&f.localKey){
+  // ── v164: die Sackgasse „Foto noch nicht verfügbar" ─────────────────────────
+  // Ein auf dem Dach ohne Empfang aufgenommenes Foto hat: keine driveId, kein f.url,
+  // kein f.thumbnail – und nach dem App-Neustart auch kein localUrl mehr (der
+  // Speicher-Filter `_mobSaveReplacer` wirft es bewusst weg). Die Vollfassung liegt
+  // aber unter `localKey` im Gerät. Gelesen wurde sie hier NUR für BEARBEITETE Fotos.
+  // Folge: die Kachel zeigte das Foto, Teilen konnte es (`_shrBytes` liest localKey) –
+  // nur das Antippen meldete „Foto noch nicht verfügbar". Beim Blättern blieb die
+  // Ansicht wortlos auf dem vorigen Bild stehen, weil die Funktion vorher aussteigt.
+  const _nurImGeraet=!_vid&&!!f.localKey;
+  if(!_localFallback&&f.localKey&&(_hasLocalEdit||(_nurImGeraet&&!cached&&!_thumbFb))){
     try{const du=await _mobPhotoGet(f.localKey);if(du){f.localUrl=du;_localFallback=du;}}catch(e){}
   }
   if(!cached&&!_thumbFb&&!_localFallback&&!viewUrl){toast('Foto noch nicht verfügbar','info');return;}
   const _first=(_hasLocalEdit&&_localFallback)?_localFallback:(cached||_thumbFb||_localFallback);
   openLightbox(_first,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
+  // v164: Steht nur das kleine Vorschaubild auf dem Schirm und gibt es keine Drive-Fassung,
+  // die Vollfassung aus dem Gerät nachreichen – sonst bliebe es bei 320 px.
+  if(_nurImGeraet&&_first&&_first===_thumbFb){
+    const marke=++_lbLadeMarke;
+    _mobPhotoGet(f.localKey).then(du=>{
+      if(!du)return;
+      f.localUrl=du;
+      if(marke!==_lbLadeMarke||_lbFotoIdx!==i)return;
+      const lb=document.getElementById('lightbox'),img=document.getElementById('lbImg');
+      if(img&&lb&&lb.classList.contains('open')){img.src=du;if(img.style.display==='none')img.style.display='';}
+    }).catch(()=>{});
+  }
   if(!cached&&_vid&&!(_hasLocalEdit&&_localFallback)){
     const marke=++_lbLadeMarke;
     // Läuft die Ansicht noch und zeigt sie noch DIESES Foto? Sonst nichts anfassen –
@@ -9873,6 +10225,7 @@ function openSettings(){
     }catch(e){const el=document.getElementById('settAppVersion');if(el)el.textContent='PAM Mobile';}
   })();
   _speicherAnzeigeAktualisieren(); // v157
+  _offlineUebersichtAktualisieren(); // v166
 }
 // ── v157: Speicher-Anzeige und Aufräumen ─────────────────────────────────────
 async function _speicherAnzeigeAktualisieren(){
@@ -9888,6 +10241,47 @@ async function _speicherAnzeigeAktualisieren(){
     try{if(navigator.storage.persisted)geschuetzt=(await navigator.storage.persisted())?' · 🔒 dauerhaft geschützt':' · ⚠ nicht geschützt (kann bei Platzmangel geleert werden)';}catch(_e){}
     el.textContent='Belegt: '+mb(usage||0)+(quota?' von '+mb(quota):'')+geschuetzt;
   }catch(e){el.textContent='Nicht ermittelbar.';}
+}
+// ── v166: Anzeige und Sammel-Freigabe der Offline-Ablage ────────────────────
+async function _offlineUebersichtAktualisieren(){
+  const el=document.getElementById('settOffline');
+  if(!el)return;
+  try{
+    const pins=[..._mobOfflinePins()];
+    const dateien=await _mobOfflineListe();
+    if(!pins.length&&!dateien.length){el.textContent='Nichts mitgenommen.';return;}
+    const bytes=dateien.reduce((s,d)=>s+(d.groesse||0),0);
+    // Titel über alle drei Ablagen suchen – ein mitgenommener Auftrag kann inzwischen
+    // ausgeblendet oder weggefiltert sein, findTaskById kennt nur `boards`.
+    const titel=pins.map(id=>{
+      const t=_fotoTaskById(id);
+      return '· '+((t&&t.title)||('(nicht mehr in der Liste: '+id+')'));
+    });
+    el.style.whiteSpace='pre-line';
+    el.textContent=pins.length+(pins.length===1?' Auftrag':' Aufträge')+' · '
+      +dateien.length+(dateien.length===1?' Datei':' Dateien')+' · '+(formatBytesMob(bytes)||'0 B')
+      +(titel.length?'\n'+titel.join('\n'):'');
+  }catch(e){console.warn('[MobOffline] Übersicht:',e);el.textContent='Nicht ermittelbar.';}
+}
+async function _offlineAllesFreigeben(){
+  const dateien=await _mobOfflineListe();
+  const pins=_mobOfflinePins();
+  if(!dateien.length&&!pins.size){toast('Es ist nichts mitgenommen','info');return;}
+  const bytes=dateien.reduce((s,d)=>s+(d.groesse||0),0);
+  if(!confirm('Alle Offline-Kopien freigeben?\n\n'+pins.size+' Auftrag/Aufträge, '+dateien.length+' Datei(en), '+(formatBytesMob(bytes)||'0 B')
+    +'\n\nIn Drive bleibt alles erhalten. Mit Empfang lässt sich jeder Auftrag wieder mitnehmen.'))return;
+  const el=document.getElementById('settOffline');
+  if(el)el.textContent='wird freigegeben…';
+  await _mobOfflineLeeren();
+  try{localStorage.setItem(_MOB_OFFLINE_PINS_KEY,'[]');}catch(e){}
+  // Knopf im gerade offenen Auftrag nachziehen, sonst behauptet er weiter „mitgenommen"
+  try{
+    const b=document.getElementById('mobOfflineBtn');
+    if(b){b.textContent='📴 Offline mitnehmen';b.style.background='var(--bg3)';b.style.color='var(--text)';b.style.borderColor='var(--accent2)';}
+  }catch(e){}
+  toast('✓ '+(formatBytesMob(bytes)||'0 B')+' freigegeben','success',3000);
+  _offlineUebersichtAktualisieren();
+  _speicherAnzeigeAktualisieren();
 }
 async function _speicherAufraeumenKnopf(){
   if(!confirm('Zwischengespeicherte Bilder wegwerfen?\n\nFotos in Drive, offline mitgenommene Dateien und noch nicht hochgeladene Fotos bleiben erhalten. Die Vorschauen werden beim nächsten Ansehen neu geholt.'))return;
