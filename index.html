@@ -2033,6 +2033,31 @@ function renderHeuteMobil(){
       +'</div>';
   }
 
+  // ── v170: Der Grund als gefülltes Kästchen ─────────────────────────────
+  // Befund Frank: „Aus dem gesamten Textblock möchte ich genau sehen, was die
+  // Aufgabe ist – zum Beispiel Testtermin heute." Bisher stand der Objekttitel
+  // groß und fett, das zu Tuende klein und GRAU darunter – grau ist genau die
+  // Farbe, die das Auge überspringt. Der Titel bleibt oben (Entscheidung Frank),
+  // der Text darunter wird auffälliger.
+  //
+  // Kein Symbol davor (ausdrücklicher Wunsch): das kostet nur Breite.
+  // Drei Farben, und zwar die, die PAM ohnehin benutzt.
+  function _grundBox(e){
+    if(!e)return'';
+    var txt, farbe;
+    if(e.typ==='ausf'){txt='Ausführung';farbe='#1a6fc4';}
+    else if(e.typ==='faellig'){txt='Fälligkeit';farbe='#EF9F27';}
+    else{
+      txt=(e.text||'Termin');
+      // Aufgaben tragen ihren Typ aus der festen Liste im Text („Anruf bis",
+      // „Ortstermin am"); freie Termine tragen freien Text → dann orange.
+      if(/ortstermin|besichtigung/i.test(txt))farbe='#2e7d32';
+      else if(/anruf|ausführung|ausfuehrung/i.test(txt))farbe='#1a6fc4';
+      else farbe='#EF9F27';
+    }
+    return'<span style="display:inline-block;font-size:13px;font-weight:600;padding:2px 8px;border-radius:6px;background:'+farbe+'22;color:'+farbe+';max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;">'+esc(txt)+'</span>';
+  }
+
   function taskRow(item,borderColor){
     var t=item.t,e=item.e;
     var isBesicht=t.aktivitaet==='besichtigung';
@@ -2041,11 +2066,9 @@ function renderHeuteMobil(){
     if(isBesicht)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#2e7d3222;color:#2e7d32;font-weight:600;white-space:nowrap;">Besichtigung</span>';
     if(isAnruf)badges+='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#1a6fc422;color:#1a6fc4;font-weight:600;white-space:nowrap;">Anruf</span>';
     // v132: es gibt nur noch Heute-Kacheln – Beschriftung nennt die Quelle (z.B. „Heute: Ortstermin")
-    var quelle='';
-    if(e.typ==='ausf')quelle='Ausführung';
-    else if(e.typ==='aufgabe'||e.typ==='frei')quelle=e.text||'Termin';
-    var dlabel='Heute'+(quelle?': '+quelle:' fällig');
-    badges+=(badges?' ':'')+'<span style="font-size:11px;color:#EF9F27;font-weight:600;white-space:nowrap;">'+dlabel+'</span>';
+    // v170: statt kleinem orangem Text „Heute: …" dasselbe gefüllte Kästchen wie
+    // die Badges daneben – gleiche Optik, und der Grund fällt endlich auf
+    badges+=(badges?' ':'')+_grundBox(e);
     return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
       +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:4px solid '+borderColor
       +';border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
@@ -2088,10 +2111,15 @@ function renderHeuteMobil(){
   }
   function kzTask(item){
     var t=item.t,e=item.e;
-    var quelle=(e.typ==='ausf')?'Ausführung':((e.typ==='aufgabe'||e.typ==='frei')?(e.text||'Termin'):'Fälligkeit');
+    // v170: Titel bleibt oben (Entscheidung Frank), darunter der Grund im
+    // Kästchen – 13px statt 11px und farbig statt grau. Das Board rutscht
+    // dahinter und bleibt klein und grau, es ist nur Herkunft.
     return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:8px 2px;border-top:0.5px solid var(--border);cursor:pointer;">'
       +'<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||'(ohne Titel)')+'</div>'
-      +'<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(quelle)+' · '+esc(item.board||'')+'</div>'
+      +'<div style="margin-top:3px;display:flex;align-items:center;gap:7px;min-width:0;">'
+      +  '<span style="min-width:0;overflow:hidden;">'+_grundBox(e)+'</span>'
+      +  '<span style="font-size:11px;color:var(--text2);flex-shrink:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(item.board||'')+'</span>'
+      +'</div>'
       +'</div>';
   }
   // Objekt kompakt: EINE Zeile. Antippen klappt die Leistungen auf – und dort
