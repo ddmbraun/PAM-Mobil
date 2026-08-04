@@ -6626,7 +6626,9 @@ function _blobCacheEinfuegen(map,id,url){
 // Alles zu EINEM Foto vergessen – nach dem Löschen des Fotos.
 function _fotoSpuerenLoeschen(f){
   if(!f)return;
-  [f.driveId,f.editedDriveId].filter(Boolean).forEach(id=>{
+  // v159: localKey mit aufräumen – seit v159 kann auch unter diesem Schlüssel ein
+  // Vorschaubild liegen (aus der lokalen Vollfassung erzeugt).
+  [f.driveId,f.editedDriveId,f.localKey].filter(Boolean).forEach(id=>{
     try{const u=_fotoBlobCache.get(id);if(u&&String(u).startsWith('blob:'))URL.revokeObjectURL(u);}catch(_e){}
     _fotoBlobCache.delete(id);
     try{const t=_mobThumbCache.get(id);if(t&&String(t).startsWith('blob:'))URL.revokeObjectURL(t);}catch(_e){}
@@ -7866,6 +7868,56 @@ function _thumbSchlitzFrei(){
   const n=_thumbWarteschlange.shift();
   if(n)n();
 }
+// ── v159: Vorschaubild NUR aus dem Gerät (nie Netz) ──────────────────────────
+// Eigene Stufe, damit die Kette sie VOR der lokalen Vollfassung abfragen kann, ohne
+// dabei einen Netz-Abruf zu riskieren (siehe Begründung in _fotoVorschauLaden).
+async function _thumbGeraet(schluessel){
+  if(!schluessel)return '';
+  if(_thumbBytesCache.has(schluessel))return _thumbBytesCache.get(schluessel);
+  try{
+    const du=await _mobPhotoGet(_thumbCacheKey(schluessel));
+    if(du){_thumbBytesMerken(schluessel,du);return du;}
+  }catch(e){}
+  return '';
+}
+// Unter welchem Schlüssel liegt das Vorschaubild eines Fotos? Drive-Id, wenn es eine gibt
+// (dann teilen sich beide Geräte denselben Schlüssel), sonst die lokale Kennung – damit
+// auch ein noch nicht hochgeladenes Foto eine Vorschau bekommt.
+function _thumbSchluessel(f){return (f&&(f.editedDriveId||f.driveId||f.localKey))||'';}
+// Aus einer im Gerät liegenden Vollfassung EINMAL ein kleines Vorschaubild erzeugen und
+// ablegen. Danach bedient _thumbGeraet die Kachel ohne Netz und ohne das Base64-Ungetüm
+// der Vollfassung. Läuft im Hintergrund und meldet keine Fehler nach außen – schlägt es
+// fehl, bleibt einfach alles wie vorher.
+const _thumbBauInflight=new Set();
+const THUMB_KANTE=320, THUMB_QUALITAET=0.7;
+function _thumbAusVollbild(schluessel,dataUrl){
+  if(!schluessel||!dataUrl||_thumbBauInflight.has(schluessel))return;
+  if(_thumbBytesCache.has(schluessel))return;
+  _thumbBauInflight.add(schluessel);
+  const fertig=()=>_thumbBauInflight.delete(schluessel);
+  try{
+    const bild=new Image();
+    bild.onload=()=>{
+      try{
+        const skala=Math.min(1,THUMB_KANTE/Math.max(bild.naturalWidth||1,bild.naturalHeight||1));
+        if(!bild.naturalWidth||!bild.naturalHeight){fertig();return;}
+        const cv=document.createElement('canvas');
+        cv.width=Math.max(1,Math.round(bild.naturalWidth*skala));
+        cv.height=Math.max(1,Math.round(bild.naturalHeight*skala));
+        cv.getContext('2d').drawImage(bild,0,0,cv.width,cv.height);
+        const klein=cv.toDataURL('image/jpeg',THUMB_QUALITAET);
+        // Nur ablegen, wenn es sich lohnt – sonst lieber gar nichts merken.
+        if(klein&&klein.length<dataUrl.length*0.6){
+          _thumbBytesMerken(schluessel,klein);
+          _mobPhotoSave(_thumbCacheKey(schluessel),klein,{done:1,art:'thumb'}).catch(()=>{});
+        }
+      }catch(e){console.warn('[Vorschau] aus Vollbild:',e);}
+      fertig();
+    };
+    bild.onerror=fertig;
+    bild.src=dataUrl;
+  }catch(e){fertig();}
+}
 async function _thumbBytes(id){
   if(!id)return '';
   if(_thumbBytesCache.has(id))return _thumbBytesCache.get(id);
@@ -7873,8 +7925,8 @@ async function _thumbBytes(id){
   const p=(async()=>{
     // 1) schon im Gerät?
     try{
-      const du=await _mobPhotoGet(_thumbCacheKey(id));
-      if(du){_thumbBytesMerken(id,du);return du;}
+      const du=await _thumbGeraet(id);
+      if(du)return du;
     }catch(e){}
     // 2) sonst einmal aus Drive holen und dauerhaft ablegen
     await _thumbSchlitz();
@@ -7950,14 +8002,43 @@ function _fotoVorschauLaden(f,img,opts){
   const ausSpeicher=!!((f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))||(id&&_fotoBlobCache.get(id)));
   if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))quellen.push(()=>f.localUrl);
   if(id&&_fotoBlobCache.get(id))quellen.push(()=>_fotoBlobCache.get(id));
-  // v155: Reihenfolge geändert – erst alles vom GERÄT, dann das dauerhaft abgelegte
-  // Vorschaubild, erst danach gemerkte Adressen und ganz zuletzt der Vollbild-Weg.
+  // v155: Reihenfolge – erst alles vom GERÄT, dann das dauerhaft abgelegte Vorschaubild,
+  // erst danach gemerkte Adressen und ganz zuletzt der Vollbild-Weg.
   // Wichtig: _thumbBytes MUSS vor _thumbGespeichert stehen. Sonst bedient eine noch
   // gültige gemerkte Adresse jede Kachel aus dem Netz, der Geräte-Cache wird nie
   // gefüllt – und nach dem nächsten App-Start geht alles wieder von vorne los
   // (genau der Befund „laden nach dem Neustarten immer wieder").
-  if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey));
-  if(id)quellen.push(()=>_thumbBytes(id)); // Gerät → einmalig Drive → bleibt liegen
+  //
+  // ── v159 (Befund Frank nach dem v158-Deploy: „beim Teilen werden jedes Mal erst die
+  //    Bilder neu geladen") ────────────────────────────────────────────────────────────
+  // Die v155-Regel „erst alles vom Gerät" war zu grob: sie stellte den localKey-Weg vor
+  // _thumbBytes. Der localKey liefert aber das VOLLE Foto (300–800 KB JPEG, als Base64
+  // rund 1 MB) – für eine 104-px-Kachel. Bei jedem Foto, das auf DIESEM Gerät aufgenommen
+  // wurde, gewann dieser Weg, und zwar bei jedem Öffnen erneut: für den Gerätespeicher
+  // gibt es keinen Zwischenspeicher im Arbeitsspeicher. Schlimmer noch: _thumbBytes kam
+  // dadurch nie an die Reihe, das kleine Vorschaubild wurde für die eigenen Fotos also
+  // NIE angelegt – der ganze v155-Speicher lief bei ihnen ins Leere.
+  // Richtig ist: KLEIN vom Gerät schlägt GROSS vom Gerät.
+  // Einfach _thumbBytes voranzustellen wäre aber OHNE EMPFANG schlechter gewesen: für die
+  // eigenen Fotos hätte erst ein Netz-Abruf scheitern müssen (inkl. ensureToken je
+  // Kachel), bevor die lokale Kopie drankommt. Deshalb dreistufig:
+  //   a) Vorschaubild aus dem Gerät – nie Netz, sofort da.
+  //   b) sonst die lokale Vollfassung ZEIGEN und daraus im Hintergrund EINMAL ein
+  //      Vorschaubild erzeugen und ablegen. Ab dem nächsten Öffnen greift (a) – ohne
+  //      Netz, ohne Base64-Ungetüm, auch nach App-Neustart und auch auf dem Dach.
+  //   c) erst wenn es hier gar keine lokale Kopie gibt, das Vorschaubild aus Drive holen.
+  // Zu (c) die Ausnahme: Wurde das Foto hier bearbeitet und ist die Bearbeitung noch nicht
+  // in Drive (editedName ohne editedDriveId), darf Drive gar nicht gefragt werden – dort
+  // liegt noch die ALTE, unbearbeitete Fassung. Gleiche Bedingung wie _hasLocalEdit in
+  // openFotoFullscreen.
+  const _lokalBearbeitet=!!(f.editedName&&!f.editedDriveId);
+  const _tk=_thumbSchluessel(f);
+  if(_tk)quellen.push(()=>_thumbGeraet(_tk));
+  if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey).then(du=>{
+    if(du&&_tk)_thumbAusVollbild(_tk,du); // Hintergrund, blockiert die Anzeige nicht
+    return du;
+  }));
+  if(id&&!_lokalBearbeitet)quellen.push(()=>_thumbBytes(id)); // Gerät → einmalig Drive → bleibt liegen
   const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
   if(_ts)quellen.push(()=>_ts);
   // v156: der HV-Bilder-Cache (gleiche Herkunft, kennt zu manchen Drive-Ids bereits eine
