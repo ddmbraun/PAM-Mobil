@@ -7020,9 +7020,15 @@ function renderFotos(list){
 }
 // Hängt an jede Kachel eines gerade neu aufgebauten Rasters die Vorschau-Kette.
 // `liste` ist die Liste, deren laufende Nummern in data-foto-idx stehen.
-function _fotoRasterHydrieren(wurzelId,liste){
-  const box=document.getElementById(wurzelId);
-  if(!box||!liste)return;
+async function _fotoRasterHydrieren(wurzelId,liste){
+  if(!document.getElementById(wurzelId)||!liste)return;
+  // v160: erst alle bekannten Vorschaubilder in einem Zug holen, dann anhängen – die
+  // Kacheln stehen dadurch auf einen Schlag statt einzeln nachzutröpfeln.
+  // Notbremse: klemmt die Datenbank (z.B. weil ein anderer Tab gerade umbaut), wird nach
+  // 400 ms trotzdem angehängt. Ohne sie bliebe das Raster im schlimmsten Fall grau.
+  await Promise.race([_thumbVorladen(liste),new Promise(r=>setTimeout(r,400))]);
+  const box=document.getElementById(wurzelId); // kann inzwischen neu aufgebaut sein
+  if(!box)return;
   box.querySelectorAll('img[data-foto-idx]').forEach(img=>{
     const i=parseInt(img.getAttribute('data-foto-idx'),10);
     const f=liste[i];
@@ -7871,6 +7877,36 @@ function _thumbSchlitzFrei(){
 // ── v159: Vorschaubild NUR aus dem Gerät (nie Netz) ──────────────────────────
 // Eigene Stufe, damit die Kette sie VOR der lokalen Vollfassung abfragen kann, ohne
 // dabei einen Netz-Abruf zu riskieren (siehe Begründung in _fotoVorschauLaden).
+// ── v160: alle Vorschaubilder eines Rasters in EINEM Rutsch holen ────────────
+// Befund Frank nach dem v159-Deploy: „Vorschau sind nicht sofort da, laden aber schnell".
+// Zwei hausgemachte Gründe für den Rest-Verzug:
+//  1) _mobPhotoGet öffnet und schließt für JEDEN Aufruf eine eigene Datenbankverbindung
+//     (indexedDB.open + db.close). Bei 40 Kacheln sind das 40 Öffnen/Schließen-Vorgänge,
+//     die sich hintereinander einreihen. Hier stattdessen: EINE Verbindung, EINE
+//     Transaktion, alle Schlüssel auf einmal.
+//  2) Jede Kachel wartete zusätzlich auf ihre eigene Sichtbarkeitsmeldung, obwohl das
+//     Bild danach ohnehin sofort aus dem Arbeitsspeicher kam. Was hier vorgeladen wurde,
+//     gilt in _fotoVorschauLaden als „liegt im Speicher" und wird ohne Umweg gezeigt.
+// Was NICHT geht: ein Foto, das dieses Gerät noch nie gesehen hat, kann nicht sofort da
+// sein – es muss einmal geholt werden. Das bleibt so.
+async function _thumbVorladen(liste){
+  try{
+    const schluessel=[...new Set((liste||[]).map(f=>_thumbSchluessel(f)).filter(k=>k&&!_thumbBytesCache.has(k)))];
+    if(!schluessel.length)return 0;
+    const db=await _mobPhotoDbOpen();
+    return await new Promise(res=>{
+      let n=0;
+      const tx=db.transaction(_MOB_PHOTO_STORE,'readonly');
+      const st=tx.objectStore(_MOB_PHOTO_STORE);
+      schluessel.forEach(k=>{
+        const rq=st.get(_thumbCacheKey(k));
+        rq.onsuccess=e=>{const v=e.target.result;if(v&&v.dataUrl){_thumbBytesMerken(k,v.dataUrl);n++;}};
+      });
+      tx.oncomplete=()=>{db.close();res(n);};
+      tx.onerror=()=>{db.close();res(n);};
+    });
+  }catch(e){console.warn('[Vorschau] Vorladen:',e);return 0;}
+}
 async function _thumbGeraet(schluessel){
   if(!schluessel)return '';
   if(_thumbBytesCache.has(schluessel))return _thumbBytesCache.get(schluessel);
@@ -7999,7 +8035,12 @@ function _fotoVorschauLaden(f,img,opts){
   opts=opts||{};
   const id=f.editedDriveId||f.driveId||''; // bearbeitete Fassung hat Vorrang – wie in renderFotos
   const quellen=[];
-  const ausSpeicher=!!((f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))||(id&&_fotoBlobCache.get(id)));
+  const _tkVorab=_thumbSchluessel(f);
+  // v160: Ein bereits vorgeladenes Vorschaubild gilt als „liegt im Speicher" – die Kachel
+  // zeigt es sofort, statt erst auf ihre Sichtbarkeitsmeldung zu warten.
+  const ausSpeicher=!!((f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))
+    ||(id&&_fotoBlobCache.get(id))
+    ||(_tkVorab&&_thumbBytesCache.has(_tkVorab)));
   if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))quellen.push(()=>f.localUrl);
   if(id&&_fotoBlobCache.get(id))quellen.push(()=>_fotoBlobCache.get(id));
   // v155: Reihenfolge – erst alles vom GERÄT, dann das dauerhaft abgelegte Vorschaubild,
@@ -8032,7 +8073,7 @@ function _fotoVorschauLaden(f,img,opts){
   // liegt noch die ALTE, unbearbeitete Fassung. Gleiche Bedingung wie _hasLocalEdit in
   // openFotoFullscreen.
   const _lokalBearbeitet=!!(f.editedName&&!f.editedDriveId);
-  const _tk=_thumbSchluessel(f);
+  const _tk=_tkVorab;
   if(_tk)quellen.push(()=>_thumbGeraet(_tk));
   if(f.localKey)quellen.push(()=>_mobPhotoGet(f.localKey).then(du=>{
     if(du&&_tk)_thumbAusVollbild(_tk,du); // Hintergrund, blockiert die Anzeige nicht
@@ -8107,13 +8148,14 @@ function _feImportOeffnen(){
     +'</div>';
   document.body.appendChild(ov);
   const grid=ov.querySelector('#feImportGrid');
+  const _fePaare=[]; // v160
   alle.forEach((x,i)=>{
     const key=x.fo.localKey||x.fo.driveId||('i'+i);
     const cell=document.createElement('div');
     cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid transparent;cursor:pointer;';
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;';
-    _fotoVorschauLaden(x.fo,img); // v153: angemeldeter Drive-Weg statt öffentlicher Adresse
+    _fePaare.push([x.fo,img]); // v160: Laden erst nach dem Sammel-Vorladen
     const tag=document.createElement('div');
     tag.style.cssText='position:absolute;left:4px;bottom:4px;right:4px;font-size:10px;color:#fff;background:rgba(0,0,0,.55);border-radius:6px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
     const _z=_fotoZeit(x.fo); // v154: Aufnahme- statt Hochlade-Zeit
@@ -8127,6 +8169,9 @@ function _feImportOeffnen(){
     };
     grid.appendChild(cell);
   });
+  // v160: alle bekannten Vorschaubilder in EINER Datenbank-Abfrage, dann anhängen
+  Promise.race([_thumbVorladen(alle.map(x=>x.fo)),new Promise(r=>setTimeout(r,400))])
+    .then(()=>_fePaare.forEach(([f,img])=>_fotoVorschauLaden(f,img)));
 }
 async function _feImportUebernehmen(){
   const ziel=currentTask();
@@ -8221,13 +8266,14 @@ function _shrOeffnen(preKeys){
     +'<div style="font-size:11px;color:#999;margin-top:8px;">PDF enthält keine Aufnahmedaten. „Fotos bereinigt" entfernt GPS/Datum/Kamera aus den Bildern und neutralisiert die Dateinamen (foto-1.jpg …).</div>';
   document.body.appendChild(ov);
   const grid=ov.querySelector('#shrGrid');
+  const _paare=[]; // v160: erst alle Kacheln bauen, dann EINMAL vorladen und anhängen
   fotos.forEach((f,i)=>{
     const key=_shrKey(f)||('i'+i);
     const cell=document.createElement('div');
     cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid '+(_shrSel.has(key)?'var(--accent)':'transparent')+';cursor:pointer;';
     const img=document.createElement('img');
     img.style.cssText='width:100%;height:100%;object-fit:cover;';
-    _fotoVorschauLaden(f,img); // v153: angemeldeter Drive-Weg statt öffentlicher Adresse
+    _paare.push([f,img]); // v160: Laden erst nach dem Sammel-Vorladen
     cell.appendChild(img);
     if(f.caption){
       const tag=document.createElement('div');
@@ -8243,6 +8289,9 @@ function _shrOeffnen(preKeys){
     grid.appendChild(cell);
   });
   _shrZaehler();
+  // v160: alle bekannten Vorschaubilder in EINER Datenbank-Abfrage, dann anhängen
+  Promise.race([_thumbVorladen(fotos),new Promise(r=>setTimeout(r,400))])
+    .then(()=>_paare.forEach(([f,img])=>_fotoVorschauLaden(f,img)));
 }
 function _shrZaehler(){
   const n=_shrSel?_shrSel.size:0;
