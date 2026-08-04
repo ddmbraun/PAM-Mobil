@@ -8326,7 +8326,13 @@ async function _thumbAusVollbildNetz(schluessel,driveId){
   // Zeitpunkt noch leer, die Prüfung darunter greift also nicht.
   if(_thumbBauInflight.has(schluessel))return null;
   if(_thumbBytesCache.has(schluessel))return null;
-  if(typeof navigator!=='undefined'&&navigator.onLine===false)return false;
+  // v167: Liegt die Datei durch „Offline mitnehmen" bereits im Gerät, kostet der Bau
+  // NICHTS – _fetchFotoBlob bedient sich zuerst aus der Offline-Ablage. Dann darf auch
+  // ohne gemeldeten Empfang gebaut werden. Vorher stieg die Funktion hier aus und ließ
+  // die kostenlose lokale Kopie ungenutzt liegen.
+  let _lokalDa=false;
+  try{const _off=await _mobOfflineGet(driveId);_lokalDa=!!(_off&&_off.blob);}catch(e){}
+  if(!_lokalDa&&typeof navigator!=='undefined'&&navigator.onLine===false)return false;
   await _thumbSchlitz();
   try{
     const u=await _fetchFotoBlob(driveId);
@@ -8334,6 +8340,51 @@ async function _thumbAusVollbildNetz(schluessel,driveId){
     return await _thumbBauen(schluessel,u,{name:'vollbild-netz'});
   }catch(e){return false;}
   finally{_thumbSchlitzFrei();}
+}
+// ── v167: Vorschaubild aufheben statt auslesen ──────────────────────────────
+// Der Denkfehler bis v166: „wir dürfen das kleine Bild nicht AUSLESEN, also können wir
+// es nicht BEHALTEN". Das sind zwei verschiedene Erlaubnisse. Den Inhalt anfassen dürfen
+// wir nicht – die Antwort von Google unverändert aufheben und später wieder anzeigen
+// aber sehr wohl. Genau das macht der Service Worker seit v137 mit den CDN-Bibliotheken.
+// Damit entfällt der teure Umweg über das Vollbild (5–10 MB), den v161 als einzigen
+// lesbaren Weg gefunden hatte: es bleibt bei den paar Dutzend KB, die ohnehin kommen.
+// Die Adresse von Google läuft nach Stunden ab, deshalb fragen wir unter EIGENER,
+// gleichbleibender Adresse an; der Service Worker speichert ohne den Abfrageteil.
+function _thumbSwAktiv(){
+  try{return !!(navigator.serviceWorker&&navigator.serviceWorker.controller);}catch(e){return false;}
+}
+function _thumbSwUrl(id,zielUrl){
+  if(!id)return '';
+  return './pam-thumb/'+encodeURIComponent(id)+(zielUrl?('?u='+encodeURIComponent(zielUrl)):'');
+}
+// Einmal je Foto: den Service Worker anstoßen, das Bild abzulegen. Läuft im Hintergrund,
+// die Kachel steht zu diesem Zeitpunkt längst.
+const _thumbSwGeholt=new Set();
+async function _thumbSwSpeichern(id,zielUrl){
+  if(!id||!zielUrl||!_thumbSwAktiv())return false;
+  if(_thumbSwGeholt.has(id))return false;
+  _thumbSwGeholt.add(id);
+  try{
+    const r=await fetch(_thumbSwUrl(id,zielUrl));
+    // opaque-Antworten melden status 0 – das ist hier der NORMALFALL, kein Fehler.
+    return !!r;
+  }catch(e){console.warn('[Vorschau] Speicher:',e);return false;}
+}
+// Wie viele Vorschaubilder liegen im Speicher? Für die Anzeige in den Einstellungen –
+// damit der Platzverbrauch ablesbar ist statt geraten.
+async function _thumbSwAnzahl(){
+  try{
+    if(!('caches' in window))return 0;
+    const c=await caches.open('pam-vorschau-v1');
+    return (await c.keys()).length;
+  }catch(e){return 0;}
+}
+async function _thumbSwLeeren(){
+  try{
+    if(!('caches' in window))return false;
+    _thumbSwGeholt.clear();
+    return await caches.delete('pam-vorschau-v1');
+  }catch(e){return false;}
 }
 async function _thumbBytes(id){
   if(!id)return '';
@@ -8464,6 +8515,11 @@ function _fotoVorschauLaden(f,img,opts){
     if(du&&_tk)_thumbAusVollbild(_tk,du); // Hintergrund, blockiert die Anzeige nicht
     return du;
   })});
+  // v167: der eigene Vorschau-Speicher. Steht bewusst VOR allen Netzwegen und hinter
+  // allen Gerätewegen: er antwortet ohne Netz, wenn schon einmal etwas abgelegt wurde.
+  // Ist nichts da, sagt der Service Worker ab und die Kette geht weiter – das kostet
+  // nichts, weil die Anfrage das Gerät gar nicht verlässt.
+  if(id&&!_lokalBearbeitet&&_thumbSwAktiv())quellen.push({name:'Vorschau-Speicher',holen:()=>_thumbSwUrl(id)});
   if(id&&!_lokalBearbeitet)quellen.push({name:'Drive (Vorschau-Bytes)',holen:()=>_thumbBytes(id)});
   const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
   if(_ts)quellen.push({name:'gemerkte Adresse',holen:()=>_ts,bauen:true});
@@ -8545,7 +8601,16 @@ function _vorschauKetteStarten(img,quellen,opts){
         // hier enden und beim nächsten Öffnen wieder aus dem Netz geladen.
         // v162: NUR bei einem echten Fehlversuch (`false`) eskalieren – bei `null` baut
         // gerade schon jemand dasselbe Bild, dann wäre der Vollbild-Download vergebens.
-        _thumbAusAdresse(_tk,q).then(w=>{if(w===false&&id)_thumbAusVollbildNetz(_tk,id);});
+        // v167: und die Eskalation ist jetzt eine ANDERE. Vorher wurde das Vollbild
+        // geholt (5–10 MB), weil es das einzige LESBARE Bild war. Wir müssen es aber gar
+        // nicht lesen – aufheben genügt. Also legt der Service Worker genau das kleine
+        // Bild ab, das ohnehin gerade angezeigt wird. Der Vollbild-Weg bleibt nur für
+        // Geräte ohne Service Worker als letzte Not.
+        _thumbAusAdresse(_tk,q).then(w=>{
+          if(w!==false)return;
+          if(id&&_thumbSwAktiv()){_thumbSwSpeichern(id,q);return;}
+          if(id)_thumbAusVollbildNetz(_tk,id);
+        });
       }
     }
     if(typeof opts.beiBild==='function'){try{opts.beiBild();}catch(_e){}}
@@ -10233,7 +10298,15 @@ async function _speicherAnzeigeAktualisieren(){
   if(!el)return;
   try{
     const hEl=document.getElementById('settVorschau'); // v161
-    if(hEl)hEl.textContent=_vorschauHerkunftText();
+    if(hEl){
+      // v167: dazu die Zahl der aufgehobenen Vorschaubilder. Damit lässt sich der
+      // Platzverbrauch ablesen: „Belegt" oben durch diese Zahl geteilt ergibt, was ein
+      // aufgehobenes Bild das Gerät wirklich kostet (die Bilder selbst sind ~30 KB, das
+      // Betriebssystem rechnet verschlossene Antworten aber mit Aufschlag an).
+      const n=await _thumbSwAnzahl();
+      hEl.textContent=_vorschauHerkunftText()+(n?('\nAufgehoben: '+n+' Vorschaubilder'):'');
+      hEl.style.whiteSpace='pre-line';
+    }
     if(!(navigator.storage&&navigator.storage.estimate)){el.textContent='Nicht ermittelbar (Browser meldet es nicht).';return;}
     const {usage,quota}=await navigator.storage.estimate();
     const mb=n=>(n/1024/1024).toFixed(n<10*1024*1024?1:0)+' MB';
@@ -10290,6 +10363,7 @@ async function _speicherAufraeumenKnopf(){
   try{
     await DrivePhotoCache.leeren();          // Vollbilder
     await _thumbAblageLeeren();              // Vorschaubilder (thumb_…)
+    await _thumbSwLeeren();                  // v167: aufgehobene Vorschaubilder
     _fotoBlobCache.forEach(u=>{try{if(String(u).startsWith('blob:'))URL.revokeObjectURL(u);}catch(_e){}});
     _fotoBlobCache.clear();
     _mobThumbCache.forEach(u=>{try{if(String(u).startsWith('blob:'))URL.revokeObjectURL(u);}catch(_e){}});
