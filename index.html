@@ -1885,6 +1885,34 @@ function _tuMobSammle(){
 }
 var _tuMobOffen={};
 function _tuMobToggle(id){_tuMobOffen[id]=!_tuMobOffen[id];renderHeuteMobil();}
+
+// ══════════════════════════════════════════════════════════════════════════
+// v169 – HEUTE: KOMPAKT UND ZUKLAPPBARE ABSCHNITTE
+//
+// Befund Frank: „Wenn ich da jetzt 10 Termine hab, dann komm ich voll
+// durcheinander." Seine zwei Objekt-Karten brauchten allein elf Zeilen Höhe.
+//
+// Zwei UNABHÄNGIGE Regler:
+//   Kompakt/Kacheln → wie HOCH ein einzelner Eintrag ist
+//   Zuklappen       → welche ABSCHNITTE überhaupt zu sehen sind
+//
+// Der Schalter sitzt bewusst IM Heute-Bildschirm, nicht als vierter Reiter
+// oben: dort gibt es schon „≡ Kompakt", das aber zur Liste gehört. Zwei
+// Knöpfe gleichen Namens für Verschiedenes wären eine Falle.
+// ══════════════════════════════════════════════════════════════════════════
+var HEUTE_KOMPAKT_KEY='ptpm_heute_kompakt_v1', HEUTE_ZU_KEY='ptpm_heute_zu_v1';
+var _heuteKompakt=(function(){try{return localStorage.getItem(HEUTE_KOMPAKT_KEY)==='1';}catch(e){return false;}})();
+var _heuteZu=(function(){try{return JSON.parse(localStorage.getItem(HEUTE_ZU_KEY)||'{}')||{};}catch(e){return {};}})();
+function _heuteSetKompakt(v){
+  _heuteKompakt=!!v;
+  try{localStorage.setItem(HEUTE_KOMPAKT_KEY,_heuteKompakt?'1':'0');}catch(e){}
+  renderHeuteMobil();
+}
+function _heuteZuToggle(key){
+  _heuteZu[key]=!_heuteZu[key];
+  try{localStorage.setItem(HEUTE_ZU_KEY,JSON.stringify(_heuteZu));}catch(e){}
+  renderHeuteMobil();
+}
 function _tuMobErledigt(taskId,lId){
   var t=findTaskById(taskId); if(!t)return;
   var l=(t.turnusListe||[]).find(function(x){return x&&x.id===lId;}); if(!l)return;
@@ -2030,22 +2058,87 @@ function renderHeuteMobil(){
       +'</div>';
   }
 
-  function section(label,color,items,rowFn){
+  // v169: Überschrift ist jetzt ein Schalter. Die ZAHL bleibt auch zugeklappt
+  // stehen – sonst klappt man einmal zu, vergisst es und übersieht wochenlang
+  // etwas (gleicher Gedanke wie die Kopfzeile der Leistungs-Sektion am Desktop).
+  function section(key,label,color,items,rowFn){
     if(!items.length)return'';
-    return'<div style="margin-bottom:12px;">'
-      +'<div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:'+color
-      +';margin-bottom:6px;display:flex;align-items:center;gap:6px;">'
+    var zu=!!_heuteZu[key];
+    return'<div style="margin-bottom:'+(zu?'6px':'12px')+';">'
+      +'<div onclick="_heuteZuToggle(\''+key+'\')" style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:'+color
+      +';margin-bottom:6px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;padding:4px 0;">'
       +'<span style="width:6px;height:6px;border-radius:50%;background:'+color+';display:inline-block;"></span>'
+      +'<span style="opacity:.8;">'+(zu?'▸':'▾')+'</span>'
       +label+' <span style="padding:1px 7px;border-radius:10px;background:'+color+'22;color:'+color+';font-weight:700;">'+items.length+'</span></div>'
-      +items.map(rowFn).join('')
+      +(zu?'':items.map(rowFn).join(''))
       +'</div>';
+  }
+
+  // ── v169: Kompakt-Zeilen. Eine Zeile statt einer Kachel; die Knopfzeile
+  // (Stoppuhr/Telefon/Maps) entfällt bewusst – sie macht die halbe Höhe aus.
+  // Wer sie braucht, tippt den Eintrag an und ist im Task.
+  function kzTermin(item){
+    var t=item.t,tm=item.tm;
+    var zeit=(tm.von||'')+(tm.bis?'–'+tm.bis:'');
+    var titel=((tm.betreff||tm.beschreibung)||'').trim()||t.title||'(ohne Bezeichnung)';
+    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="display:flex;gap:9px;align-items:baseline;padding:8px 2px;border-top:0.5px solid var(--border);cursor:pointer;">'
+      +'<span style="font-size:13px;font-weight:600;color:var(--text);min-width:48px;flex-shrink:0;">'+esc(zeit||'—')+'</span>'
+      +'<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(titel)+'</span>'
+      +'</div>';
+  }
+  function kzTask(item){
+    var t=item.t,e=item.e;
+    var quelle=(e.typ==='ausf')?'Ausführung':((e.typ==='aufgabe'||e.typ==='frei')?(e.text||'Termin'):'Fälligkeit');
+    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:8px 2px;border-top:0.5px solid var(--border);cursor:pointer;">'
+      +'<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||'(ohne Titel)')+'</div>'
+      +'<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(quelle)+' · '+esc(item.board||'')+'</div>'
+      +'</div>';
+  }
+  // Objekt kompakt: EINE Zeile. Antippen klappt die Leistungen auf – und dort
+  // bleibt der ✓-Knopf groß, der wird mit Handschuhen getippt.
+  function kzObjekt(g){
+    var t=g.t, ls=g.leistungen||[];
+    var farbe=ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb;
+    var auf=!!_tuMobOffen[t.id];
+    var h='<div style="border-top:0.5px solid var(--border);">'
+      +'<div onclick="_tuMobToggle(\''+escAttr(t.id)+'\')" style="display:flex;align-items:center;gap:8px;padding:9px 2px;cursor:pointer;">'
+      +  '<span style="width:8px;height:8px;border-radius:50%;background:'+farbe+';flex-shrink:0;"></span>'
+      +  '<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||'')+'</span>'
+      +  '<span style="font-size:12px;color:var(--text2);flex-shrink:0;">'+ls.length+' fällig</span>'
+      +  '<span style="font-size:12px;color:var(--text2);flex-shrink:0;">'+(auf?'▴':'▾')+'</span>'
+      +'</div>';
+    if(auf){
+      ls.forEach(function(l){
+        var lf=TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb;
+        h+='<div style="display:flex;align-items:center;gap:9px;padding:8px 2px 8px 15px;border-top:0.5px solid var(--border);background:var(--bg2);">'
+          +'<span style="width:7px;height:7px;border-radius:50%;background:'+lf+';flex-shrink:0;"></span>'
+          +'<div style="flex:1;min-width:0;">'
+          +  '<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(l.name||'')+'</div>'
+          +  '<div style="font-size:11px;color:var(--text2);">'+esc(_tuStatusText(l))+'</div>'
+          +'</div>'
+          +'<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:38px;border-radius:19px;background:#7F77DD;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
+          +'</div>';
+      });
+    }
+    return h+'</div>';
   }
 
   var d=new Date();
   var ds=d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
   // v133: eigener Zoom-Regler raus – die App-Größe regelt der „Aa"-Knopf in der Kopfzeile
+  // v169: Schalter direkt unter dem Datum. Die Wahl wird gemerkt – einmal
+  // umstellen, danach bleibt es. Standard bleibt „Kacheln": wer die App neu
+  // einrichtet, soll erst die ausführliche Ansicht sehen.
+  function schalter(txt,aktiv,v){
+    return'<span onclick="_heuteSetKompakt('+v+')" style="flex:1;text-align:center;font-size:12px;font-weight:600;padding:7px 0;border-radius:8px;cursor:pointer;user-select:none;'
+      +(aktiv?'background:#7F77DD;color:#fff;':'border:0.5px solid var(--border);color:var(--text2);')+'">'+txt+'</span>';
+  }
   var html='<div id="heuteZoomContent">'
-    +'<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:12px;">📅 '+ds+'</div>';
+    +'<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;">📅 '+ds+'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:12px;">'
+    +  schalter('▦ Kacheln',!_heuteKompakt,'false')
+    +  schalter('▤ Kompakt',_heuteKompakt,'true')
+    +'</div>';
   // v168: fällige wiederkehrende Leistungen, eine Kachel je Objekt.
   // Eigener Abschnitt UNTEN – erst die echten Fristen, dann was „mal wieder dran wäre".
   var tuObjekte=_tuMobSammle();
@@ -2085,9 +2178,12 @@ function renderHeuteMobil(){
   if(!unterwegs.length&&!heuteFaellig.length&&!tuObjekte.length){
     html+='<div style="color:var(--text2);font-size:14px;text-align:center;padding:40px 0;">Heute keine Termine und nichts fällig 🎉</div>';
   }else{
-    html+=section('Heute unterwegs','#5a86f5',unterwegs,function(i){return terminRow(i);});
-    html+=section('Heute fällig','#EF9F27',heuteFaellig,function(i){return taskRow(i,'#EF9F27');});
-    html+=section('Objekte','#7F77DD',tuObjekte,objektRow);
+    html+=section('unterwegs','Heute unterwegs','#5a86f5',unterwegs,
+      _heuteKompakt?kzTermin:function(i){return terminRow(i);});
+    html+=section('faellig','Heute fällig','#EF9F27',heuteFaellig,
+      _heuteKompakt?kzTask:function(i){return taskRow(i,'#EF9F27');});
+    html+=section('objekte','Objekte','#7F77DD',tuObjekte,
+      _heuteKompakt?kzObjekt:objektRow);
   }
   html+='</div>';
   el.innerHTML=html;
