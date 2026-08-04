@@ -15,6 +15,19 @@
 :root{--bg:#000000;--bg2:#232326;--bg3:#313138;--text:#ffffff;--text2:#cfcfd8;--accent:#2e4fc4;--accent2:#8aa4ff;--green:#4ade80;--orange:#fb923c;--red:#f87171;--border:#3d3d44;} /* v106: neutral-grau (One-UI-Stil) · v107: --accent = dunkles Knopf-Blau (weiße Schrift lesbar), --accent2 = helles Blau für Streifen/Linien */
 /* ── HELL-MODUS (Sonnenlicht) ── */
 body.light{--bg:#ffffff;--bg2:#f2f2f7;--bg3:#e5e5ea;--text:#1c1c1e;--text2:#6c6c80;--accent:#2b4fc0;--accent2:#5a86f5;--green:#1a8a3c;--orange:#c96a00;--red:#c0392b;--border:#c8c8d4;} /* v107: Hell-Akzent dunkler für weiße Knopf-Schrift */
+/* ── v171: TAGANSICHT „HEUTE" – TRENNLINIEN SICHTBAR ─────────────────────────
+   Befund Frank: „alle Rahmen schwarz machen, die jetzt hell sind, damit ich
+   erkennen kann, was wo ist" – bei Sonnenlicht auf dem Tablet verschwanden die
+   Kachelkanten. Gemessen: Rahmen zu Kachelgrund nur 1,5:1, und zwar in BEIDEN
+   Ansichten (hell #c8c8d4 auf #f2f2f7, dunkel #3d3d44 auf #232326).
+   Deshalb hell → schwarz, dunkel → heller. Schwarz auf Schwarz wäre erst recht weg.
+
+   Der Trick: die Kacheln setzen ihre Linien inline als var(--border). Eine
+   Variable auf dem Container umgestellt erreicht alle zwölf Stellen auf einmal –
+   ohne jede einzelne anzufassen und ohne !important. --accent2 (die Uhrzeit)
+   kommt aus demselben Grund mit: Hellblau auf Weiß war 3,4:1. */
+#heuteList{--border:#6e6e7a}
+body.light #heuteList{--border:#000000;--accent2:#2b5fd0}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:17px;height:100%;overflow:hidden}
 .screen{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--bg)}
@@ -1833,6 +1846,23 @@ var TU_INTERVALLE={woechentlich:{label:'wöchentlich',tage:7},monatlich:{label:'
   zweimonatlich:{label:'2-monatlich',tage:61},quartal:{label:'vierteljährlich',tage:91},
   halbjahr:{label:'halbjährlich',tage:182},jaehrlich:{label:'jährlich',tage:365}};
 var TU_FARBE={gruen:'#4CAF50',gelb:'#EF9F27',rot:'#E24B4A'};
+// ── v171: HELLE FARBTÖNE FÜR DEN SONNEN-MODUS ────────────────────────────────
+// Die Tagansicht mischt Farben aus dem CSS mit fest eingetragenen Farbwerten hier
+// im Code. Die CSS-Farben ziehen beim Umschalten auf hell automatisch mit, die
+// festen nicht – die blieben auch auf Weiß so hell wie auf Schwarz gedacht.
+// Gemessen auf dem hellen Kachelgrund: Orange #EF9F27 nur 1,9:1, die Fahrzeit
+// 2,6:1, der grüne Ampelpunkt 2,5:1. Das ist die Sorte Farbe, die das Auge in
+// der Sonne einfach überspringt.
+//
+// Also: dieselbe Farbe, nur so weit abgedunkelt, dass sie trägt (jeweils ≥4,5:1).
+// Orange bleibt Orange, Lila bleibt Lila – nur eben lesbar. Im Dunkel-Modus
+// bleibt alles unverändert, dort stimmten die Werte.
+var _HELL_TON={'#EF9F27':'#9a5c00','#5a86f5':'#2b5fd0','#7F77DD':'#4f46b8',
+               '#c98a3d':'#8a5a24','#4CAF50':'#2e7d32','#E24B4A':'#c0392b'};
+function _hTon(c){
+  if(!document.body.classList.contains('light'))return c;
+  return _HELL_TON[c]||c;
+}
 function _tuIntervall(k){return TU_INTERVALLE[k]||TU_INTERVALLE.monatlich;}
 // bewusst NICHT toISOString(): das rechnet nach UTC und liefert nachts noch den Vortag
 function _tuHeute(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -2000,7 +2030,7 @@ function renderHeuteMobil(){
       +(k&&k.name?'<div style="font-size:13px;color:var(--text);">'+esc(k.name)+'</div>':'')
       +(adr?'<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(adr)+'</div>':'')
       +'</div>';
-    return'<div style="display:flex;align-items:center;gap:8px;padding:5px 10px 8px;border-top:0.5px solid var(--border);">'
+    return'<div style="display:flex;align-items:center;gap:8px;padding:5px 10px 8px;border-top:1px solid var(--border);">'
       +mainText+uhrBtn(t)+telBtn+mapsBtn+'</div>';
   }
   function timerBadge(t){
@@ -2017,11 +2047,11 @@ function renderHeuteMobil(){
     var hin=_fahrtHin(tm),rueck=_fahrtRueck(tm);
     var fahrtTxt='';
     if(hin>0||rueck>0){
-      fahrtTxt='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#8a5a2422;color:#c98a3d;font-weight:600;white-space:nowrap;">🚗 '
+      fahrtTxt='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#8a5a2422;color:'+_hTon('#c98a3d')+';font-weight:600;white-space:nowrap;">🚗 '
         +(hin===rueck?hin+' min je Richtung':hin+' min hin / '+rueck+' min zurück')+'</span>';
     }
     return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
-      +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:4px solid #2e6fc4;border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
+      +'style="background:var(--bg2);border:1px solid var(--border);border-left:4px solid #2e6fc4;border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
       +'<div style="padding:9px 10px 3px;display:flex;align-items:center;gap:8px;">'
       +(zeit?'<span style="font-size:15px;font-weight:700;color:var(--accent2);white-space:nowrap;">'+esc(zeit)+'</span>':'')
       +'<span style="flex:1;font-size:14px;font-weight:600;color:var(--text);line-height:1.3;word-break:break-word;">'+esc(t.title)+'</span>'
@@ -2055,11 +2085,13 @@ function renderHeuteMobil(){
       else if(/anruf|ausführung|ausfuehrung/i.test(txt))farbe='#1a6fc4';
       else farbe='#EF9F27';
     }
+    farbe=_hTon(farbe); // v171: im Sonnen-Modus derselbe Ton, nur tragfähig
     return'<span style="display:inline-block;font-size:13px;font-weight:600;padding:2px 8px;border-radius:6px;background:'+farbe+'22;color:'+farbe+';max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;">'+esc(txt)+'</span>';
   }
 
   function taskRow(item,borderColor){
     var t=item.t,e=item.e;
+    borderColor=_hTon(borderColor); // v171: Seitenstreifen passend zur Überschrift
     var isBesicht=t.aktivitaet==='besichtigung';
     var isAnruf=t.aktivitaet==='anruf';
     var badges='';
@@ -2070,7 +2102,7 @@ function renderHeuteMobil(){
     // die Badges daneben – gleiche Optik, und der Grund fällt endlich auf
     badges+=(badges?' ':'')+_grundBox(e);
     return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
-      +'style="background:var(--bg2);border:0.5px solid var(--border);border-left:4px solid '+borderColor
+      +'style="background:var(--bg2);border:1px solid var(--border);border-left:4px solid '+borderColor
       +';border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
       +'<div style="padding:9px 10px 3px;display:flex;align-items:center;gap:6px;">'
       +'<span style="flex:1;font-size:14px;font-weight:600;color:var(--text);line-height:1.3;word-break:break-word;">'+esc(t.title)+'</span>'
@@ -2086,6 +2118,7 @@ function renderHeuteMobil(){
   // etwas (gleicher Gedanke wie die Kopfzeile der Leistungs-Sektion am Desktop).
   function section(key,label,color,items,rowFn){
     if(!items.length)return'';
+    color=_hTon(color); // v171: Überschrift + Zahl-Blase im Sonnen-Modus abgedunkelt
     var zu=!!_heuteZu[key];
     return'<div style="margin-bottom:'+(zu?'6px':'12px')+';">'
       +'<div onclick="_heuteZuToggle(\''+key+'\')" style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:'+color
@@ -2104,7 +2137,7 @@ function renderHeuteMobil(){
     var t=item.t,tm=item.tm;
     var zeit=(tm.von||'')+(tm.bis?'–'+tm.bis:'');
     var titel=((tm.betreff||tm.beschreibung)||'').trim()||t.title||'(ohne Bezeichnung)';
-    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="display:flex;gap:9px;align-items:baseline;padding:8px 2px;border-top:0.5px solid var(--border);cursor:pointer;">'
+    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="display:flex;gap:9px;align-items:baseline;padding:8px 2px;border-top:1px solid var(--border);cursor:pointer;">'
       +'<span style="font-size:13px;font-weight:600;color:var(--text);min-width:48px;flex-shrink:0;">'+esc(zeit||'—')+'</span>'
       +'<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(titel)+'</span>'
       +'</div>';
@@ -2114,7 +2147,7 @@ function renderHeuteMobil(){
     // v170: Titel bleibt oben (Entscheidung Frank), darunter der Grund im
     // Kästchen – 13px statt 11px und farbig statt grau. Das Board rutscht
     // dahinter und bleibt klein und grau, es ist nur Herkunft.
-    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:8px 2px;border-top:0.5px solid var(--border);cursor:pointer;">'
+    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:8px 2px;border-top:1px solid var(--border);cursor:pointer;">'
       +'<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||'(ohne Titel)')+'</div>'
       +'<div style="margin-top:3px;display:flex;align-items:center;gap:7px;min-width:0;">'
       +  '<span style="min-width:0;overflow:hidden;">'+_grundBox(e)+'</span>'
@@ -2126,9 +2159,9 @@ function renderHeuteMobil(){
   // bleibt der ✓-Knopf groß, der wird mit Handschuhen getippt.
   function kzObjekt(g){
     var t=g.t, ls=g.leistungen||[];
-    var farbe=ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb;
+    var farbe=_hTon(ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb);
     var auf=!!_tuMobOffen[t.id];
-    var h='<div style="border-top:0.5px solid var(--border);">'
+    var h='<div style="border-top:1px solid var(--border);">'
       +'<div onclick="_tuMobToggle(\''+escAttr(t.id)+'\')" style="display:flex;align-items:center;gap:8px;padding:9px 2px;cursor:pointer;">'
       +  '<span style="width:8px;height:8px;border-radius:50%;background:'+farbe+';flex-shrink:0;"></span>'
       +  '<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||'')+'</span>'
@@ -2137,14 +2170,14 @@ function renderHeuteMobil(){
       +'</div>';
     if(auf){
       ls.forEach(function(l){
-        var lf=TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb;
-        h+='<div style="display:flex;align-items:center;gap:9px;padding:8px 2px 8px 15px;border-top:0.5px solid var(--border);background:var(--bg2);">'
+        var lf=_hTon(TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb);
+        h+='<div style="display:flex;align-items:center;gap:9px;padding:8px 2px 8px 15px;border-top:1px solid var(--border);background:var(--bg2);">'
           +'<span style="width:7px;height:7px;border-radius:50%;background:'+lf+';flex-shrink:0;"></span>'
           +'<div style="flex:1;min-width:0;">'
           +  '<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(l.name||'')+'</div>'
           +  '<div style="font-size:11px;color:var(--text2);">'+esc(_tuStatusText(l))+'</div>'
           +'</div>'
-          +'<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:38px;border-radius:19px;background:#7F77DD;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
+          +'<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:38px;border-radius:19px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
           +'</div>';
       });
     }
@@ -2159,7 +2192,7 @@ function renderHeuteMobil(){
   // einrichtet, soll erst die ausführliche Ansicht sehen.
   function schalter(txt,aktiv,v){
     return'<span onclick="_heuteSetKompakt('+v+')" style="flex:1;text-align:center;font-size:12px;font-weight:600;padding:7px 0;border-radius:8px;cursor:pointer;user-select:none;'
-      +(aktiv?'background:#7F77DD;color:#fff;':'border:0.5px solid var(--border);color:var(--text2);')+'">'+txt+'</span>';
+      +(aktiv?'background:'+_hTon('#7F77DD')+';color:#fff;':'border:1px solid var(--border);color:var(--text2);')+'">'+txt+'</span>';
   }
   var html='<div id="heuteZoomContent">'
     +'<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px;">📅 '+ds+'</div>'
@@ -2172,9 +2205,9 @@ function renderHeuteMobil(){
   var tuObjekte=_tuMobSammle();
   function objektRow(g){
     var t=g.t, ls=g.leistungen||[];
-    var farbe=ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb;
+    var farbe=_hTon(ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb);
     var auf=!!_tuMobOffen[t.id];
-    var h='<div style="background:var(--bg2);border-radius:12px;border:0.5px solid var(--border);border-left:4px solid #7F77DD;margin-bottom:8px;overflow:hidden;">'
+    var h='<div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);border-left:4px solid '+_hTon('#7F77DD')+';margin-bottom:8px;overflow:hidden;">'
       + '<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:9px 11px 6px;cursor:pointer;">'
       +   '<div style="display:flex;align-items:flex-start;gap:6px;">'
       +     '<span style="width:9px;height:9px;border-radius:50%;background:'+farbe+';flex-shrink:0;margin-top:5px;"></span>'
@@ -2185,21 +2218,21 @@ function renderHeuteMobil(){
     if(!auf){
       h+='<div style="font-size:12px;color:var(--text2);padding:0 11px 8px 26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
         + esc(ls.slice(0,3).map(function(l){return l.name||'';}).filter(Boolean).join(' · ')+(ls.length>3?' · +'+(ls.length-3):''))+'</div>'
-        + '<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:0.5px solid var(--border);cursor:pointer;">▾ Aufklappen</div>';
+        + '<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:1px solid var(--border);cursor:pointer;">▾ Aufklappen</div>';
     }else{
       ls.forEach(function(l){
-        var lf=TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb;
-        h+='<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-top:0.5px solid var(--border);">'
+        var lf=_hTon(TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb);
+        h+='<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-top:1px solid var(--border);">'
           + '<span style="width:8px;height:8px;border-radius:50%;background:'+lf+';flex-shrink:0;"></span>'
           + '<div style="flex:1;min-width:0;">'
           +   '<div style="font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(l.name||'')+'</div>'
           +   '<div style="font-size:11px;color:var(--text2);">'+esc(_tuStatusText(l))+'</div>'
           + '</div>'
           // Großer Knopf: das hier wird mit Handschuhen auf der Baustelle getippt
-          + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:40px;border-radius:20px;background:#7F77DD;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
+          + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:40px;border-radius:20px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
           + '</div>';
       });
-      h+='<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:0.5px solid var(--border);cursor:pointer;">▴ Zuklappen</div>';
+      h+='<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:1px solid var(--border);cursor:pointer;">▴ Zuklappen</div>';
     }
     return h+'</div>';
   }
@@ -10506,6 +10539,15 @@ function setTheme(mode){
   if(bl)bl.style.fontWeight=isLight?'700':'400';
   if(bd)bd.style.fontWeight=isLight?'400':'700';
   try{localStorage.setItem(THEME_KEY,mode);}catch(e){console.warn('[PTP-Mobile]',e);}
+  // v171: Die Tagansicht baut ihre Farben beim Zeichnen ein (_hTon), nicht per CSS.
+  // Ohne Neuzeichnen behielte sie nach dem Umschalten die Töne der alten Ansicht –
+  // man stellt bei Sonne auf hell und sieht trotzdem noch das Dunkel-Orange.
+  // Nur wenn sie gerade offen ist: beim App-Start läuft setTheme vor dem Laden der
+  // Boards, ein Zeichnen wäre dort sinnlos (und die Daten sind noch nicht da).
+  try{
+    var _hl=document.getElementById('heuteList');
+    if(_hl&&_hl.style.display!=='none'&&typeof renderHeuteMobil==='function')renderHeuteMobil();
+  }catch(e){console.warn('[PTP-Mobile] Heute neu zeichnen:',e);}
 }
 function toggleTheme(){
   setTheme(document.body.classList.contains('light')?'dark':'light');
