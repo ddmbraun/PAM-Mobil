@@ -1,0 +1,43 @@
+# Nur die tatsächlich deployten App-Dateien werden versioniert.
+# Alles andere bleibt lokal und wird NICHT nach GitHub gepusht.
+
+PAM_Restore.bat
+ANLEITUNG_Restore.txt
+
+# Lokale Backup-/Arbeitsordner (durch Git-Historie ersetzt)
+/Backup/
+/Backup Mobil */
+/Neuer Ordner/
+/Neuer Ordner (2)/
+__probe__.txt
+
+# ⚠ SICHERUNGSDATEIEN – NIEMALS hochladen!
+# Sie enthalten den kompletten alten Stand, u.a. die ungekuerzte sw.js (v183).
+# ACHTUNG v183: hier stand frueher nur "*.backup_*", die Dateien heissen aber
+# "*.bak_*" – die Regel hat NIE gegriffen. Beide Schreibweisen bleiben stehen.
+*.bak
+*.bak_*
+index.html.bak*
+sw.js.bak*
+index_backup_*.html
+index_2026*.html
+index.html.backup_*
+sw_backup_*.js
+sw.js.backup_*
+*.BACKUP-*
+*.GUT-*
+*.neu
+
+# Prüfwerkzeuge und Hilfsskripte (bleiben lokal)
+/_pruefung/
+*.bat
+*.ps1
+*.docx
+Was ist das.png
+deploy_log.txt
+
+# Dokumentation (bleibt lokal, nicht Teil der deployten App)
+# README.md ist die Ausnahme – die gehoert ins Repo.
+*.md
+!README.md
+CHANGES.md
