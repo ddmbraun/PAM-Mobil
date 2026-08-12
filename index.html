@@ -4241,10 +4241,14 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
   <div class="detail-body" id="detailBodySkizze" style="display:none"></div>
   <div class="detail-body" id="detailBodySchnell" style="display:none"></div>
   <!-- Globale Foto-Inputs: immer im DOM, von allen Tabs nutzbar -->
-  <input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
-  <input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
-  <input type="file" id="fotoInputGallerySingle" accept="image/*" style="display:none" onchange="uploadFoto(this.files);this.value=''" autocomplete="off">
-  <input type="file" id="blitzFotoInput" accept="image/*" capture="environment" style="display:none" onchange="_blitzFotoFiles(this.files);this.value=''" autocomplete="off">
+  <!-- v185: `_fotoQuelle` merkt sich, WOHER das Bild kam. uploadFoto sieht den Dateien
+       sonst nicht an, ob sie frisch fotografiert oder aus der Mediathek geholt wurden –
+       der Knopf „📷 Weiteres" gehört aber nur an den Kamera-Weg. -->
+  <input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="_fotoQuelle='kamera';uploadFoto(this.files);this.value=''" autocomplete="off">
+  <input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="_fotoQuelle='galerie';uploadFoto(this.files);this.value=''" autocomplete="off">
+  <!-- v185: `fotoInputGallerySingle` entfernt – es war an KEINER Stelle angeklickt worden
+       (nachgezählt: ein einziges Vorkommen, die Definition selbst). Toter Eingang. -->
+  <input type="file" id="blitzFotoInput" accept="image/*" capture="environment" style="display:none" onchange="_fotoQuelle='kamera';_blitzFotoFiles(this.files);this.value=''" autocomplete="off">
 </div>
 
 <!-- ══ SCHNELL-ADD BOTTOM-SHEET ══ -->
@@ -5010,7 +5014,13 @@ function _taskErstelltText(t,kurz){
   if(kurz)return p(d.getDate())+'.'+p(d.getMonth()+1)+'.';
   return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear()+' · '+p(d.getHours())+':'+p(d.getMinutes());
 }
-function toast(msg,kind){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>{try{t.remove();}catch(e){console.warn('[PTP-Mobile]',e);}},2500);}
+/* v185: Die Anzeigedauer wurde bis hierher STILL VERWORFEN. 38 Aufrufe im Code
+   übergeben ausdrücklich eine längere Zeit – etwa `toast('⚠ …','error',6000)` bei
+   Warnungen –, die Funktion kannte den dritten Wert aber gar nicht und blendete
+   immer nach 2,5 Sekunden aus. Wichtige Hinweise waren dadurch weg, bevor man sie
+   zu Ende gelesen hatte. Jetzt gilt, was der Aufrufer angibt; ohne Angabe bleibt
+   es bei 2,5 Sekunden wie bisher. */
+function toast(msg,kind,dauer){const t=document.createElement('div');t.className='toast'+(kind?' '+kind:'');t.textContent=msg;document.body.appendChild(t);const ms=(typeof dauer==='number'&&dauer>0)?dauer:2500;setTimeout(()=>{try{t.remove();}catch(e){console.warn('[PTP-Mobile]',e);}},ms);}
 function parseMinutes(von,bis){try{if(!von||!bis)return 0;const[vh,vm]=von.split(':').map(Number);const[bh,bm]=bis.split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(e){return 0;}}
 
 // ── GLOBALE ICON-SVGs (für Karten-Vorschau und Heute-View) ──
@@ -5967,9 +5977,45 @@ async function _tuMobFotoUpload(taskId,lId,datum,files){
     toast(vorab
       ?('✓ '+ok+' Datei(en) vorab abgelegt – wandern beim Abhaken in den Termin')
       :('✓ '+ok+' Datei(en) am Eintrag '+_tuDe(datum)+' abgelegt'),'success',4500);
+    /* v185: „noch eine?" – die Kamera von iPhone und Android gibt immer genau EIN Bild
+       zurück, obwohl das Feld hier `multiple` erlaubt (über die Mediathek gehen mehrere).
+       Wer draußen vier Aufnahmen zu einer Leistung braucht, musste bis v184 viermal die
+       Büroklammer suchen. Bewusst KEIN Bild-Dialog wie im Task: Diese Dateien gehen
+       direkt nach Drive, es gibt hier gar keine lokale Vorschau zum Anzeigen. */
+    _tuMobWeiterFrage(taskId,lId,datum);
   }else{
     toast('⚠ Hochladen fehlgeschlagen – der Haken ist gespeichert, Foto bitte später anhängen','error',6000);
   }
+}
+/* v185: Leiste „noch eine Datei?" nach dem Anhängen an eine Leistung.
+   Gleiche Bauart wie beim Blitz-Foto: zwei Knöpfe, verschwindet nach 12 Sekunden
+   von selbst. Draußen soll niemand eine Leiste wegtippen müssen. */
+function _tuMobWeiterFrage(taskId,lId,datum){
+  const alt=document.getElementById('tuWeiterBox'); if(alt)alt.remove();
+  const box=document.createElement('div');
+  box.id='tuWeiterBox';
+  box.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9200;background:var(--bg2);border-top:1px solid var(--border);padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(0,0,0,.25);';
+  const txt=document.createElement('div');
+  txt.style.cssText='flex:1;min-width:0;font-size:13px;color:var(--text2);line-height:1.35;';
+  txt.textContent='✓ Angehängt. Noch eine Datei?';
+  const fertig=document.createElement('button');
+  fertig.textContent='Fertig';
+  fertig.style.cssText='min-height:46px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;font-weight:600;';
+  fertig.onclick=function(){box.remove();};
+  const weiter=document.createElement('button');
+  weiter.textContent='📷 Weitere';
+  weiter.style.cssText='min-height:46px;padding:0 18px;border-radius:10px;border:none;background:#2e4fc4;color:#fff;font-size:14px;font-weight:700;';
+  // Ohne die Sicherheitsabfrage aus _tuMobFotoFrage – die kam ja gerade erst.
+  weiter.onclick=function(){
+    box.remove();
+    var inp=document.createElement('input');
+    inp.type='file'; inp.accept='image/*,application/pdf'; inp.multiple=true;
+    inp.onchange=function(){_tuMobFotoUpload(taskId,lId,datum,Array.prototype.slice.call(inp.files||[]));};
+    inp.click();
+  };
+  box.appendChild(txt);box.appendChild(fertig);box.appendChild(weiter);
+  document.body.appendChild(box);
+  setTimeout(function(){try{box.remove();}catch(e){}},12000);
 }
 async function _tuMobDriveUpload(file,name,folderId){
   var metadata={name:name,parents:[folderId],description:'PAM Mobile Wartungsfoto'};
@@ -8945,7 +8991,27 @@ function _startSchnellDiktat(){
 // Fotos keinen Weg zu „Verwerfen" oder „Bearbeiten", man musste sie im Archiv suchen.
 // Jetzt blättert man mit ‹ › durch die Serie; „✓ Behalten" springt zum nächsten und
 // schließt erst nach dem letzten.
-function _showSchnellFotoPreview(fo, t){
+/* v185: Der Dialog hing bis hierher am Schnell-Reiter fest – er erschien NUR dort.
+   Wer über die Foto-Sektion, das Tagebuch, die Baudoku oder den Blitz-Knopf
+   fotografierte, bekam gar nichts und musste fuer jedes weitere Bild neu tippen.
+   Der Grund war kein Konzept: Der Dialog wurde in v153 fuer den Schnell-Reiter
+   gebaut und nie auf die anderen Wege ausgeweitet.
+
+   Damit er ueberall passt, sind jetzt drei Dinge einstellbar (`opt`):
+     kameraFeld  welches Eingabefeld "📷 Weiteres Foto" erneut oeffnet
+                 (Blitz-Knopf braucht `blitzFotoInput`, nicht `fotoInputCamera`)
+     bearbeiten  false, wenn der Ziel-Task NICHT offen ist – "✏️ Text / Malen"
+                 greift ueber currentTask() und liefe sonst ins Leere
+     verwerfen   false, wenn das Foto nicht ueber _schnellFotoVerwerfen entfernt
+                 werden kann
+
+   ⚠ Ohne `opt` verhaelt sich alles exakt wie vorher – die vorhandene Aufrufstelle
+   im Schnell-Reiter musste nicht angefasst werden.                             */
+function _showSchnellFotoPreview(fo, t, opt){
+  opt = opt || {};
+  const kameraFeld = opt.kameraFeld || 'fotoInputCamera';
+  const kannBearbeiten = opt.bearbeiten !== false;
+  const kannVerwerfen  = opt.verwerfen  !== false;
   const liste=Array.isArray(fo)?fo.filter(Boolean):(fo?[fo]:[]);
   if(!liste.length)return;
   let idx=0;
@@ -9006,7 +9072,7 @@ function _showSchnellFotoPreview(fo, t){
   const btnMore=document.createElement('button');
   btnMore.textContent='📷 Weiteres Foto';
   btnMore.style.cssText='padding:12px 24px;border-radius:10px;background:#2e4fc4;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
-  btnMore.onclick=function(){prev.remove();var inp=document.getElementById('fotoInputCamera');if(inp)inp.click();};
+  btnMore.onclick=function(){prev.remove();var inp=document.getElementById(kameraFeld);if(inp)inp.click();};
   // v110: ✏️ Bearbeiten – behält das Foto und öffnet direkt die Vollbild-Ansicht (Text + Malen), Wunsch Frank
   const btnEdit=document.createElement('button');
   btnEdit.textContent='✏️ Text / Malen';
@@ -9016,7 +9082,13 @@ function _showSchnellFotoPreview(fo, t){
     prev.remove();
     if(i>=0)openFotoFullscreen(i);
   };
+  /* v185: Knöpfe nur zeigen, wenn sie hier auch etwas bewirken. „Text / Malen"
+     braucht den offenen Task (currentTask()), „Verwerfen" den Schnell-Weg –
+     beim Blitz-Foto liegt der Ziel-Task bewusst im Hintergrund. Lieber einen
+     Knopf weniger als einen, der nichts tut. */
   row.appendChild(btnDel);row.appendChild(btnMore);row.appendChild(btnEdit);row.appendChild(btnKeep);
+  if(!kannVerwerfen) btnDel.style.display='none';
+  if(!kannBearbeiten) btnEdit.style.display='none';
   prev.appendChild(img);prev.appendChild(lbl);prev.appendChild(nav);prev.appendChild(row);
   zeige();
   document.body.appendChild(prev);
@@ -12096,6 +12168,10 @@ async function _uploadOneFotoToDrive(file,folderId){
   if(!r.ok){const txt=await r.text().catch(()=>'');throw new Error('HTTP '+r.status+(txt?': '+txt.slice(0,120):''));}
   return await r.json();
 }
+/* v185: Woher kam das Bild – Kamera oder Mediathek? Wird von den Eingabefeldern
+   gesetzt (siehe `_fotoQuelle=` dort) und in uploadFoto sofort wieder geleert.
+   Ausdrücklich deklariert statt beiläufig entstehen zu lassen. */
+let _fotoQuelle = '';
 async function uploadFoto(files,_zielTaskId){
   // v145: optionaler Ziel-Task (Blitz-Foto → Tages-Sammler, ohne dass der Task offen ist)
   if(!files||!files.length)return;
@@ -12173,6 +12249,10 @@ async function uploadFoto(files,_zielTaskId){
   // und der „App in Hintergrund"-Handler sichert die frischen Fotos ins lokale Backup.
   dirty=true;_dirtyTs=Date.now();
   _fotoPendUpdate();
+  // v185: Quelle einmal auslesen und sofort zurücksetzen – sonst gilt sie noch beim
+  // nächsten Aufruf weiter (etwa wenn danach aus der Mediathek geholt wird).
+  const _kameraWeg = (_fotoQuelle === 'kamera');
+  _fotoQuelle = '';
   // v145: Anzeige/Vorschau/Vollbild nur, wenn der Ziel-Task wirklich offen ist –
   // beim Blitz-Foto (Tages-Sammler im Hintergrund) bleibt die Liste unangetastet.
   if(currentTaskId===_taskId){
@@ -12195,7 +12275,20 @@ async function uploadFoto(files,_zielTaskId){
     // am iPhone (≤520px) erscheint nur das Foto, Text per „📝 Text"-Knopf (Ausklappfunktion).
     // Tablet (>520px) behält den Auto-Aufruf (S-Pen-Handschrift direkt losschreiben).
     const _autoText=!(window.matchMedia&&window.matchMedia('(max-width:520px)').matches);
-    if(_ni>=0){try{openFotoFullscreen(_ni);if(_autoText)setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);}catch(e){}}
+    if(_ni>=0){try{
+      openFotoFullscreen(_ni);
+      // v185: Erst NACH dem Öffnen einschalten – openFotoFullscreen baut die Leiste neu auf.
+      // Nur beim Kamera-Weg: aus der Galerie holt man mehrere auf einmal, da hilft der Knopf nicht.
+      if(_kameraWeg) _lbWeiterBtnSetzen('fotoInputCamera');
+      if(_autoText)setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);
+    }catch(e){}}
+  }
+  /* v185: Mehrere frische Aufnahmen ausserhalb des Schnell-Reiters – bis v184 passierte
+     hier GAR NICHTS: das Vollbild oben greift nur bei genau einem Foto, der Dialog nur
+     im Schnell-Reiter. Wer aus der Galerie fünf Bilder holte, sah sie erst nach dem
+     Zuklappen in der Liste. Jetzt bekommt er denselben Dialog wie im Schnell-Reiter. */
+  else if(fotoObjs.length>1&&_currentDetailTab!=='schnell'){
+    try{_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t,{kameraFeld:'fotoInputCamera'});}catch(e){console.warn('[Foto-Vorschau]',e);}
   }
   }
   // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
@@ -12349,6 +12442,34 @@ async function _blitzFotoFiles(files){
   if(!t){toast('Foto-Eingang konnte nicht angelegt werden','error');return;}
   toast('📷 Blitz-Foto → „'+t.title+'"','info',2000);
   await uploadFoto(files,t.id);
+  /* v185: Beim Blitz-Foto liegt der Sammler bewusst im Hintergrund – es geht also
+     weder das Vollbild auf noch die Vorschau aus dem Schnell-Reiter. Bis v184 stand
+     man danach wieder auf dem Board und musste den runden Knopf neu suchen; für eine
+     Serie auf dem Dach war das der lästigste Weg von allen.
+     Bewusst NUR zwei Knöpfe: hier zählt Tempo. Verwerfen und Beschriften macht man
+     später am Foto-Eingang, dafür ist der Sammler ja da. */
+  _blitzWeiterFrage(t);
+}
+function _blitzWeiterFrage(t){
+  const alt=document.getElementById('blitzWeiterBox'); if(alt)alt.remove();
+  const box=document.createElement('div');
+  box.id='blitzWeiterBox';
+  box.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9200;background:var(--bg2);border-top:1px solid var(--border);padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(0,0,0,.25);';
+  const txt=document.createElement('div');
+  txt.style.cssText='flex:1;min-width:0;font-size:13px;color:var(--text2);line-height:1.35;';
+  txt.textContent='✓ Im Foto-Eingang: '+(t&&t.title?t.title:'');
+  const fertig=document.createElement('button');
+  fertig.textContent='Fertig';
+  fertig.style.cssText='min-height:46px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;font-weight:600;';
+  fertig.onclick=function(){box.remove();};
+  const weiter=document.createElement('button');
+  weiter.textContent='📷 Weiteres';
+  weiter.style.cssText='min-height:46px;padding:0 18px;border-radius:10px;border:none;background:#2e4fc4;color:#fff;font-size:14px;font-weight:700;';
+  weiter.onclick=function(){box.remove();const i=document.getElementById('blitzFotoInput');if(i)i.click();};
+  box.appendChild(txt);box.appendChild(fertig);box.appendChild(weiter);
+  document.body.appendChild(box);
+  // Nach 12 s von selbst weg – niemand soll auf dem Dach eine Leiste wegtippen müssen.
+  setTimeout(function(){try{box.remove();}catch(e){}},12000);
 }
 // v153: Alle drei Ablagen durchsuchen, nicht nur die sichtbaren Boards.
 // `boards` enthält NUR, was der Mobil-Filter durchlässt (_applyMobileFilter): Boards
@@ -15488,6 +15609,10 @@ if (navigator.storage && navigator.storage.persist) {
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbEditCaption()">📝 Text</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbStartDraw()" style="margin-left:4px">✏️ Malen</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbGpsDialog()" style="margin-left:4px">📍 GPS</button>
+      <!-- v185: „noch eins" ohne Zurücktippen. Erscheint NUR direkt nach einer frischen
+           Aufnahme (_lbKameraFeld gesetzt) – beim Durchsehen alter Fotos wäre der Knopf
+           sinnlos und würde die Leiste nur zustellen. -->
+      <button class="lb-text-edit-btn" id="lbWeiterBtn" onclick="event.stopPropagation();lbWeiteresFoto()" style="margin-left:4px;display:none">📷 Weiteres</button>
     </div>
     <div class="lb-text-edit-form">
       <textarea id="lbTextInput" placeholder="Kurze Beschreibung zum Foto…" rows="2" autocomplete="off"></textarea>
@@ -15561,12 +15686,35 @@ function openLightbox(src,name,externalUrl,opts){
   lb.classList.add('open');
   document.addEventListener('keydown',_lbOnKey);
 }
+/* ── v185: „📷 Weiteres" im Vollbild ───────────────────────────────────────────
+   Bis v184 musste man nach jeder Aufnahme zurücktippen und den Kamera-Knopf neu
+   suchen. Der Grund: Die Kamera von iPhone und Android gibt immer GENAU EIN Bild
+   zurück und schließt sich – daran ändert auch `multiple` nichts. Der einzige
+   verlässliche Weg ist deshalb, das Eingabefeld erneut zu öffnen.
+
+   Der Knopf erscheint NUR direkt nach einer frischen Aufnahme. Beim Durchsehen
+   alter Fotos bleibt er aus (`_lbKameraFeld` ist dann leer) – sonst stünde er
+   sinnlos in der Leiste und würde „Text/Malen/GPS" verdrängen. */
+let _lbKameraFeld = '';
+function _lbWeiterBtnSetzen(feld){
+  _lbKameraFeld = feld || '';
+  const b = document.getElementById('lbWeiterBtn');
+  if(b) b.style.display = _lbKameraFeld ? '' : 'none';
+}
+function lbWeiteresFoto(){
+  const feld = _lbKameraFeld;
+  closeLightbox();                       // setzt _lbKameraFeld über den Aufruf unten zurück
+  const inp = feld && document.getElementById(feld);
+  if(inp) inp.click();
+  else toast('Kamera nicht erreichbar','error');
+}
 function closeLightbox(){
   const lb=document.getElementById('lightbox');if(!lb)return;
   lb.classList.remove('open');
   lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
   document.removeEventListener('keydown',_lbOnKey);
   _lbFotoIdx=-1;_lbFotoKey='';
+  _lbWeiterBtnSetzen('');                // v185: Knopf wieder aus – gilt nur für die frische Aufnahme
 }
 function _lbHandleTap(e){
   // v100: Touch-Tipps schließen über die Gesten-Logik (Einzeltipp verzögert, Doppeltipp = Zoom).
