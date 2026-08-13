@@ -6489,7 +6489,11 @@ function _tuMobFotoFrage(taskId,lId,datum,mitZielwahl){
    eigenen Platz in der Warteschlange: Fotos werden ohnehin gespeichert, abgeglichen
    und zusammengeführt. Genau das war der Punkt, den Frank am 13.08. beigesteuert hat
    („das hatten wir doch schon geklärt") — die Maschine dafür steht seit v143/v144/v148. */
-function _tuDateiNachtragen(taskId,fo){
+/* v198: dritter Parameter `still`. Beim nachträglichen Zuordnen laufen bis zu zwanzig
+   Fotos durch diese Funktion — ohne ihn kämen zwanzig Meldungen übereinander und der
+   Bildschirm würde zwanzigmal neu gezeichnet. Wer ihn nicht übergibt, bekommt alles
+   wie bisher; die aufrufende Stelle meldet dann einmal am Ende. */
+function _tuDateiNachtragen(taskId,fo,still){
   try{
     if(!fo||!fo.driveId||!fo.tuLeistung)return false;
     var t=(typeof _fotoTaskById==='function'?_fotoTaskById(taskId):null)||findTaskById(taskId);
@@ -6514,14 +6518,15 @@ function _tuDateiNachtragen(taskId,fo){
        war immer die eigentliche Wache, das Löschen nur ein Gürtel dazu. */
     fo.tuEingetragen=true;
     try{scheduleSave();}catch(e){}
-    try{_tuMobNachAktion();}catch(e){} // v177: Datei-Zähler sofort mitziehen
+    if(!still){try{_tuMobNachAktion();}catch(e){}} // v177: Datei-Zähler sofort mitziehen
     /* v180-Hinweis, hierher gezogen: Ohne Termin liegt die Datei „vorab" an der
        Leistung und wandert erst beim Abhaken in den Termin. Das muss man wissen,
        sonst sucht man sie später am falschen Ort. Die Meldung steht jetzt an der
        Stelle, an der die Datei WIRKLICH abgelegt wird — bei einem ohne Empfang
        aufgenommenen Foto ist das Stunden später, und vorher wäre sie gelogen. */
     try{
-      if(!datum)toast('✓ Vorab an der Leistung abgelegt – wandern beim Abhaken in den Termin','success',4500);
+      if(still){/* die aufrufende Stelle meldet gesammelt */}
+      else if(!datum)toast('✓ Vorab an der Leistung abgelegt – wandern beim Abhaken in den Termin','success',4500);
       else toast('✓ Am Eintrag '+_tuDe(datum)+' abgelegt','success',4000);
     }catch(e){}
     return true;
@@ -6571,6 +6576,296 @@ async function _tuMobFotoUpload(taskId,lId,datum,files){
    Netz und keine Wiederholung. Beides erledigt jetzt die gemeinsame Maschine. Wer
    danach sucht: der Weg läuft über uploadFoto → _uploadOneFotoToDrive bzw. beim
    Nachladen über _mobUploadFromKey. */
+
+/* ══ v198: Die Zuordnung nachträglich setzen — und die verlorene zurückholen ══════
+   Befund Frank 13.08.2026: „Die Bilder werden nicht mehr angezeigt, weil bei Fotos
+   nicht unterschieden wird, zu welcher wiederkehrenden Leistung sie gehören."
+   Nachgemessen an den Live-Daten: von 653 Fotos in Objekten mit Leistungen trug
+   GENAU EINES eine Zuordnung. Zwei Ursachen, beide hier behandelt:
+
+   1. Bis v192 wurde der Merker am Foto direkt nach dem Eintragen wieder weggeräumt
+      (als zweite Sicherung gegen Doppeleinträge). v193 hat das abgestellt, aber nur
+      für neue Fotos — bei allen älteren blieb er verloren. Die Angabe steckt jedoch
+      weiterhin in der Dateiliste der Leistung: dort steht die Drive-Kennung. Daraus
+      lässt sich der Merker eindeutig zurückrechnen. Das macht _tuHerkunftReparieren.
+   2. Ein vorhandenes Foto ließ sich überhaupt nicht nachträglich einer Leistung
+      zuordnen — der Merker entstand ausschließlich beim Hochladen. Genau das ist der
+      Alltag: am 11.08. sind 132 Fotos über den normalen Kameraknopf entstanden, 113
+      davon an einem Tag, an dem an diesem Objekt eine Leistung abgehakt wurde.
+
+   ⛔ Über das DATUM wird nichts geraten. Bei sechs Objekten wurden beide Leistungen
+      am selben Tag abgehakt — dort könnte keine Maschine entscheiden, welches Foto
+      wohin gehört. Die Reparatur geht ausschließlich über die Drive-Kennung, das
+      Zuordnen ausschließlich über Franks Auswahl. */
+
+// Welcher Tag gehört zum Foto? Aufnahmezeit zuerst, sonst der Hochlade-Zeitpunkt.
+function _tuFotoTag(fo){
+  try{return String((fo&&(fo.ts||fo.uploadedAt))||'').slice(0,10);}catch(e){return '';}
+}
+/* An welchen Termin der Leistung gehört das Foto? Gibt es einen Termin am Aufnahmetag,
+   ist er es. Sonst der jüngste (dieselbe Regel wie beim Nachreichen seit v177). Gibt es
+   gar keinen, bleibt es „vorab" an der Leistung und wandert beim nächsten ✓ mit (v180). */
+function _tuTerminFuerFoto(l,fo){
+  var es=((l&&l.eintraege)||[]).filter(Boolean);
+  if(!es.length)return '';
+  var tag=_tuFotoTag(fo);
+  if(tag){var tr=es.find(function(x){return x&&x.datum===tag;});if(tr)return tr.datum||'';}
+  return es[0].datum||'';
+}
+/* Alle Datei-Verweise dieses Fotos aus der turnusListe nehmen. Wird an ZWEI Stellen
+   gebraucht: beim Umzuordnen (sonst stünde das Foto hinterher an zwei Leistungen) und
+   beim Entfernen der Zuordnung.
+   ⛔ Ohne diesen Schritt käme eine entfernte Zuordnung beim nächsten App-Start durch
+      die Reparatur unten wieder zurück — der Verweis wäre ja noch da. Die beiden
+      Richtungen müssen zusammenpassen, sonst ist „Zuordnung entfernen" wirkungslos. */
+function _tuVerweisEntfernen(t,fo){
+  var raus=0;
+  if(!fo||!fo.driveId)return 0;
+  var weg=function(arr){
+    if(!Array.isArray(arr))return arr;
+    var neu=arr.filter(function(d){return !(d&&d.id===fo.driveId);});
+    raus+=arr.length-neu.length;
+    return neu;
+  };
+  ((t&&t.turnusListe)||[]).forEach(function(l){
+    if(!l)return;
+    if(Array.isArray(l.dateien))l.dateien=weg(l.dateien);
+    ((l.eintraege)||[]).forEach(function(e){if(e&&Array.isArray(e.dateien))e.dateien=weg(e.dateien);});
+  });
+  return raus;
+}
+/* Die einmalige Reparatur. Läuft über alle Listen, auch die ausgeblendeten und die vom
+   Spaltenfilter versteckten — sonst blieben genau die Objekte außen vor, die gerade
+   nicht auf dem Schirm sind. Sie ist idempotent: hat ein Foto seinen Merker, wird es
+   nicht angefasst. Nach dem ersten Lauf findet sie nichts mehr. */
+function _tuHerkunftReparieren(){
+  var n=0;
+  try{
+    var listen=(typeof _alleTaskListen==='function')?_alleTaskListen():[];
+    for(var li=0;li<listen.length;li++){
+      var tasks=listen[li]||[];
+      for(var ti=0;ti<tasks.length;ti++){
+        var t=tasks[ti];
+        if(!t||!t.fotos||!t.fotos.length)continue;
+        var ls=((t.turnusListe)||[]).filter(Boolean);
+        if(!ls.length)continue;
+        // Drive-Kennung → Leistung. Der erste Treffer gewinnt; dieselbe Datei zweimal
+        // einzutragen verhindert _tuDateiNachtragen seit v189.
+        var karte={};
+        ls.forEach(function(l){
+          ((l.dateien)||[]).forEach(function(d){
+            if(d&&d.id&&!karte[d.id])karte[d.id]={lId:l.id,datum:'',name:(l.name||'')};
+          });
+          ((l.eintraege)||[]).forEach(function(e){
+            if(!e)return;
+            ((e.dateien)||[]).forEach(function(d){
+              if(d&&d.id&&!karte[d.id])karte[d.id]={lId:l.id,datum:(e.datum||''),name:(l.name||'')};
+            });
+          });
+        });
+        t.fotos.forEach(function(fo){
+          if(!fo||fo.tuLeistung||!fo.driveId)return;
+          var tr=karte[fo.driveId];
+          if(!tr)return;
+          fo.tuLeistung={lId:tr.lId,datum:tr.datum,name:tr.name};
+          fo.tuEingetragen=true; // der Verweis steht ja bereits – nur der Merker fehlte
+          n++;
+        });
+      }
+    }
+  }catch(e){console.warn('[TU] Herkunft reparieren:',e);return 0;}
+  if(n){
+    try{scheduleSave();}catch(e){}
+    try{toast('🔁 '+n+' Foto'+(n!==1?'s':'')+' wieder seiner Leistung zugeordnet','info',4500);}catch(e){}
+    try{if(currentTaskId){var ct=findTaskById(currentTaskId);if(ct&&typeof renderDetail==='function')renderDetail(ct);}}catch(e){}
+  }
+  return n;
+}
+/* Der gemeinsame Kern für beide Wege (Vollbild und Mehrfachauswahl). `lId` leer heißt:
+   Zuordnung entfernen. Gibt zurück, wie viele Fotos angefasst wurden. */
+function _tuFotoZuordnen(taskId,fotos,lId){
+  var t=(typeof _fotoTaskById==='function'?_fotoTaskById(taskId):null)||findTaskById(taskId);
+  if(!t)return 0;
+  var l=lId?((t.turnusListe||[]).find(function(x){return x&&x.id===lId;})):null;
+  if(lId&&!l)return 0;
+  var n=0;
+  (fotos||[]).forEach(function(fo){
+    if(!fo)return;
+    _tuVerweisEntfernen(t,fo); // alte Zuordnung zuerst weg – auch beim Umhängen
+    if(!l){
+      delete fo.tuLeistung;
+      delete fo.tuEingetragen;
+      n++;return;
+    }
+    fo.tuLeistung={lId:l.id,datum:_tuTerminFuerFoto(l,fo),name:(l.name||'')};
+    delete fo.tuEingetragen;
+    /* Der Verweis in der Dateiliste wird über dieselbe Stelle geschrieben wie beim
+       Hochladen. Fehlt die Drive-Kennung noch (Foto lädt gerade), passiert hier nichts —
+       der Merker steht trotzdem am Foto und der Verweis kommt beim Nachladen von selbst. */
+    try{_tuDateiNachtragen(t.id,fo,true);}catch(e){console.warn('[TU] Zuordnen:',e);}
+    n++;
+  });
+  if(n){
+    try{forceSave();}catch(e){try{scheduleSave();}catch(_e){}}
+    try{_tuMobNachAktion();}catch(e){}
+  }
+  return n;
+}
+/* Das Auswahlblatt für die Leistung. Eine Liste großer Knöpfe – dieselbe Bauart wie die
+   Zielwahl an der Büroklammer (v194), damit es sich gleich anfühlt. „Keine Leistung"
+   steht ausdrücklich mit dabei: eine Fehlzuordnung muss sich zurücknehmen lassen. */
+function _tuLeistungWaehlen(t,titel,unter,beiWahl){
+  var ls=((t&&t.turnusListe)||[]).filter(Boolean);
+  if(!ls.length){try{toast('Dieses Objekt hat keine wiederkehrenden Leistungen','info',3500);}catch(e){}return;}
+  var alt=document.getElementById('tuWahlBox');if(alt)alt.remove();
+  var box=document.createElement('div');
+  box.id='tuWahlBox';
+  box.style.cssText='position:fixed;inset:0;z-index:9800;background:rgba(0,0,0,.88);display:flex;flex-direction:column;justify-content:flex-end;padding:14px calc(14px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));gap:9px;overflow:auto;';
+  box.onclick=function(ev){if(ev.target===box)box.remove();};
+  var kopf=document.createElement('div');
+  kopf.style.cssText='color:#fff;font-size:15px;font-weight:700;overflow-wrap:anywhere;';
+  kopf.textContent=titel||'Leistung wählen';
+  box.appendChild(kopf);
+  if(unter){
+    var u=document.createElement('div');
+    u.style.cssText='color:#bbb;font-size:12px;margin-top:-4px;overflow-wrap:anywhere;';
+    u.textContent=unter;
+    box.appendChild(u);
+  }
+  var kn=function(beschriftung,zusatz,haupt,tunwas){
+    var b=document.createElement('button');
+    b.type='button';
+    b.style.cssText='width:100%;min-height:54px;padding:9px 12px;border-radius:10px;font-family:inherit;cursor:pointer;text-align:left;'
+      +(haupt?'border:none;background:#4a43a0;color:#fff;':'border:1px solid #666;background:rgba(255,255,255,.08);color:#fff;');
+    /* ⚠ Beschriftung und Zusatz als eigene Elemente, nicht als ein Textinhalt: der Knopf
+       trägt zwei Zeilen, und ein späteres Umbeschriften über textContent würde beide
+       platt machen. Genau der Fehler, der in v192 den Verlauf-Umschalter zerlegt hätte. */
+    var z1=document.createElement('span');
+    z1.style.cssText='display:block;font-size:14px;font-weight:700;';
+    z1.textContent=beschriftung;
+    b.appendChild(z1);
+    if(zusatz){
+      var z2=document.createElement('span');
+      z2.style.cssText='display:block;font-size:11px;opacity:.8;margin-top:2px;';
+      z2.textContent=zusatz;
+      b.appendChild(z2);
+    }
+    b.onclick=function(){box.remove();tunwas();};
+    box.appendChild(b);
+  };
+  ls.forEach(function(l){
+    var nT=((l.eintraege)||[]).length;
+    kn('🔁 '+(l.name||'Leistung'),nT?(nT+' Termin'+(nT!==1?'e':'')+' · zuletzt '+(_tuDe((((l.eintraege)||[])[0]||{}).datum||'')||'—')):'noch kein Termin – wird vorab abgelegt',
+      true,function(){beiWahl(l.id,l.name||'');});
+  });
+  kn('✕ Keine Leistung','Zuordnung entfernen – das Foto gehört dann wieder nur dem Objekt',false,function(){beiWahl('','');});
+  var ab=document.createElement('button');
+  ab.type='button';ab.textContent='Abbrechen';
+  ab.style.cssText='width:100%;min-height:46px;border-radius:10px;border:1px solid #555;background:transparent;color:#bbb;font-size:14px;font-family:inherit;cursor:pointer;';
+  ab.onclick=function(){box.remove();};
+  box.appendChild(ab);
+  document.body.appendChild(box);
+}
+// Weg 1: aus dem Vollbild heraus – für das eine Foto, das gerade auf dem Schirm steht.
+function lbLeistungZuordnen(){
+  var t=(typeof currentTask==='function')?currentTask():null;
+  if(!t){try{toast('Kein Task geöffnet','info');}catch(e){}return;}
+  var fo=(t.fotos||[])[_lbFotoIdx];
+  if(!fo){try{toast('Kein Foto gewählt','info');}catch(e){}return;}
+  _tuLeistungWaehlen(t,'Wozu gehört dieses Foto?',(fo.name||''),function(lId,name){
+    if(!_tuFotoZuordnen(t.id,[fo],lId))return;
+    // Die Herkunft im Vollbild sofort nachziehen, ohne Franks Bildunterschrift anzufassen.
+    var lbl=document.getElementById('lbTextViewLabel');
+    _lbShowCaption(lbl?lbl.textContent:'',_fotoHerkunft(fo));
+    try{toast(lId?('🔁 '+name+' zugeordnet'):'Zuordnung entfernt','success',3000);}catch(e){}
+  });
+}
+/* Weg 2: mehrere auf einmal. Das ist der eigentliche Nutzen – wer ein Haus abfotografiert,
+   hat zehn Bilder derselben Leistung und will nicht zehnmal dasselbe antworten.
+   Bauart bewusst wie die Foto-Auswahl beim Teilen (v147): gleiche Kachelgröße, gleicher
+   Auswahlrahmen, gleiches Sammel-Vorladen der Vorschaubilder. */
+var _tuZuSel=null;
+function _tuZuordnenOeffnen(){
+  var t=(typeof currentTask==='function')?currentTask():null;
+  if(!t)return;
+  var fotos=(t.fotos||[]);
+  if(!fotos.length){try{toast('Keine Fotos im Task','info');}catch(e){}return;}
+  if(!((t.turnusListe||[]).filter(Boolean).length)){try{toast('Dieses Objekt hat keine wiederkehrenden Leistungen','info',3500);}catch(e){}return;}
+  _tuZuSel=new Set();
+  var alt=document.getElementById('tuZuOverlay');if(alt)alt.remove();
+  var ov=document.createElement('div');
+  ov.id='tuZuOverlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,.9);display:flex;flex-direction:column;padding:14px;';
+  ov.innerHTML='<div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:4px;">🔁 Fotos einer Leistung zuordnen</div>'
+    +'<div style="font-size:12px;color:#bbb;margin-bottom:10px;">Fotos antippen zum Aus-/Abwählen, danach die Leistung wählen. Der lila Balken zeigt, was schon zugeordnet ist. Die Datei in Drive wird nicht angefasst.</div>'
+    /* Zeilenhöhe min-content: ohne sie leitet der Browser die Höhe aus dem Kachel-INHALT
+       ab und die Reihen schieben sich ineinander. Dieselbe Falle wie beim Teilen-Raster. */
+    +'<div id="tuZuGrid" style="flex:1;min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));grid-auto-rows:min-content;gap:8px;align-content:start;"></div>'
+    +'<div style="display:flex;gap:8px;margin-top:10px;">'
+    +'<button id="tuZuAlleBtn" onclick="_tuZuAlle()" style="min-height:50px;padding:0 14px;border-radius:10px;border:1px solid #666;background:transparent;color:#fff;font-size:14px;cursor:pointer;">✓ Alle</button>'
+    +'<button id="tuZuOkBtn" onclick="_tuZuUebernehmen()" style="flex:1;min-height:50px;border-radius:10px;border:none;background:#4a43a0;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">🔁 Leistung wählen (0)</button>'
+    +'<button onclick="var o=document.getElementById(\'tuZuOverlay\');if(o)o.remove();" style="min-height:50px;padding:0 14px;border-radius:10px;border:1px solid #666;background:transparent;color:#fff;font-size:14px;cursor:pointer;">✕</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  var grid=ov.querySelector('#tuZuGrid');
+  var paare=[];
+  fotos.forEach(function(f,i){
+    var cell=document.createElement('div');
+    cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid transparent;cursor:pointer;';
+    var img=document.createElement('img');
+    img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover;';
+    paare.push([f,img]);
+    cell.appendChild(img);
+    var herk=_fotoHerkunft(f);
+    if(herk){
+      var hb=document.createElement('span');
+      hb.className='herk-badge';
+      hb.textContent='🔁 '+herk;
+      cell.appendChild(hb);
+    }
+    cell.onclick=function(){
+      if(_tuZuSel.has(i)){_tuZuSel.delete(i);cell.style.borderColor='transparent';}
+      else{_tuZuSel.add(i);cell.style.borderColor='#8b82ee';}
+      _tuZuZaehler();
+    };
+    grid.appendChild(cell);
+  });
+  _tuZuZaehler();
+  try{
+    Promise.race([_thumbVorladen(fotos),new Promise(function(r){setTimeout(r,400);})])
+      .then(function(){paare.forEach(function(p){_fotoVorschauLaden(p[0],p[1]);});});
+  }catch(e){paare.forEach(function(p){_fotoVorschauLaden(p[0],p[1]);});}
+}
+function _tuZuZaehler(){
+  var n=_tuZuSel?_tuZuSel.size:0;
+  var b=document.getElementById('tuZuOkBtn');
+  if(b)b.textContent='🔁 Leistung wählen ('+n+')';
+}
+function _tuZuAlle(){
+  var ov=document.getElementById('tuZuOverlay');if(!ov||!_tuZuSel)return;
+  var zellen=ov.querySelectorAll('#tuZuGrid > div');
+  var allesDrin=(_tuZuSel.size===zellen.length);
+  _tuZuSel.clear();
+  for(var i=0;i<zellen.length;i++){
+    if(allesDrin)zellen[i].style.borderColor='transparent';
+    else{_tuZuSel.add(i);zellen[i].style.borderColor='#8b82ee';}
+  }
+  _tuZuZaehler();
+}
+function _tuZuUebernehmen(){
+  var t=(typeof currentTask==='function')?currentTask():null;
+  if(!t||!_tuZuSel||!_tuZuSel.size){try{toast('Erst Fotos antippen','info',3000);}catch(e){}return;}
+  var fotos=(t.fotos||[]);
+  var gewaehlt=Array.from(_tuZuSel).map(function(i){return fotos[i];}).filter(Boolean);
+  var anz=gewaehlt.length;
+  _tuLeistungWaehlen(t,anz+' Foto'+(anz!==1?'s':'')+' zuordnen','Die Auswahl bleibt stehen, falls du danach noch etwas ändern willst.',function(lId,name){
+    var n=_tuFotoZuordnen(t.id,gewaehlt,lId);
+    if(!n)return;
+    var ov=document.getElementById('tuZuOverlay');if(ov)ov.remove();
+    _tuZuSel=null;
+    try{toast(lId?('🔁 '+n+' Foto'+(n!==1?'s':'')+' → '+name):(n+' Zuordnung'+(n!==1?'en':'')+' entfernt'),'success',3800);}catch(e){}
+  });
+}
 
 function renderHeuteMobil(){
   var el=document.getElementById('heuteList');if(!el)return;
@@ -7007,6 +7302,11 @@ function _applyMobileFilter(data){
       }
     }
   }
+  /* v198: Sobald frische Daten dastehen, den bis v192 verlorenen Leistungs-Merker aus
+     den Datei-Verweisen zurückholen. Muss HIER stehen, nicht beim App-Start: die Listen
+     sind erst nach dieser Verteilung gefüllt. Der Lauf ist idempotent und findet nach
+     dem ersten Mal nichts mehr. */
+  try{_tuHerkunftReparieren();}catch(e){console.warn('[TU] Reparatur (Laden):',e);}
 }
 // ── POLLING: fremde Änderungen (z.B. vom Desktop) übernehmen ──
 let fileLastModified=null;
@@ -7297,6 +7597,8 @@ async function saveFile(){
                 if(!merged[bn]&&!_remoteSeenBoards.has(bn))merged[bn]=(boards[bn]||[]).slice();
               }
               boards=merged;
+              // v198: auch nach dem Zusammenführen – der Poll bringt fremde Objekte mit.
+              try{_tuHerkunftReparieren();}catch(e){console.warn('[TU] Reparatur (Poll):',e);}
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
@@ -11065,13 +11367,19 @@ function renderDetail(t){
       +(fotos.length?'<div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos.</div>')
       +((extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)||extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||''))
         ? '<div style="font-size:11px;color:var(--green);margin-top:10px">'+(extractDriveFolderId(t.gdrive)?'✓ Foto-Ordner verknüpft':'📁 Standard-Fotoordner aktiv')+'</div>'
-          +'<div class="field-row" style="gap:6px;margin-top:6px">'
-            +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Neues Foto</button>'
-            +'<button class="add-btn" style="flex:1" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼️ Aus Galerie</button>'
+          /* v198: Die Reihe darf jetzt umbrechen. Mit dem vierten Knopf standen sonst
+             vier Beschriftungen nebeneinander in einer Handy-Breite – zwei je Zeile
+             sind lesbar, vier zerquetscht. Bei zwei Knöpfen bleibt es eine Zeile. */
+          +'<div class="field-row" style="gap:6px;margin-top:6px;flex-wrap:wrap">'
+            +'<button class="add-btn" style="flex:1 1 45%" onclick="document.getElementById(\'fotoInputCamera\').click()">📷 Neues Foto</button>'
+            +'<button class="add-btn" style="flex:1 1 45%" onclick="document.getElementById(\'fotoInputGallery\').click()">🖼️ Aus Galerie</button>'
             // v145: lose Blitz-Fotos aus dem Tages-Sammler in DIESEN Task holen
-            +((!String(t.id||'').startsWith('fe_')&&_feAlleFotos().length)?'<button class="add-btn" style="flex:1" onclick="_feImportOeffnen()">📥 Eingang ('+_feAlleFotos().length+')</button>':'')
+            +((!String(t.id||'').startsWith('fe_')&&_feAlleFotos().length)?'<button class="add-btn" style="flex:1 1 45%" onclick="_feImportOeffnen()">📥 Eingang ('+_feAlleFotos().length+')</button>':'')
             // v147: Fotos auswählen → als PDF oder als bereinigte Fotos (ohne GPS/Datum) teilen
-            +(fotos.length?'<button class="add-btn" style="flex:1" onclick="_shrOeffnen()">📤 Teilen…</button>':'')
+            +(fotos.length?'<button class="add-btn" style="flex:1 1 45%" onclick="_shrOeffnen()">📤 Teilen…</button>':'')
+            /* v198: mehrere Fotos auf einmal einer wiederkehrenden Leistung zuordnen.
+               Nur bei Objekten, die welche haben – sonst führte der Knopf ins Leere. */
+            +((fotos.length&&((t.turnusListe||[]).filter(Boolean).length))?'<button class="add-btn" style="flex:1 1 45%" onclick="_tuZuordnenOeffnen()">🔁 Zuordnen…</button>':'')
           +'</div>'
         : '<div style="font-size:12px;color:var(--red);margin-top:10px;padding:8px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--red)">⚠ Foto-Ordner fehlt – bitte in Einstellungen einen Standard-Fotoordner hinterlegen.</div>')
     +'</div></div>')
@@ -16715,6 +17023,11 @@ if (navigator.storage && navigator.storage.persist) {
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbEditCaption()">📝 Text</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbStartDraw()" style="margin-left:4px">✏️ Malen</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbGpsDialog()" style="margin-left:4px">📍 GPS</button>
+      <!-- v198: Wozu gehört dieses Foto? Bis v197 entstand der Merker ausschließlich
+           beim Hochladen – ein vorhandenes Foto ließ sich nirgends nachträglich einer
+           Leistung zuordnen. Der Knopf erscheint nur bei Objekten, die überhaupt
+           wiederkehrende Leistungen haben; sonst wäre er überall im Weg. -->
+      <button class="lb-text-edit-btn" id="lbTuBtn" onclick="event.stopPropagation();lbLeistungZuordnen()" style="margin-left:4px;display:none">🔁 Leistung</button>
       <!-- ⛔ v192: „📷 Weiteres" ist WIEDER DA — und diesmal aus gutem Grund.
            In v191 hatte ich ihn entfernt, weil das Vollbild nach einer frischen
            Aufnahme nicht mehr von selbst aufgeht und er dort tot gewesen wäre.
@@ -16999,6 +17312,16 @@ function _lbShowCaption(text,herkunft){
   if(lbl)lbl.textContent=text||'';
   const hb=document.getElementById('lbHerkunft');
   if(hb){hb.textContent=_lbHerkunft?('🔁 '+_lbHerkunft):'';hb.style.display=_lbHerkunft?'':'none';}
+  /* v198: Der Zuordnen-Knopf gehört nur zu Objekten mit wiederkehrenden Leistungen.
+     Die Entscheidung fällt hier, weil dies die einzige Stelle ist, die bei JEDEM
+     Bildwechsel läuft – auch beim Blättern mit ‹ ›. */
+  const tb=document.getElementById('lbTuBtn');
+  if(tb){
+    let _hatTu=false;
+    try{const _t=(typeof currentTask==='function')?currentTask():null;
+      _hatTu=!!(_t&&((_t.turnusListe||[]).filter(Boolean).length));}catch(e){}
+    tb.style.display=_hatTu?'':'none';
+  }
 }
 // v113: „📝 Text" öffnet ein GROSSES Schreib-Popup statt des schmalen Streifens –
 // genug Fläche für S-Pen-Handschrift (Samsung „S Pen zu Text" schreibt direkt ins Feld).
