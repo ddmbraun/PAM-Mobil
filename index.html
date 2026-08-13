@@ -322,12 +322,17 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-karte-kopf{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px}
 .bau-karte-punkt{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:6px}
 .bau-karte-name{flex:1;min-width:0;font-size:calc(15px * var(--m-scale,1));font-weight:600;color:var(--text);line-height:1.3;overflow-wrap:anywhere}
-/* v195: der Stand der Leistung („zuletzt 03.08.2026 · vor 10 Tagen"). Frank wollte
+/* v196: der Stand der Leistung („zuletzt 03.08.2026 · vor 10 Tagen"). Frank wollte
    die Karte an BEIDEN Orten gleich – und diese Angabe ausdrücklich behalten. Sie
    sitzt unter dem Namen, eingerückt auf Höhe des Textes, damit der Ampelpunkt seine
    eigene Spalte behält. Die Größe folgt dem „Aa"-Regler, feste px wären auf 200 %
    unlesbar klein. */
 .bau-karte-stand{font-size:calc(11px * var(--m-scale,1));color:var(--text2);margin:-3px 0 9px 18px;line-height:1.35}
+/* v197: Adresse zum LESEN. Eure Objekte tragen Sammel-Adressen über mehrere
+   Hausnummern („Böhmenstraße 11, 11a, 11b, 99947 …") – in einem einzeiligen
+   Eingabefeld ist davon nie mehr als die Hälfte zu sehen. Diese Zeile bricht um,
+   trennt notfalls im Wort und folgt dem „Aa"-Regler. */
+.adr-lesen{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4;font-size:calc(16px * var(--m-scale,1));font-weight:600;color:var(--text);background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin-bottom:7px}
 /* v193: schmale Info-Zeile in der Leistungs-Karte – nur wenn etwas dranhängt. */
 .bau-karte-info{display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:8px;cursor:pointer;font-size:calc(12px * var(--m-scale,1));color:var(--text2);font-weight:600}
 .bau-karte-info-pfeil{margin-left:auto;font-size:calc(15px * var(--m-scale,1));color:var(--accent2)}
@@ -4333,8 +4338,14 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <button class="detail-tab-btn schnell-tab" id="tabSchnellBtn" onclick="switchDetailTab('schnell')">⚡ Schnell</button>
   </div>
   <!-- v150: feste Erstellt-Zeile – auf jedem Reiter sichtbar, gefüllt in renderDetail().
-       Bleibt leer/unsichtbar, wenn der Task kein Erstell-Datum hat (alte Desktop-Tasks). -->
-  <div id="detailCreatedLine" style="display:none;padding:4px 14px 5px;font-size:11.5px;color:var(--text2);border-bottom:0.5px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+       ⛔ v197: Diese Zeile war es, die Frank auf seinem Bildschirmfoto zeigte – die mit dem
+       Auslassungszeichen hinter „99947 B…". Sie stand einzeilig mit Abschneiden, und weil
+       das Erstell-Datum VORNE stand, fraß es rund 36 Zeichen, bevor die Adresse anfing.
+       Jetzt darf sie umbrechen. Die Reihenfolge ist gedreht: erst der Ort, dann das Datum –
+       draußen ist die Adresse die Information, das Datum ist Beiwerk.
+       ⚠ Sie erscheint auch bei Tasks OHNE Erstell-Datum, sobald eine Adresse da ist
+       (alte Desktop-Tasks hatten sie bis v196 gar nicht). -->
+  <div id="detailCreatedLine" style="display:none;padding:4px 14px 5px;font-size:11.5px;color:var(--text2);border-bottom:0.5px solid var(--border);white-space:normal;overflow-wrap:anywhere;line-height:1.35;"></div>
   <!-- v124 Paket 3: ✏️-Skizze-REITER entfällt – Skizzen-Knopf sitzt jetzt in Schnell + Tagebuch,
        gespeicherte Skizzen erscheinen als Foto im Tagebuch-Tagesblock (landen eh in t.fotos). -->
   <div class="detail-body" id="detailBody"></div>
@@ -6057,14 +6068,14 @@ function _tuMobObjektSektion(t,oc){
      diesen übersehen — es war die einzige weitere Stelle dieser Bauart. */
   return '<div class="sect'+oc('Turnus')+'" data-sect="Turnus">'
     +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'+kopf+'</div>'
-    /* ⛔ v195: Task-Info zeigt dieselbe Karte wie Baudoku. Bis v194 wurde hier ohne
+    /* ⛔ v196: Task-Info zeigt dieselbe Karte wie Baudoku. Bis v194 wurde hier ohne
        die beiden Schalter gerufen, also die alte Zeilen-Fassung gebaut. Franks Ansage
        vom 13.08.: „ich möchte, dass die wiederkehrenden Leistungen von der Optik und
        Funktion genauso in Task-Info sind."
        Der eigentliche Gewinn ist nicht die Optik: die antippbare Info-Zeile in den
        Verlauf gab es nur in der Karte — in Task-Info führte kein Weg dorthin.
        ⚠ Das kippt die Aufteilung aus v179 („Datum und Zähler stehen in Task-Info,
-       draußen nur der Handgriff"). Deshalb trägt die Karte seit v195 den Stand. */
+       draußen nur der Handgriff"). Deshalb trägt die Karte seit v196 den Stand. */
     +'<div class="sect-body"><div id="mTuList">'+_tuMobObjektZeilen(t,true,true)+'</div>'
     +'<div style="font-size:'+_tuMs(12)+';color:var(--text2);margin-top:8px;padding:6px;background:var(--bg3);border-radius:6px;">ℹ️ Leistungen anlegen und ändern am Rechner</div>'
     +'</div></div>';
@@ -6082,8 +6093,11 @@ function _tuMobObjektZeilen(t,gross,schlank){
     var e=((l.eintraege)||[])[0];
     /* ⛔ v193: Hier wurde NUR der jüngste Termin gezählt. Alles, was an älteren
        Terminen hing, war am Handy nirgends sichtbar — nicht einmal als Zahl. Jetzt
-       über alle Termine. `nJung` bleibt für die Zeile in Task-Info, die bewusst den
-       aktuellen Stand zeigt. */
+       über alle Termine.
+       ⚠ v197: `nJung` wird berechnet und NICHT MEHR BENUTZT. Die Begründung von damals
+       („bleibt für die Zeile in Task-Info") trägt nicht mehr: seit v196 zeigen beide Orte
+       die Karte, und die rechnet mit nDat und nVor. Stehen bleibt die Zeile nur, weil
+       test_v193 sie festnagelt — wer sie entfernt, muss dort mit aufräumen. */
     var nJung=(e&&e.dateien&&e.dateien.length)||0;
     var nDat=((l.eintraege)||[]).reduce(function(s,x){return s+(((x&&x.dateien)||[]).length);},0);
     var nVor=((l.dateien)||[]).length; // v180: Vorab-Fotos an der Leistung
@@ -6111,7 +6125,7 @@ function _tuMobObjektZeilen(t,gross,schlank){
           + '<span class="bau-karte-info-pfeil">›</span>'
           + '</div>'
         : '';
-      /* ⛔ v195: Der Stand kommt in die Karte. In v179 war er hier ausdrücklich NICHT
+      /* ⛔ v196: Der Stand kommt in die Karte. In v179 war er hier ausdrücklich NICHT
          drin („draußen zählt der Handgriff"); Frank hat das am 13.08. widerrufen, als
          die Karte auch nach Task-Info kam: „zuletzt soll in der Karte bleiben."
          Damit steht die Angabe an beiden Orten – Baudoku gewinnt sie dazu.
@@ -6321,7 +6335,16 @@ function _tuMobBaudokuBlock(t){
     +'<div class="bau-sect-head-inner"><span>🔁 Leistungen</span>'
     +'<span class="bau-sect-summary">'+ls.length+' Leistung'+(ls.length!==1?'en':'')+(faellig?' · '+faellig+' fällig':' · nichts fällig')+'</span>'
     +'</div></div>'
-    +'<div class="sect-body"><div id="mTuListBau">'+_tuMobObjektZeilen(t,true,true)+'</div></div>'
+    /* ⛔ v197: Die Karten waren an den beiden Orten 34px unterschiedlich breit – aufgefallen
+       erst in der Gegenprüfung zu v196, nicht am Gerät. In Task-Info nimmt das Cockpit-CSS
+       dem Kasten das seitliche Polster weg, in Baudoku standen 16px je Seite plus Rahmen.
+       Folge: die drei Kästchen waren in Baudoku je rund 11px schmaler und „Erledigt" brach
+       bei großer Schrift früher um.
+       Angeglichen wird HIER, nicht in Task-Info: so werden die Karten breiter statt
+       schmaler, und die Turnus-Sektion in Task-Info bleibt bündig mit ihren Nachbarn.
+       ⚠ Es bleiben 2px Unterschied – der Rahmen des Klappkastens, den es in Task-Info
+       nicht gibt. Den anzugleichen hieße, den Kasten selbst anzufassen. */
+    +'<div class="sect-body" style="padding-left:0;padding-right:0"><div id="mTuListBau">'+_tuMobObjektZeilen(t,true,true)+'</div></div>'
     +'</div>';
 }
 // Foto/Protokoll anhängen. Gibt es schon einen Termin, hängt die Datei am
@@ -6613,7 +6636,10 @@ function renderHeuteMobil(){
       :'';
     var mainText='<div style="flex:1;min-width:0;">'
       +(k&&k.name?'<div style="font-size:13px;color:var(--text);">'+esc(k.name)+'</div>':'')
-      +(adr?'<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(adr)+'</div>':'')
+      /* v197: durfte bis v196 nur eine Zeile hoch sein und wurde mit „…" gekappt.
+         Bei Sammel-Adressen stand dort regelmäßig nur der Straßenname. Der Kasten
+         hat schon min-width:0, die Karte wächst also einfach um eine Zeile. */
+      +(adr?'<div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;line-height:1.25;">'+esc(adr)+'</div>':'')
       +'</div>';
     return'<div style="display:flex;align-items:center;gap:8px;padding:5px 10px 8px;border-top:1px solid var(--border);">'
       +mainText+uhrBtn(t)+telBtn+mapsBtn+'</div>';
@@ -9317,7 +9343,15 @@ function renderSchnellTab(t){
     // ── v78: Standort + anpassbare Adresse (fehlte im Schnell-Tab komplett) ──
     +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
     +'<button onclick="_captureStandort()" style="padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;flex-shrink:0;">📍 Standort</button>'
-    +'<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:120px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;">'
+    /* v197: zwei Sachen an diesem Feld waren falsch. Die Schriftgröße stand fest auf
+       13px – als einziges der drei Adressfelder folgte es dem „Aa"-Regler NICHT, wer
+       ihn hochdreht, bekam hier weiter Kleingedrucktes. Und die feste Mindestbreite von
+       120 Pixeln sprengte bei großer Schrift die Zeile, statt das Feld schrumpfen zu
+       lassen — jetzt darf es auf null schrumpfen wie seine beiden Geschwister.
+       ⚠ Die alte Angabe steht hier bewusst NICHT als Codezeile: die Prüfung sucht
+       dateiweit danach und hätte den Kommentar mitgezählt. Genau das ist heute schon
+       viermal passiert. */
+    +'<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(14px * var(--m-scale,1));">'
     +'<button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button>' // v79
     +'</div>'
 
@@ -10751,8 +10785,12 @@ function renderDetail(t){
     const el=document.getElementById('detailCreatedLine');
     if(!el)return;
     const txt=_taskErstelltText(t,false);
-    if(!txt){el.style.display='none';el.textContent='';return;}
-    el.textContent='📅 Erstellt: '+txt+((t.adresse||'').trim()?' · 📍 '+t.adresse.trim():'');
+    const adr=(t.adresse||'').trim();
+    /* ⛔ v197: Bis v196 verschwand die ganze Zeile, wenn kein Erstell-Datum da war –
+       bei alten Desktop-Tasks stand die Adresse hier also nie. Jetzt reicht eines von
+       beidem. Und die Adresse steht vorn: sie ist draußen die Information. */
+    if(!txt&&!adr){el.style.display='none';el.textContent='';return;}
+    el.textContent=(adr?'📍 '+adr:'')+(adr&&txt?' · ':'')+(txt?'📅 Erstellt: '+txt:'');
     el.style.display='block';
   })();
   _resetOpenSectionsForTask(t.id);
@@ -10904,7 +10942,26 @@ function renderDetail(t){
       +(isNotiz?'<div class="field"><label>📅 Fälligkeitsdatum</label><input type="date" value="'+escAttr(t.due||'')+'" onchange="updateField(\'due\',this.value)" autocomplete="off"></div>':'')
       +(isNotiz?'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">Beschreibung</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>':'')
       // Baustellen-Board: nur Adresse + Task-Typ + Kostenstelle
-      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="_syncAddrField(this)" onblur="_autoFillSbOrdner()" autocomplete="off"><button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_pamGeoQuery(t.adresse)||t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
+      /* ⛔ v197: Franks Befund: „wenn ich auf Objektadresse klicke, ist es auch
+         abgeschnitten." Stimmte – dort steht ein einzeiliges <input>, und ein input
+         kann grundsätzlich nicht umbrechen. Es zeigt nicht einmal ein „…", man sieht
+         also gar nicht, dass hinten etwas fehlt. Verschärft durch den ✏️- und den
+         🗺️-Knopf, die in derselben Zeile Platz wegnehmen.
+         Deshalb eine reine LESE-Zeile darüber, groß und umbrechend. Die Seite heißt
+         „Objektadresse" – dann soll die Adresse dort auch als Erstes und ganz stehen.
+         ⛔ Das Eingabefeld bleibt unverändert ein <input>. Grund: `_syncAddrField` und
+         `_adrPopupApply` sammeln die Adressfelder über einen Selektor, der ausdrücklich
+         nach einem Eingabefeld mit dieser Klasse sucht – ein Textfeld mit mehreren Zeilen
+         fände er nicht, und die Adressfelder hörten still auf, sich untereinander
+         abzugleichen. Eine Lese-Zeile darüber umgeht das vollständig.
+         ⚠ Kein Code-Beispiel in diesem Kommentar: eine Textsuche kann Kommentar und
+         Programm nicht unterscheiden, und genau daran sind am 13.08. dreimal Prüfungen
+         fälschlich angeschlagen.
+         ⚠ Die Lese-Zeile erscheint nur, wenn eine Adresse da ist; ein leerer grauer
+         Kasten über einem leeren Feld hilft niemandem. */
+      +(!isNotiz?'<div class="field"><label>Adresse</label>'
+        +((t.adresse||'').trim()?'<div class="adr-lesen">'+esc(t.adresse.trim())+'</div>':'')
+        +'<div class="field-row" style="gap:6px"><input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="_syncAddrField(this)" onblur="_autoFillSbOrdner()" autocomplete="off"><button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_pamGeoQuery(t.adresse)||t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
       +(!isNotiz && (t.links||[]).filter(l=>l&&l.url&&(l.url||'').trim()).length ? '<div class="field"><label>🔗 Links</label><div class="field-row" style="flex-wrap:wrap;gap:6px">'+(t.links||[]).filter(l=>l&&l.url&&(l.url||'').trim()).map(l=>'<a class="nav-link" style="background:#185FA5" href="'+escAttr(l.url.trim())+'" target="_blank">📂 '+esc(l.label||'Link')+'</a>').join('')+'</div></div>' : '')
       +(!isNotiz?'<div class="field-row" style="gap:8px;">'
         +'<div class="field" style="margin:0"><label>Task-Typ</label><select onchange="updateField(\'taskTyp\',this.value)">'
