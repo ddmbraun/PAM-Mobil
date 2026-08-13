@@ -4294,11 +4294,20 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
   <!-- v185: `_fotoQuelle` merkt sich, WOHER das Bild kam. uploadFoto sieht den Dateien
        sonst nicht an, ob sie frisch fotografiert oder aus der Mediathek geholt wurden –
        der Knopf „📷 Weiteres" gehört aber nur an den Kamera-Weg. -->
-  <input type="file" id="fotoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="_fotoQuelle='kamera';uploadFoto(this.files);this.value=''" autocomplete="off">
+  <!-- ⛔ v190: `multiple` dazu. Die v185-Notiz behauptete, das helfe bei der Kamera
+       nichts — der Beweis stammte aber vom FALSCHEN Eingang (der Büroklammer, die
+       `multiple` hatte, aber kein `capture`). An DIESEM Feld war es nie ausprobiert:
+       es stand schlicht nicht da. Und die Messtabelle in v185 widerspricht der
+       Behauptung selbst: „Dachplan-Pin · Kamera · ja" — und der Dachplan-Pin ist der
+       einzige Eingang mit `capture` UND `multiple` (siehe dpPhotoInput). Damit haben
+       jetzt alle Kamera-Wege dieselbe Kombination wie der eine, der nachweislich
+       mehrere Bilder liefert. Ob Android das hier auch tut, entscheidet das Gerät —
+       schlägt es fehl, greift weiterhin der Knopf „📷 Weiteres Foto". -->
+  <input type="file" id="fotoInputCamera" accept="image/*" capture="environment" multiple style="display:none" onchange="_fotoQuelle='kamera';uploadFoto(this.files);this.value=''" autocomplete="off">
   <input type="file" id="fotoInputGallery" accept="image/*" multiple style="display:none" onchange="_fotoQuelle='galerie';uploadFoto(this.files);this.value=''" autocomplete="off">
   <!-- v185: `fotoInputGallerySingle` entfernt – es war an KEINER Stelle angeklickt worden
        (nachgezählt: ein einziges Vorkommen, die Definition selbst). Toter Eingang. -->
-  <input type="file" id="blitzFotoInput" accept="image/*" capture="environment" style="display:none" onchange="_fotoQuelle='kamera';_blitzFotoFiles(this.files);this.value=''" autocomplete="off">
+  <input type="file" id="blitzFotoInput" accept="image/*" capture="environment" multiple style="display:none" onchange="_fotoQuelle='kamera';_blitzFotoFiles(this.files);this.value=''" autocomplete="off"><!-- v190: multiple, siehe oben -->
   <!-- ⛔ v189: FESTE Felder für den Weg über eine wiederkehrende Leistung.
        Bis v188 baute sich dieser Weg sein Feld bei jedem Antippen selbst zusammen –
        und dabei fehlte `capture`. Damit öffnete die Büroklammer NIE die Kamera,
@@ -4308,8 +4317,16 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
        gegen alle 15 Datei-Eingänge). Jetzt zwei feste Felder wie überall sonst:
        eines für die Kamera, eines für Galerie/PDF. Das Ziel (Task, Leistung, Termin)
        steht in `_tuFotoZiel` — deshalb brauchen die Felder keine Parameter. -->
-  <input type="file" id="tuFotoKamera" accept="image/*" capture="environment" style="display:none" onchange="_tuFotoAusFeld(this)" autocomplete="off">
-  <input type="file" id="tuFotoDatei" accept="image/*,application/pdf" multiple style="display:none" onchange="_tuFotoAusFeld(this)" autocomplete="off">
+  <!-- ⛔ v190: `_fotoQuelle` MUSS hier gesetzt werden. In v189 fehlte es an beiden
+       Feldern — dadurch hielt uploadFoto ein frisch fotografiertes Leistungs-Bild für
+       ein Galerie-Bild und blendete den Knopf „📷 Weiteres Foto" nicht ein. Ergebnis
+       im Feld (Befund Frank 13.08.): „bei Kamera kann ich trotzdem nur ein Bild
+       machen." Der Merker ist an jedem anderen Kamera-Weg gesetzt; die zwei neuen
+       Felder waren die einzigen ohne ihn.
+       ⚠ Für alle künftigen Datei-Felder: wer ein Kamerafeld anlegt, setzt `_fotoQuelle`.
+       Vergisst man es, gibt es keinen Fehler — nur einen Knopf, der stumm ausbleibt. -->
+  <input type="file" id="tuFotoKamera" accept="image/*" capture="environment" multiple style="display:none" onchange="_fotoQuelle='kamera';_tuFotoAusFeld(this)" autocomplete="off">
+  <input type="file" id="tuFotoDatei" accept="image/*,application/pdf" multiple style="display:none" onchange="_fotoQuelle='galerie';_tuFotoAusFeld(this)" autocomplete="off">
 </div>
 
 <!-- ══ SCHNELL-ADD BOTTOM-SHEET ══ -->
