@@ -322,6 +322,9 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-karte-kopf{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px}
 .bau-karte-punkt{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:6px}
 .bau-karte-name{flex:1;min-width:0;font-size:calc(15px * var(--m-scale,1));font-weight:600;color:var(--text);line-height:1.3;overflow-wrap:anywhere}
+/* v193: schmale Info-Zeile in der Leistungs-Karte – nur wenn etwas dranhängt. */
+.bau-karte-info{display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:8px;cursor:pointer;font-size:calc(12px * var(--m-scale,1));color:var(--text2);font-weight:600}
+.bau-karte-info-pfeil{margin-left:auto;font-size:calc(15px * var(--m-scale,1));color:var(--accent2)}
 .bau-kaestchen{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .bau-kaestchen.zwei{grid-template-columns:repeat(2,1fr)}
 .bau-kn{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;min-height:52px;color:var(--text);font-family:inherit}
@@ -489,6 +492,15 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 /* Beschreibung unter dem Grid-Thumbnail */
 /* v158: rechts Platz lassen – dort sitzt jetzt der Teilen-Knopf. */
 .foto-thumb .cap-badge{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:10px;line-height:1.2;padding:2px 36px 2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;}
+/* ⛔ v193: HERKUNFT – zu welcher wiederkehrenden Leistung ein Foto gehört. Bewusst
+   ein EIGENER Balken, getrennt von der Bildunterschrift, und in anderer Farbe.
+   Franks Frage: „Wenn auf dem Bild ‚Rinnen Eingangsseite‘ steht, ich aber den Text
+   ‚Loch in der Rinne‘ hinzugefügt habe — sehe ich dann beide?" Nur so: die
+   Bildunterschrift ist EIN Feld, sein Text hätte die Herkunft überschrieben.
+   Oben die Herkunft (setzt die App, unveränderlich), unten sein Text. */
+.foto-thumb .herk-badge{position:absolute;left:0;right:0;top:0;background:rgba(74,67,160,.82);color:#fff;font-size:10px;line-height:1.2;padding:2px 36px 2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;font-weight:600;}
+.bau-foto-grid-thumb .herk-badge{position:absolute;left:0;right:0;top:0;background:rgba(74,67,160,.82);color:#fff;font-size:9px;line-height:1.25;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;font-weight:600;}
+.lb-herkunft{display:inline-block;background:rgba(74,67,160,.9);color:#fff;border-radius:5px;padding:2px 8px;font-size:11px;font-weight:700;margin-right:6px;}
 .foto-placeholder{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--text2)}
 .foto-upload-overlay{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;pointer-events:none;}
 .foto-upload-overlay .up-icon{font-size:20px;animation:upbounce .8s infinite alternate;}
@@ -6031,7 +6043,13 @@ function _tuMobObjektSektion(t,oc){
   if(!ls.length)return ''; // kein Objekt-Task → keine Sektion
   var faellig=ls.filter(function(l){return _tuFaellig(l);}).length;
   var kopf='🔁 Wiederkehrende Leistungen ('+ls.length+(faellig?' · '+faellig+' fällig':'')+')';
-  return '<div class="sect'+oc('Turnus')+(faellig?' open':'')+'" data-sect="Turnus">'
+  /* ⛔ v193: Hier stand hinter oc('Turnus') noch ein fest eingebautes „ open", sobald
+     etwas fällig war. Damit trug der Kasten die Klasse IMMER — Zuklappen wurde zwar
+     gespeichert, aber beim nächsten Neuzeichnen vom HTML überstimmt. Befund Frank:
+     „die Leistungen bleiben auch aufgeklappt."
+     ⚠ Exakt derselbe Fehler wie beim Notizen-Kasten in v189. Den hatte ich gefunden,
+     diesen übersehen — es war die einzige weitere Stelle dieser Bauart. */
+  return '<div class="sect'+oc('Turnus')+'" data-sect="Turnus">'
     +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'+kopf+'</div>'
     +'<div class="sect-body"><div id="mTuList">'+_tuMobObjektZeilen(t)+'</div>'
     +'<div style="font-size:'+_tuMs(12)+';color:var(--text2);margin-top:8px;padding:6px;background:var(--bg3);border-radius:6px;">ℹ️ Leistungen anlegen und ändern am Rechner</div>'
@@ -6048,7 +6066,12 @@ function _tuMobObjektZeilen(t,gross,schlank){
   return ls.map(function(l){
     var farbe=_hTon(TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb);
     var e=((l.eintraege)||[])[0];
-    var nDat=(e&&e.dateien&&e.dateien.length)||0;
+    /* ⛔ v193: Hier wurde NUR der jüngste Termin gezählt. Alles, was an älteren
+       Terminen hing, war am Handy nirgends sichtbar — nicht einmal als Zahl. Jetzt
+       über alle Termine. `nJung` bleibt für die Zeile in Task-Info, die bewusst den
+       aktuellen Stand zeigt. */
+    var nJung=(e&&e.dateien&&e.dateien.length)||0;
+    var nDat=((l.eintraege)||[]).reduce(function(s,x){return s+(((x&&x.dateien)||[]).length);},0);
     var nVor=((l.dateien)||[]).length; // v180: Vorab-Fotos an der Leistung
     // v180: In der schlanken Fassung stehen Name und Knöpfe UNTEREINANDER –
     // sonst quetschen die drei Knöpfe lange Namen weg (Befund Frank). Der Name
@@ -6059,11 +6082,27 @@ function _tuMobObjektZeilen(t,gross,schlank){
          er sagt „dran oder nicht" und war nie das Problem. Der Statustext bleibt
          bewusst WEG: das war Franks Entscheidung aus v179 („draußen zählt der
          Handgriff; Datum und Zähler stehen in Task-Info"). */
+      /* ⛔ v193: Eine schmale Info-Zeile — aber NUR, wenn wirklich etwas dranhängt.
+         Befund Frank: „wo sehe ich jetzt die Bilder, die ich bei der einzelnen
+         Leistung hinzugefügt habe?" Bis v192: nirgends. Die Zeile ist antippbar und
+         zeigt genau die Dateien DIESER Leistung.
+         Eine Leistung ohne Anhänge bleibt so schlank wie bisher — die v179-Regel
+         („draußen zählt der Handgriff") gilt für den Normalfall weiter. */
+      var _n=nDat+nVor;
+      var _notiz=(e&&e.notiz&&String(e.notiz).trim())?1:0;
+      var _info=(_n||_notiz)
+        ? '<div class="bau-karte-info" onclick="event.stopPropagation();_tuLeistungAnhaenge(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')">'
+          + (_n?'<span>📎 '+_n+(nVor?' · '+nVor+' vorab':'')+'</span>':'')
+          + (_notiz?'<span>📝 Notiz</span>':'')
+          + '<span class="bau-karte-info-pfeil">›</span>'
+          + '</div>'
+        : '';
       return '<div class="bau-karte">'
         + '<div class="bau-karte-kopf">'
         +   '<span class="bau-karte-punkt" style="background:'+farbe+';"></span>'
         +   '<span class="bau-karte-name">'+esc(l.name||'')+'</span>'
         + '</div>'
+        + _info
         + knoepfe
         + '</div>';
     }
@@ -6114,6 +6153,95 @@ function _tuMobKnopfReihe(t,l,kH,sIco,beschriftet){
 // Außendienst ausgelegt (große Knöpfe, große Schrift). Frank wollte sie an
 // BEIDEN Stellen: in Task-Info, weil dort alles zum Objekt beisammensteht, und
 // in Baudoku, weil es dort lesbar ist. `.bau-separator` skaliert schon mit „Aa".
+/* ⛔ v193: „Wo sehe ich die Bilder, die ich bei DIESER Leistung angehängt habe?"
+   Bis v192 gab es darauf keine Antwort am Handy: alle Fotos liegen in EINER Liste
+   des Objekts, und die Zuordnung stand nur im Dateinamen.
+
+   Zwei Quellen, weil es zwei Zeitalter gibt:
+     1. Seit v189 trägt jedes angehängte Foto seine Leistung mit sich (fo.tuLeistung)
+        und liegt in t.fotos — das ist der bequeme Fall, mit Vorschaubild.
+     2. Davor gab es nur {id,name} an der Leistung. Solche Einträge werden über die
+        Drive-Kennung in t.fotos gesucht; wird nichts gefunden, erscheinen sie als
+        Zeile mit Namen statt als Bild. Lieber ein Name als ein Loch. */
+function _tuLeistungAnhaenge(taskId,lId){
+  var t=(typeof _fotoTaskById==='function'?_fotoTaskById(taskId):null)||findTaskById(taskId);
+  if(!t)return;
+  var l=(t.turnusListe||[]).find(function(x){return x&&x.id===lId;});
+  if(!l)return;
+  var fotos=t.fotos||[];
+  var treffer=[],gesehen={};
+  // 1) alles, was seine Leistung selbst kennt
+  fotos.forEach(function(f,i){
+    if(f&&f.tuLeistung&&f.tuLeistung.lId===lId){treffer.push({f:f,i:i});gesehen[f.driveId||f.localKey||('#'+i)]=1;}
+  });
+  // 2) die Einträge an der Leistung (auch Altbestand vor v189)
+  var eintraege=[].concat(((l.dateien)||[]).map(function(d){return{d:d,wann:'vorab'};}),
+    ((l.eintraege)||[]).reduce(function(s,x){return s.concat((((x&&x.dateien)||[])).map(function(d){return{d:d,wann:(x.datum||'')};}));},[]));
+  var ohneBild=[];
+  eintraege.forEach(function(x){
+    if(!x.d||!x.d.id||gesehen[x.d.id])return;
+    var i=fotos.findIndex(function(f){return f&&f.driveId===x.d.id;});
+    if(i>=0){treffer.push({f:fotos[i],i:i});gesehen[x.d.id]=1;}
+    else ohneBild.push(x);
+  });
+  var alt=document.getElementById('tuAnhOv');if(alt)alt.remove();
+  var ov=document.createElement('div');
+  ov.id='tuAnhOv';
+  ov.style.cssText='position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,.88);display:flex;flex-direction:column;padding:14px;gap:12px;overflow:auto;';
+  var kopf=document.createElement('div');
+  kopf.style.cssText='display:flex;align-items:flex-start;gap:10px;color:#fff;';
+  kopf.innerHTML='<div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:700;overflow-wrap:anywhere;">🔁 '+esc(l.name||'Leistung')+'</div>'
+    +'<div style="font-size:12px;opacity:.75;margin-top:2px;">'+(treffer.length+ohneBild.length)+' Datei(en)</div></div>';
+  var zu=document.createElement('button');
+  zu.type='button';zu.textContent='✕';
+  zu.style.cssText='flex-shrink:0;width:44px;height:44px;border-radius:22px;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:18px;cursor:pointer;';
+  zu.onclick=function(){ov.remove();};
+  kopf.appendChild(zu);
+  ov.appendChild(kopf);
+
+  if(!treffer.length&&!ohneBild.length){
+    var leer=document.createElement('div');
+    leer.style.cssText='color:#fff;opacity:.8;font-size:14px;';
+    leer.textContent='Noch nichts angehängt.';
+    ov.appendChild(leer);
+  }
+  if(treffer.length){
+    var raster=document.createElement('div');
+    raster.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;';
+    treffer.forEach(function(x){
+      var z=document.createElement('div');
+      z.style.cssText='position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#222;cursor:pointer;';
+      var im=document.createElement('img');
+      im.alt='';im.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+      try{_fotoVorschauLaden(x.f,im);}catch(e){}
+      z.appendChild(im);
+      if(x.f.caption){
+        var c=document.createElement('span');
+        c.textContent=x.f.caption;
+        c.style.cssText='position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        z.appendChild(c);
+      }
+      z.onclick=function(){ov.remove();openFotoFullscreen(x.i);};
+      raster.appendChild(z);
+    });
+    ov.appendChild(raster);
+  }
+  if(ohneBild.length){
+    var liste=document.createElement('div');
+    liste.style.cssText='color:#fff;font-size:13px;display:flex;flex-direction:column;gap:6px;';
+    liste.innerHTML='<div style="opacity:.7;font-size:12px;margin-top:4px;">Nur in Drive (älter, ohne Vorschau am Handy):</div>'
+      +ohneBild.map(function(x){return '<div style="background:rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;overflow-wrap:anywhere;">📎 '+esc(x.d.name||'Datei')+(x.wann&&x.wann!=='vorab'?' <span style="opacity:.6;">· '+esc(_tuDe(x.wann))+'</span>':' <span style="opacity:.6;">· vorab</span>')+'</div>';}).join('');
+    ov.appendChild(liste);
+  }
+  var e0=((l.eintraege)||[])[0];
+  if(e0&&e0.notiz&&String(e0.notiz).trim()){
+    var nz=document.createElement('div');
+    nz.style.cssText='background:rgba(255,255,255,.1);border-radius:10px;padding:10px 12px;color:#fff;font-size:14px;line-height:1.45;overflow-wrap:anywhere;';
+    nz.textContent='📝 '+e0.notiz;
+    ov.appendChild(nz);
+  }
+  document.body.appendChild(ov);
+}
 function _tuMobBaudokuBlock(t){
   var ls=((t&&t.turnusListe)||[]).filter(Boolean);
   if(!ls.length)return '';
@@ -6247,7 +6375,13 @@ function _tuDateiNachtragen(taskId,fo){
        verlässliche Schlüssel dafür, nicht der Dateiname. */
     if(ziel.dateien.some(function(d){return d&&d.id===fo.driveId;}))return false;
     ziel.dateien.push({id:fo.driveId,name:fo.name||'foto.jpg'});
-    delete fo.tuLeistung; // erledigt – zweite Sicherung gegen erneutes Eintragen
+    /* ⛔ v193: Hier wurde die Zuordnung nach dem Eintragen vom Foto GELÖSCHT — als
+       zweite Sicherung gegen doppelte Einträge. Das ging nicht mehr: seit v193 zeigt
+       das Foto seine Herkunft an („🔁 Rinnen Eingangsseite"), und die wäre damit
+       Sekunden nach dem Anhängen wieder verschwunden.
+       Gegen Doppeleinträge schützt ohnehin die Drive-Kennung eine Zeile höher — das
+       war immer die eigentliche Wache, das Löschen nur ein Gürtel dazu. */
+    fo.tuEingetragen=true;
     try{scheduleSave();}catch(e){}
     try{_tuMobNachAktion();}catch(e){} // v177: Datei-Zähler sofort mitziehen
     /* v180-Hinweis, hierher gezogen: Ohne Termin liegt die Datei „vorab" an der
@@ -6292,7 +6426,10 @@ async function _tuMobFotoUpload(taskId,lId,datum,files){
     try{return new File([f],nm,{type:f.type||'image/jpeg',lastModified:f.lastModified||Date.now()});}
     catch(e){return f;}
   });
-  return uploadFoto(umbenannt,taskId,{lId:lId,datum:datum||''});
+  /* v193: Der NAME der Leistung reist mit, nicht nur ihre Kennung. Grund: Wird die
+     Leistung am Rechner später umbenannt oder gelöscht, soll auf dem alten Foto
+     trotzdem stehen, wozu es gehörte. Beim Anhängen festgehalten, danach fest. */
+  return uploadFoto(umbenannt,taskId,{lId:lId,datum:datum||'',name:(l.name||'')});
 }
 /* ⛔ v189 ENTFERNT, nicht auskommentiert: `_tuMobWeiterFrage` und `_tuMobDriveUpload`.
    Die Leiste „✓ Angehängt. Noch eine Datei?" gibt es nicht mehr — nach dem Foto kommt
@@ -9754,6 +9891,15 @@ function _renderBauFotoGrid(t){
     // verschwindet über opts.beiBild.
     _fotoVorschauLaden(f,img,{beiBild:()=>{ph.style.display='none';}});
     cell.appendChild(img);
+    // v193: Herkunft auch hier – im Baudoku-Raster sucht man sie am ehesten.
+    const herk=_fotoHerkunft(f);
+    if(herk){
+      const hb=document.createElement('span');
+      hb.className='herk-badge';
+      hb.textContent='🔁 '+herk;
+      cell.appendChild(hb);
+      cell.title='🔁 '+herk+(f.caption?' — '+f.caption:'');
+    }
     grid.appendChild(cell);
   });
   // Letztes Feld = "+" Kamera-Button
@@ -10744,8 +10890,13 @@ function renderDetail(t){
     +br('EMails','📧','E-Mails',String(_mailAnz),!_mailAnz,(!isEmail&&!isNotiz?_renderMailSektion(t,oc):''))
         // ── FOTOS (nur Baustelle) ── v188: der Drive-Verweis, der bis v187 oben in
         //    der Dreierzeile stand, sitzt jetzt hier – beim Gegenstand, um den es geht.
+    /* v193: Hier stand ein fest eingebautes ' open' - die dritte Stelle dieser Bauart
+       nach bau_Notizen (v189) und Turnus (v193). Sie war folgenlos: seit dem Cockpit in
+       v188 liegt die Sektion in einer eigenen Bereichsseite, und dort entscheidet die
+       CSS-Regel ueber die Sichtbarkeit, nicht die Klasse. Totes Gewicht - und genau die
+       Sorte, die beim naechsten Umbau jemanden kostet. */
     +br('Fotos','📷','Fotos',String(fotos.length),!fotos.length,
-     '<div class="sect'+oc('Fotos')+' open" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span>'+(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;text-decoration:none;font-weight:600;">☁ Drive</a>':'')+'</div><div class="sect-body">'
+     '<div class="sect'+oc('Fotos')+'" data-sect="Fotos"><div class="sect-head" onclick="toggleMSect(this.parentElement)" style="display:flex;align-items:center;justify-content:space-between;"><span>📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</span>'+(t.gdrive?'<a href="'+escAttr(t.gdrive)+'" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;padding:6px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;text-decoration:none;font-weight:600;">☁ Drive</a>':'')+'</div><div class="sect-body">'
       +(fotos.length?'<div id="fotoGrid" class="foto-grid">'+renderFotos(fotos)+'</div>':'<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Fotos.</div>')
       +((extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)||extractDriveFolderId(localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||''))
         ? '<div style="font-size:11px;color:var(--green);margin-top:10px">'+(extractDriveFolderId(t.gdrive)?'✓ Foto-Ordner verknüpft':'📁 Standard-Fotoordner aktiv')+'</div>'
@@ -12059,12 +12210,21 @@ async function _mobFetchThumb(driveId) {
 function _fotoIstVideo(f){
   return /^video\//i.test((f&&f.mimeType)||'')||/\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test((f&&f.name)||'');
 }
+/* ⛔ v193: Woher ein Foto stammt — die wiederkehrende Leistung, an die es angehängt
+   wurde. STRIKT getrennt von der Bildunterschrift: die gehört Frank, er ändert sie
+   jederzeit, und sie darf die Zuordnung nicht überschreiben. Der Name wurde beim
+   Anhängen festgehalten und bleibt auch dann lesbar, wenn die Leistung am Rechner
+   später umbenannt oder gelöscht wird. */
+function _fotoHerkunft(f){
+  try{return (f&&f.tuLeistung&&f.tuLeistung.name)?String(f.tuLeistung.name):'';}catch(e){return '';}
+}
 function renderFotos(list){
   if(!list||!list.length)return '';
   return list.map((f,i)=>{
     const name=f.name||'';
     const caption=f.caption||'';
-    const tip=caption?(caption+' — '+name):name;
+    const herk=_fotoHerkunft(f);
+    const tip=[herk?('🔁 '+herk):'',caption,name].filter(Boolean).join(' — ');
     const editedBadge=f.editedDriveId?'<span style="position:absolute;top:3px;left:3px;background:var(--accent);color:#fff;font-size:8px;padding:1px 4px;border-radius:3px;font-weight:700;">✏</span>':'';
     const uploadOverlay=f._uploading?'<div class="foto-upload-overlay"><span class="up-icon">⬆</span><span class="up-lbl">lädt hoch…</span></div>':'';
     // v156: Videos waren im Hauptraster eine kaputte Kachel (das Tagebuch zeigt ▶ seit je).
@@ -12080,6 +12240,7 @@ function renderFotos(list){
       +uploadOverlay
       +'<button class="del" onclick="event.stopPropagation();removeFoto('+i+')">✕</button>'
       +'<button class="foto-share-btn" onclick="event.stopPropagation();shareFoto('+i+')" title="Teilen">📤</button>'
+      +(herk?'<div class="herk-badge">🔁 '+esc(herk)+'</div>':'')
       +(caption?'<div class="cap-badge">'+esc(caption)+'</div>':'')
       +'</div>';
   }).join('');
@@ -12835,7 +12996,9 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
       source:'mobile'
     };
     // v189: Zugehörigkeit zu einer wiederkehrenden Leistung am Foto festhalten.
-    if(_tuZiel&&_tuZiel.lId)fo.tuLeistung={lId:_tuZiel.lId,datum:_tuZiel.datum||''};
+    // v193: samt NAMEN – er wird als Herkunft auf dem Bild angezeigt und bleibt auch
+    // dann lesbar, wenn die Leistung später umbenannt oder gelöscht wird.
+    if(_tuZiel&&_tuZiel.lId)fo.tuLeistung={lId:_tuZiel.lId,datum:_tuZiel.datum||'',name:(_tuZiel.name||'')};
     t.fotos.push(fo);
     return{file,fo};
   });
@@ -14139,7 +14302,8 @@ async function openFotoFullscreen(i){
   }
   if(!cached&&!_thumbFb&&!_localFallback&&!viewUrl){toast('Foto noch nicht verfügbar','info');return;}
   const _first=(_hasLocalEdit&&_localFallback)?_localFallback:(cached||_thumbFb||_localFallback);
-  openLightbox(_first,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||''});
+  // v193: Herkunft getrennt durchreichen – sie darf die Bildunterschrift nicht ersetzen.
+  openLightbox(_first,f.editedName||f.name||'Foto',viewUrl,{fotoIdx:i,caption:f.caption||'',herkunft:_fotoHerkunft(f)});
   // v164: Steht nur das kleine Vorschaubild auf dem Schirm und gibt es keine Drive-Fassung,
   // die Vollfassung aus dem Gerät nachreichen – sonst bliebe es bei 320 px.
   if(_nurImGeraet&&_first&&_first===_thumbFb){
@@ -16319,6 +16483,12 @@ if (navigator.storage && navigator.storage.persist) {
   <button class="lb-close" onclick="event.stopPropagation();closeLightbox()" aria-label="Schließen">✕</button>
   <div class="lb-textbar" id="lbTextbar" onclick="event.stopPropagation()">
     <div class="lb-text-view">
+      <!-- ⛔ v193: Die Herkunft steht in einem EIGENEN Element, nicht im Label.
+           Grund: „📝 Text" liest den bisherigen Text über textContent des Labels aus.
+           Stünde die Herkunft mit drin, landete sie im Schreibfeld und Frank hätte
+           sie beim nächsten Speichern in seine eigene Bildunterschrift übernommen —
+           genau die Vermischung, die er vermeiden wollte. -->
+      <span class="lb-herkunft" id="lbHerkunft" style="display:none"></span>
       <span class="lb-text-view-label" id="lbTextViewLabel"></span>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbEditCaption()">📝 Text</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbStartDraw()" style="margin-left:4px">✏️ Malen</button>
@@ -16390,7 +16560,7 @@ function openLightbox(src,name,externalUrl,opts){
     // wenn sich das Array durch Sync/Upload inzwischen verschoben hat
     {const _t0=currentTask();const _f0=_t0&&_t0.fotos?_t0.fotos[opts.fotoIdx]:null;
      _lbFotoKey=_f0?(_f0.localKey||_f0.driveId||_f0.id||''):'';}
-    _lbShowCaption(opts.caption||'');
+    _lbShowCaption(opts.caption||'',opts.herkunft||''); // v193: Herkunft zusätzlich, nicht statt
     bar.classList.add('open');bar.classList.remove('editing');
     if(shareBtn)shareBtn.style.display='';
     // v99: Blätterpfeile nur bei mehr als einem Task-Foto
@@ -16436,6 +16606,7 @@ function closeLightbox(){
   lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
   document.removeEventListener('keydown',_lbOnKey);
   _lbFotoIdx=-1;_lbFotoKey='';
+  _lbShowCaption('','');                 // v193: Herkunft zurücksetzen – gilt je Foto
   _lbWeiterBtnSetzen('');                // v192: Knopf wieder aus – gilt nur für die frische Aufnahme
 }
 function _lbHandleTap(e){
@@ -16596,7 +16767,17 @@ function _lbClosePannellum(){
   const c=document.getElementById('pannellumContainer');if(c){c.classList.remove('active');c.innerHTML='';}
   const img=document.getElementById('lbImg');if(img)img.style.display='';
 }
-function _lbShowCaption(text){const lbl=document.getElementById('lbTextViewLabel');if(lbl)lbl.textContent=text||'';}
+/* v193: zweiter Parameter = Herkunft. Er ist „klebrig": wird er nicht übergeben (etwa
+   beim Speichern einer Bildunterschrift), bleibt die zuletzt gesetzte Herkunft stehen.
+   Sonst verschwände sie, sobald Frank seinen Text speichert. */
+let _lbHerkunft='';
+function _lbShowCaption(text,herkunft){
+  if(herkunft!==undefined)_lbHerkunft=herkunft||'';
+  const lbl=document.getElementById('lbTextViewLabel');
+  if(lbl)lbl.textContent=text||'';
+  const hb=document.getElementById('lbHerkunft');
+  if(hb){hb.textContent=_lbHerkunft?('🔁 '+_lbHerkunft):'';hb.style.display=_lbHerkunft?'':'none';}
+}
 // v113: „📝 Text" öffnet ein GROSSES Schreib-Popup statt des schmalen Streifens –
 // genug Fläche für S-Pen-Handschrift (Samsung „S Pen zu Text" schreibt direkt ins Feld).
 let _capDiktatRec=null;
