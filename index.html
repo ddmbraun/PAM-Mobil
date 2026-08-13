@@ -470,7 +470,15 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 /* ── Foto-Beschreibung im Lightbox-Fuß ── */
 .lightbox .lb-textbar{position:absolute;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0) + 70px);background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);border-radius:10px;padding:8px 10px;color:#fff;font-size:13px;z-index:10010;display:none;max-width:calc(100% - 24px);}
 .lightbox .lb-textbar.open{display:flex;flex-direction:column;gap:6px;}
-.lightbox .lb-text-view{display:flex;align-items:center;gap:8px;}
+/* v199: Die Leiste darf umbrechen. Befund Frank im Feld: der Knopf „🔁 Leistung" aus
+   v198 war abgeschnitten („🔁 L…"). Ursache war nicht der Knopf, sondern die Reihe:
+   sie stand auf einer Zeile, und alle Knöpfe darin dürfen nicht schrumpfen. Mit dem
+   Herkunfts-Balken davor und vier Beschriftungen passt das in keine Handy-Breite.
+   Der Text nimmt die erste Zeile und darf schmal werden; die Knöpfe rutschen darunter. */
+.lightbox .lb-text-view{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+/* Mindestbreite in em statt px: sie folgt damit dem „Aa"-Regler. Ohne sie schrumpft
+   der Text auf null, statt die Knöpfe in die nächste Zeile zu schieben. */
+.lightbox .lb-text-view-label{min-width:8em;}
 .lightbox .lb-text-view-label{flex:1;color:#fff;white-space:pre-wrap;word-break:break-word;}
 .lightbox .lb-text-view-label.empty{color:rgba(255,255,255,.55);font-style:italic;}
 .lightbox .lb-text-edit-btn{background:rgba(255,255,255,.9);color:#000;border:none;padding:6px 10px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;}
@@ -5165,6 +5173,26 @@ function _mCockpitAnwenden(){
   });
   const lbl=document.getElementById('mZurueckLabel');
   if(lbl)lbl.textContent=(aktivEl&&aktivEl.getAttribute('data-lbl'))||'';
+  _mKopfzeileAnwenden(); // v199
+}
+/* ⛔ v199: Die graue Zeile unter der Reiterleiste gehört zur ÜBERSICHT, nicht zu den
+   Bereichsseiten. Befund Frank im Feld: „warum hab ich die Adresse doppelt?" — auf der
+   Seite „Objektadresse" stand sie dreimal übereinander: in dieser Zeile, in der
+   Lese-Zeile aus v197 und im Eingabefeld darunter. Zwei davon haben einen Zweck (ganz
+   lesen / bearbeiten), die dritte war nur Wiederholung.
+   Die Entscheidung fällt HIER und nicht dort, wo der Text gesetzt wird: renderDetail
+   läuft von rund 35 Stellen aus, das Umschalten zwischen Übersicht und Bereich aber
+   nur hier. Sonst bliebe die Zeile beim Blättern zwischen den Seiten stehen. */
+/* ⚠ Die Variable heißt bewusst NICHT wie die gleichnamige in renderDetail: test_v197
+   schneidet den dortigen Block über den Variablennamen aus dem Quelltext. Stünde hier
+   derselbe Name, träfe die Suche diese Funktion — sie steht weiter oben — und die
+   Prüfung schnitte quer durch die halbe Datei. Genau so ist sie beim ersten Anlauf
+   abgestürzt. Der Anker in test_v197 ist inzwischen zusätzlich belastbar gemacht. */
+function _mKopfzeileAnwenden(){
+  const zeile=document.getElementById('detailCreatedLine');
+  if(!zeile)return;
+  const hatInhalt=!!(zeile.textContent||'').trim();
+  zeile.style.display=(hatInhalt&&!_mBereichAktiv)?'block':'none';
 }
 function _mBereichOeffnen(key){
   _mBereichAktiv=key||null;
@@ -5981,6 +6009,10 @@ function _tuMobErledigt(taskId,lId){
   // Nachweis vollständig, ohne dass Frank etwas nachtragen muss.
   var _vor=(l.dateien||[]).slice();
   if(_vor.length){_neu.dateien=_vor;delete l.dateien;}
+  /* v199: Dasselbe für die vorab geschriebene Notiz. Sie ist der Grund, warum der
+     Weg überhaupt existiert — was draußen aufgefallen ist, gehört an den Termin. */
+  var _vNotiz=(l.notizVorab&&l.notizVorab.text)||'';
+  if(_vNotiz){_neu.notiz=_vNotiz;delete l.notizVorab;}
   l.eintraege.push(_neu);
   l.eintraege.sort(function(a,b){return String(b.datum||'').localeCompare(String(a.datum||''));});
   // Bautagebuch mitschreiben – genau wie am Desktop, damit der Nachweis überall gleich aussieht
@@ -5990,7 +6022,7 @@ function _tuMobErledigt(taskId,lId){
   // wer nach dem Haken das Funkloch betritt, hätte sonst nichts gespeichert
   try{forceSave();}catch(e){console.warn('[TU-Mob] speichern:',e);}
   _tuMobNachAktion(); // v177: auch das offene Objekt auffrischen
-  if(typeof toast==='function')toast('✓ '+(l.name||'')+' erledigt'+(_vor.length?(' · '+_vor.length+' Vorab-Datei(en) übernommen'):''));
+  if(typeof toast==='function')toast('✓ '+(l.name||'')+' erledigt'+(_vor.length?(' · '+_vor.length+' Vorab-Datei(en) übernommen'):'')+(_vNotiz?' · Notiz übernommen':''));
   // v173: direkt nach dem Haken Fotos anbieten – der natürliche Moment draußen (Wunsch Frank 10.08.)
   setTimeout(function(){_tuMobFotoFrage(taskId,lId,heute);},300);
 }
@@ -6018,19 +6050,33 @@ function _tuMobNotiz(taskId,lId){
   var t=findTaskById(taskId); if(!t)return;
   var l=(t.turnusListe||[]).find(function(x){return x&&x.id===lId;}); if(!l)return;
   var e=((l.eintraege)||[])[0];
-  if(!e){
-    if(typeof toast==='function')toast('Erst abhaken – die Notiz gehört zu einem Termin','info',4000);
-    return;
-  }
-  var v=prompt('Notiz zum '+_tuDe(e.datum)+' – '+(l.name||'')+':\n\n(leer lassen = Notiz entfernen)',e.notiz||'');
+  /* ⛔ v199: Vor dem ersten ✓ ging gar keine Notiz — die Meldung lautete sinngemäß
+     „erst abhaken". Franks Fall aus dem Feld: hinfahren, sehen, Arbeit noch nicht
+     fertig. Ein FOTO durfte er in dieser Lage seit v180 vorab ablegen, die Notiz
+     nicht — dabei entsteht sie draußen im selben Moment.
+     Sie liegt jetzt genauso vorab an der Leistung und wandert beim Abhaken in den
+     dann entstehenden Termin. Die Datenform bleibt unangetastet: `notizVorab` ist ein
+     Zusatzfeld an der Leistung, das beim ✓ wieder verschwindet. Der Rechner sieht
+     danach eine ganz normale Termin-Notiz. */
+  var vorab=!e;
+  var alt=vorab?((l.notizVorab&&l.notizVorab.text)||''):(e.notiz||'');
+  var frage=vorab
+    ? ('Notiz vorab – '+(l.name||'')+':\n\nSie wandert beim Abhaken (✓) in den dann entstehenden Termin.\n(leer lassen = Notiz entfernen)')
+    : ('Notiz zum '+_tuDe(e.datum)+' – '+(l.name||'')+':\n\n(leer lassen = Notiz entfernen)');
+  var v=prompt(frage,alt);
   if(v===null)return;
   var txt=(v||'').trim();
-  if(txt)e.notiz=txt; else delete e.notiz;
+  if(vorab){
+    if(txt)l.notizVorab={text:txt,tag:_tuHeute()};
+    else delete l.notizVorab;
+  }else{
+    if(txt)e.notiz=txt; else delete e.notiz;
+  }
   // v176: eigene Zeile ins Bautagebuch – genau wie am Desktop (b631). Die
   // „erledigt"-Zeile von vorhin bleibt stehen, das Tagebuch ist ein Verlauf.
   try{
-    var _p=String(e.datum||'').split('-');
-    var _kurz=_p.length>2?(_p[2]+'.'+_p[1]+'.'):'';
+    var _p=String((e&&e.datum)||'').split('-');
+    var _kurz=vorab?'vorab':(_p.length>2?(_p[2]+'.'+_p[1]+'.'):'');
     if(!Array.isArray(t.notizVerlauf))t.notizVerlauf=[];
     t.notizVerlauf.push({ts:new Date().toISOString(),
       text:'📝 Notiz zu '+(l.name||'')+' ('+_kurz+')'+(txt?': '+txt:' entfernt')});
@@ -6117,7 +6163,9 @@ function _tuMobObjektZeilen(t,gross,schlank){
          Eine Leistung ohne Anhänge bleibt so schlank wie bisher — die v179-Regel
          („draußen zählt der Handgriff") gilt für den Normalfall weiter. */
       var _n=nDat+nVor;
-      var _notiz=(e&&e.notiz&&String(e.notiz).trim())?1:0;
+      /* v199: Auch eine VORAB geschriebene Notiz macht die Zeile sichtbar — sonst hätte
+         Frank sie geschrieben und fände draußen keinen Weg mehr zurück zu ihr. */
+      var _notiz=((e&&e.notiz&&String(e.notiz).trim())||(l.notizVorab&&l.notizVorab.text&&String(l.notizVorab.text).trim()))?1:0;
       var _info=(_n||_notiz)
         ? '<div class="bau-karte-info" onclick="event.stopPropagation();_tuLeistungAnhaenge(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')">'
           + (_n?'<span>📎 '+_n+(nVor?' · '+nVor+' vorab':'')+'</span>':'')
@@ -6173,7 +6221,7 @@ function _tuMobKnopfReihe(t,l,kH,sIco,beschriftet){
     };
     return '<div class="bau-kaestchen">'
       + kn('📎','Anhang','', '_tuMobFotoNachreichen(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Foto oder Protokoll anhängen – auch schon vor dem Abhaken')
-      + kn('📝','Notiz','',  '_tuMobNotiz(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Notiz zum letzten Termin')
+      + kn('📝','Notiz','',  '_tuMobNotiz(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Notiz zum letzten Termin – vor dem ersten ✓ wird sie vorab abgelegt')
       + kn('✓','Erledigt','fertig','_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Heute als erledigt eintragen')
       + '</div>';
   }
@@ -6238,7 +6286,8 @@ function _tuLeistungAnhaenge(taskId,lId){
     });
   };
   gruppen.push({titel:'Vorab abgelegt',unter:'wandert beim nächsten ✓ in den Termin',
-    fotos:_fotosVon(''),dateien:((l.dateien)||[]),notiz:''});
+    fotos:_fotosVon(''),dateien:((l.dateien)||[]),
+    notiz:((l.notizVorab&&l.notizVorab.text)||'')}); // v199: die Vorab-Notiz gehört hierher
   ((l.eintraege)||[]).forEach(function(e){
     if(!e)return;
     gruppen.push({titel:e.datum?_tuDe(e.datum):'Ohne Datum',unter:e.skip?'übersprungen':'erledigt',
@@ -6677,6 +6726,48 @@ function _tuHerkunftReparieren(){
   if(n){
     try{scheduleSave();}catch(e){}
     try{toast('🔁 '+n+' Foto'+(n!==1?'s':'')+' wieder seiner Leistung zugeordnet','info',4500);}catch(e){}
+    try{if(currentTaskId){var ct=findTaskById(currentTaskId);if(ct&&typeof renderDetail==='function')renderDetail(ct);}}catch(e){}
+  }
+  return n;
+}
+/* ⛔ v199: Der Nachzügler für die vorab geschriebene Notiz. Wird am HANDY abgehakt,
+   wandert sie sofort mit (_tuMobErledigt). Hakt Frank die Leistung aber am RECHNER ab,
+   entsteht der Termin dort — und die Vorab-Notiz bliebe für immer an der Leistung
+   liegen, sichtbar, aber nie am Nachweis. Deshalb dieselbe Wanderung noch einmal beim
+   Laden, nach denselben Regeln.
+   ⛔ Sie überschreibt NIE eine vorhandene Notiz: gibt es am passenden Termin schon
+      Text, bleibt die Vorab-Notiz stehen, wo sie ist. Lieber sichtbar liegen bleiben
+      als still etwas überschreiben, das jemand anders geschrieben hat.
+   ⛔ Und sie wandert nur VORWÄRTS: ein Termin, der VOR dem Tag der Notiz liegt, kann
+      nicht gemeint sein. Sonst rutschte eine heute geschriebene Notiz an einen Termin
+      vom letzten Jahr. */
+function _tuVorabNotizWandern(){
+  var n=0;
+  try{
+    var listen=(typeof _alleTaskListen==='function')?_alleTaskListen():[];
+    for(var li=0;li<listen.length;li++){
+      var tasks=listen[li]||[];
+      for(var ti=0;ti<tasks.length;ti++){
+        var t=tasks[ti];
+        if(!t)continue;
+        ((t.turnusListe)||[]).forEach(function(l){
+          if(!l||!l.notizVorab||!l.notizVorab.text)return;
+          var tag=l.notizVorab.tag||'';
+          var passend=((l.eintraege)||[]).filter(function(e){
+            return e&&e.datum&&!(e.notiz&&String(e.notiz).trim())&&(!tag||e.datum>=tag);
+          });
+          if(!passend.length)return;
+          passend.sort(function(a,b){return String(a.datum).localeCompare(String(b.datum));});
+          passend[0].notiz=l.notizVorab.text; // der ERSTE Termin ab dem Tag der Notiz
+          delete l.notizVorab;
+          n++;
+        });
+      }
+    }
+  }catch(e){console.warn('[TU] Vorab-Notiz wandern:',e);return 0;}
+  if(n){
+    try{scheduleSave();}catch(e){}
+    try{toast('📝 '+n+' vorab geschriebene Notiz'+(n!==1?'en':'')+' an den Termin übernommen','info',4500);}catch(e){}
     try{if(currentTaskId){var ct=findTaskById(currentTaskId);if(ct&&typeof renderDetail==='function')renderDetail(ct);}}catch(e){}
   }
   return n;
@@ -7307,6 +7398,7 @@ function _applyMobileFilter(data){
      sind erst nach dieser Verteilung gefüllt. Der Lauf ist idempotent und findet nach
      dem ersten Mal nichts mehr. */
   try{_tuHerkunftReparieren();}catch(e){console.warn('[TU] Reparatur (Laden):',e);}
+  try{_tuVorabNotizWandern();}catch(e){console.warn('[TU] Vorab-Notiz (Laden):',e);}
 }
 // ── POLLING: fremde Änderungen (z.B. vom Desktop) übernehmen ──
 let fileLastModified=null;
@@ -7599,6 +7691,8 @@ async function saveFile(){
               boards=merged;
               // v198: auch nach dem Zusammenführen – der Poll bringt fremde Objekte mit.
               try{_tuHerkunftReparieren();}catch(e){console.warn('[TU] Reparatur (Poll):',e);}
+              // v199: und genau hier kommt der am Rechner gesetzte Haken an.
+              try{_tuVorabNotizWandern();}catch(e){console.warn('[TU] Vorab-Notiz (Poll):',e);}
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
