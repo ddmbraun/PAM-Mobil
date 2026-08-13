@@ -4299,6 +4299,17 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
   <!-- v185: `fotoInputGallerySingle` entfernt – es war an KEINER Stelle angeklickt worden
        (nachgezählt: ein einziges Vorkommen, die Definition selbst). Toter Eingang. -->
   <input type="file" id="blitzFotoInput" accept="image/*" capture="environment" style="display:none" onchange="_fotoQuelle='kamera';_blitzFotoFiles(this.files);this.value=''" autocomplete="off">
+  <!-- ⛔ v189: FESTE Felder für den Weg über eine wiederkehrende Leistung.
+       Bis v188 baute sich dieser Weg sein Feld bei jedem Antippen selbst zusammen –
+       und dabei fehlte `capture`. Damit öffnete die Büroklammer NIE die Kamera,
+       sondern immer die Systemauswahl; auch der v185-Knopf „📷 Weitere" baute
+       dasselbe capture-lose Feld erneut. Genau das war Franks „das muss ich neu
+       auswählen". Es war der einzige Kamera-Weg der App ohne `capture` (nachgezählt
+       gegen alle 15 Datei-Eingänge). Jetzt zwei feste Felder wie überall sonst:
+       eines für die Kamera, eines für Galerie/PDF. Das Ziel (Task, Leistung, Termin)
+       steht in `_tuFotoZiel` — deshalb brauchen die Felder keine Parameter. -->
+  <input type="file" id="tuFotoKamera" accept="image/*" capture="environment" style="display:none" onchange="_tuFotoAusFeld(this)" autocomplete="off">
+  <input type="file" id="tuFotoDatei" accept="image/*,application/pdf" multiple style="display:none" onchange="_tuFotoAusFeld(this)" autocomplete="off">
 </div>
 
 <!-- ══ SCHNELL-ADD BOTTOM-SHEET ══ -->
@@ -6071,12 +6082,101 @@ function _tuMobNachAktion(){
 // Bewusst schlank: kein Offline-Nachschub für DIESE Zuordnungs-Fotos – schlägt der Upload fehl,
 // sagt die App es klar und der Eintrag selbst ist längst gesichert (forceSave oben). Fotos werden
 // mit _fotoUebernahme verkleinert (EXIF bleibt v118, GPS-Auffüllung v174) und heißen wie am Desktop: Datum_Leistung_Nr.
+/* ⛔ v189: Ziel des nächsten Anhangs. Die zwei festen Eingabefelder (tuFotoKamera,
+   tuFotoDatei) können keine Parameter tragen — deshalb steht hier, wohin die Datei
+   gehört. Wird bei jedem Öffnen der Leiste neu gesetzt. */
+var _tuFotoZiel=null;
+function _tuFotoAusFeld(inp){
+  var files=Array.prototype.slice.call((inp&&inp.files)||[]);
+  if(inp)inp.value='';
+  if(!files.length||!_tuFotoZiel)return;
+  var z=_tuFotoZiel;
+  _tuMobFotoUpload(z.taskId,z.lId,z.datum,files);
+}
+/* Die Leiste unten am Bildschirm — einmal als Frage vor dem ersten Bild, einmal als
+   „noch eine?" danach. Beide Male dieselben zwei ECHTEN Wege.
+   ⛔ Vorher stand vor dem ersten Bild ein confirm() mit dem Text „Kamera oder
+   Galerie" — ein System-Kasten, der genau das versprach, was der Weg dahinter
+   nicht halten konnte: das Feld hatte kein `capture`, es kam immer die Systemaus-
+   wahl. Jetzt entscheidet Frank am Knopf, und jeder Knopf klickt ein festes Feld.
+   Nebeneffekt: `_tuMobErledigt` ruft diese Frage in einem setTimeout auf (300 ms).
+   Dabei ist die Fingergeste abgerissen, und ein direktes inp.click() hätte iOS/
+   Android blockieren können. Die Leiste ist nur DOM — der echte Klick passiert
+   erst beim Antippen eines Knopfes und trägt damit wieder eine frische Geste. */
+function _tuFotoLeiste(taskId,lId,datum,text){
+  _tuFotoZiel={taskId:taskId,lId:lId,datum:datum};
+  var alt=document.getElementById('tuWeiterBox'); if(alt)alt.remove();
+  var box=document.createElement('div');
+  box.id='tuWeiterBox';
+  box.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9200;background:var(--bg2);border-top:1px solid var(--border);padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(0,0,0,.25);';
+  var txt=document.createElement('div');
+  txt.style.cssText='flex:1 1 100%;min-width:0;font-size:13px;color:var(--text2);line-height:1.35;';
+  txt.textContent=text;
+  box.appendChild(txt);
+  var knopf=function(beschriftung,haupt,tunwas){
+    var b=document.createElement('button');
+    b.type='button';
+    b.textContent=beschriftung;
+    b.style.cssText='flex:1;min-height:52px;padding:0 12px;border-radius:10px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;'
+      +(haupt?'border:none;background:#2e4fc4;color:#fff;':'border:1px solid var(--border);background:var(--bg3);color:var(--text);');
+    b.onclick=tunwas;
+    box.appendChild(b);
+  };
+  knopf('📷 Kamera',true,function(){box.remove();var i=document.getElementById('tuFotoKamera');if(i)i.click();});
+  knopf('🖼 Galerie',false,function(){box.remove();var i=document.getElementById('tuFotoDatei');if(i)i.click();});
+  knopf('Abbrechen',false,function(){box.remove();});
+  document.body.appendChild(box);
+  /* v189: 60 statt 12 Sekunden. Auf dem Dach mit Handschuhen waren zwölf zu knapp –
+     und die Leiste hat einen eigenen Schließen-Knopf, sie muss nicht von selbst weg. */
+  setTimeout(function(){try{box.remove();}catch(e){}},60000);
+}
 function _tuMobFotoFrage(taskId,lId,datum){
-  if(!confirm('Foto oder Protokoll zu dieser Leistung anhängen?\n\n(Kamera oder Galerie – landet im Objektordner in Drive)'))return;
-  var inp=document.createElement('input');
-  inp.type='file'; inp.accept='image/*,application/pdf'; inp.multiple=true;
-  inp.onchange=function(){_tuMobFotoUpload(taskId,lId,datum,Array.prototype.slice.call(inp.files||[]));};
-  inp.click();
+  var t=findTaskById(taskId);
+  var l=t&&(t.turnusListe||[]).find(function(x){return x&&x.id===lId;});
+  var nm=(l&&l.name)||'diese Leistung';
+  _tuFotoLeiste(taskId,lId,datum,'Anhängen an: '+nm);
+}
+/* ⛔ v189: Der Eintrag an der Leistung wird NICHT mehr beim Hochladen geschrieben,
+   sondern genau in dem Moment, in dem das Foto seine Drive-Kennung bekommt. Das sind
+   zwei Stellen: sofort in uploadFoto und später in _mobUploadFromKey, wenn ein ohne
+   Empfang aufgenommenes Bild nachgeladen wird. Dadurch trägt ein Foto vom Dach seine
+   Leistung im Gepäck und wird richtig zugeordnet, sobald es oben ist — vorher war es
+   in diesem Fall schlicht verworfen.
+   Die Zuordnung reist am Foto selbst mit (fo.tuLeistung) und braucht deshalb KEINEN
+   eigenen Platz in der Warteschlange: Fotos werden ohnehin gespeichert, abgeglichen
+   und zusammengeführt. Genau das war der Punkt, den Frank am 13.08. beigesteuert hat
+   („das hatten wir doch schon geklärt") — die Maschine dafür steht seit v143/v144/v148. */
+function _tuDateiNachtragen(taskId,fo){
+  try{
+    if(!fo||!fo.driveId||!fo.tuLeistung)return false;
+    var t=(typeof _fotoTaskById==='function'?_fotoTaskById(taskId):null)||findTaskById(taskId);
+    if(!t)return false;
+    var l=(t.turnusListe||[]).find(function(x){return x&&x.id===fo.tuLeistung.lId;});
+    if(!l)return false;
+    var datum=fo.tuLeistung.datum||'';
+    // v180 unverändert: ohne Datum „vorab" an der LEISTUNG, sonst am jeweiligen Termin.
+    var ziel=datum?((l.eintraege||[]).find(function(x){return x&&x.datum===datum;})||null):l;
+    if(!ziel)return false;
+    if(!Array.isArray(ziel.dateien))ziel.dateien=[];
+    /* Doppelt eintragen darf nicht passieren: Nachladen, Waisen-Rettung und ein zweiter
+       Anlauf können denselben Eintrag erneut anfassen. Die Drive-Kennung ist der
+       verlässliche Schlüssel dafür, nicht der Dateiname. */
+    if(ziel.dateien.some(function(d){return d&&d.id===fo.driveId;}))return false;
+    ziel.dateien.push({id:fo.driveId,name:fo.name||'foto.jpg'});
+    delete fo.tuLeistung; // erledigt – zweite Sicherung gegen erneutes Eintragen
+    try{scheduleSave();}catch(e){}
+    try{_tuMobNachAktion();}catch(e){} // v177: Datei-Zähler sofort mitziehen
+    /* v180-Hinweis, hierher gezogen: Ohne Termin liegt die Datei „vorab" an der
+       Leistung und wandert erst beim Abhaken in den Termin. Das muss man wissen,
+       sonst sucht man sie später am falschen Ort. Die Meldung steht jetzt an der
+       Stelle, an der die Datei WIRKLICH abgelegt wird — bei einem ohne Empfang
+       aufgenommenen Foto ist das Stunden später, und vorher wäre sie gelogen. */
+    try{
+      if(!datum)toast('✓ Vorab an der Leistung abgelegt – wandern beim Abhaken in den Termin','success',4500);
+      else toast('✓ Am Eintrag '+_tuDe(datum)+' abgelegt','success',4000);
+    }catch(e){}
+    return true;
+  }catch(e){console.warn('[TU] Datei nachtragen:',e);return false;}
 }
 async function _tuMobFotoUpload(taskId,lId,datum,files){
   if(!files||!files.length)return;
@@ -6086,84 +6186,39 @@ async function _tuMobFotoUpload(taskId,lId,datum,files){
   var vorab=!datum;
   var ziel=vorab?l:(l.eintraege||[]).find(function(x){return x&&x.datum===datum;});
   if(!ziel)return;
-  var folderId=extractDriveFolderId(t.gdrive||'')||extractDriveFolderId(t.dokOrdner||'')||extractDriveFolderId(t.gdriveOrdner||'');
-  if(!folderId){toast('❗ Kein Ordner am Objekt verlinkt – bitte am Rechner unter „Ordner & Links" setzen','error',6000);return;}
-  var da=await ensureToken();
-  if(!da){toast('📴 Nicht verbunden – Haken ist gespeichert, Foto bitte später anhängen','error',6000);return;}
-  toast('⏳ '+files.length+' Datei(en) werden hochgeladen…','info',4000);
-  if(!Array.isArray(ziel.dateien))ziel.dateien=[];
-  var e=ziel; // ab hier wie bisher – `e` ist der Eintrag ODER die Leistung
-  var basis=(vorab?(_tuHeute()+'_vorab'):(e.datum||_tuHeute()))+'_'+(((l.name||'Leistung').replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,'-').substring(0,40).replace(/[-. ]+$/,''))||'Leistung');
-  var ok=0;
-  for(var i=0;i<files.length;i++){
-    try{
-      var f=files[i];
-      try{ if(typeof _fotoUebernahme==='function') f=(await _fotoUebernahme(f)).file; }catch(_c){} // v174: verkleinern + GPS-Auffüllung (vorher nur _compressFoto)
-      var ext=((files[i].name||'').split('.').pop()||'jpg').toLowerCase();
-      if(f&&f.type==='image/jpeg')ext='jpg';
-      var nm=basis+'_'+(e.dateien.length+1)+'.'+ext;
-      var res=await _tuMobDriveUpload(f,nm,folderId);
-      if(res&&res.id){e.dateien.push({id:res.id,name:nm});ok++;}
-    }catch(err){console.warn('[TU-Mob] Upload:',err);}
-  }
-  if(ok){
-    try{forceSave();}catch(e2){console.warn('[TU-Mob] speichern:',e2);}
-    _tuMobNachAktion(); // v177: Datei-Zähler im Objekt sofort mitziehen
-    toast(vorab
-      ?('✓ '+ok+' Datei(en) vorab abgelegt – wandern beim Abhaken in den Termin')
-      :('✓ '+ok+' Datei(en) am Eintrag '+_tuDe(datum)+' abgelegt'),'success',4500);
-    /* v185: „noch eine?" – die Kamera von iPhone und Android gibt immer genau EIN Bild
-       zurück, obwohl das Feld hier `multiple` erlaubt (über die Mediathek gehen mehrere).
-       Wer draußen vier Aufnahmen zu einer Leistung braucht, musste bis v184 viermal die
-       Büroklammer suchen. Bewusst KEIN Bild-Dialog wie im Task: Diese Dateien gehen
-       direkt nach Drive, es gibt hier gar keine lokale Vorschau zum Anzeigen. */
-    _tuMobWeiterFrage(taskId,lId,datum);
-  }else{
-    toast('⚠ Hochladen fehlgeschlagen – der Haken ist gespeichert, Foto bitte später anhängen','error',6000);
-  }
+  /* ⛔ v189: Dieser Weg lädt nicht mehr selbst hoch. Bis v188 war er eine eigene,
+     abgekoppelte Konstruktion: kein Zwischenspeicher, keine Vorschau, kein Nachladen.
+     Ohne Empfang brach er ab („Haken ist gespeichert, Foto bitte später anhängen") und
+     die Aufnahme war WEG — auf dem Dach kein Randfall. Jetzt geht er durch dieselbe
+     Maschine wie jedes andere Foto und erbt alles auf einmal: lokale Sicherung,
+     automatisches Nachladen, Warnleuchte, Verwerfen/Behalten/Weiteres/Text+Malen,
+     Vorschaubild, Verkleinern, GPS-Auffüllung.
+     Entscheidung Frank 13.08.: „Wir machen, dass das alles gleich funktioniert — und
+     wenn es im Moment länger dauert, spielt das jetzt keine Rolle." */
+  var basis=(vorab?(_tuHeute()+'_vorab'):(ziel.datum||_tuHeute()))+'_'+(((l.name||'Leistung').replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,'-').substring(0,40).replace(/[-. ]+$/,''))||'Leistung');
+  var n=(Array.isArray(ziel.dateien)?ziel.dateien.length:0);
+  /* Der Dateiname trug bisher Datum und Leistungsnamen — daran findet man die Datei in
+     Drive wieder. uploadFoto benennt nach der Kameradatei; deshalb werden die Dateien
+     HIER umbenannt, statt uploadFoto dafür umzubauen. Scheitert das Umbenennen auf
+     einem alten Browser, gilt lieber der Originalname als gar kein Foto. */
+  var umbenannt=Array.prototype.map.call(files,function(f,i){
+    var ext=((f.name||'').split('.').pop()||'jpg').toLowerCase();
+    if((f.type||'')==='image/jpeg')ext='jpg';
+    var nm=basis+'_'+(n+i+1)+'.'+ext;
+    try{return new File([f],nm,{type:f.type||'image/jpeg',lastModified:f.lastModified||Date.now()});}
+    catch(e){return f;}
+  });
+  return uploadFoto(umbenannt,taskId,{lId:lId,datum:datum||''});
 }
-/* v185: Leiste „noch eine Datei?" nach dem Anhängen an eine Leistung.
-   Gleiche Bauart wie beim Blitz-Foto: zwei Knöpfe, verschwindet nach 12 Sekunden
-   von selbst. Draußen soll niemand eine Leiste wegtippen müssen. */
-function _tuMobWeiterFrage(taskId,lId,datum){
-  const alt=document.getElementById('tuWeiterBox'); if(alt)alt.remove();
-  const box=document.createElement('div');
-  box.id='tuWeiterBox';
-  box.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9200;background:var(--bg2);border-top:1px solid var(--border);padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(0,0,0,.25);';
-  const txt=document.createElement('div');
-  txt.style.cssText='flex:1;min-width:0;font-size:13px;color:var(--text2);line-height:1.35;';
-  txt.textContent='✓ Angehängt. Noch eine Datei?';
-  const fertig=document.createElement('button');
-  fertig.textContent='Fertig';
-  fertig.style.cssText='min-height:46px;padding:0 18px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;font-weight:600;';
-  fertig.onclick=function(){box.remove();};
-  const weiter=document.createElement('button');
-  weiter.textContent='📷 Weitere';
-  weiter.style.cssText='min-height:46px;padding:0 18px;border-radius:10px;border:none;background:#2e4fc4;color:#fff;font-size:14px;font-weight:700;';
-  // Ohne die Sicherheitsabfrage aus _tuMobFotoFrage – die kam ja gerade erst.
-  weiter.onclick=function(){
-    box.remove();
-    var inp=document.createElement('input');
-    inp.type='file'; inp.accept='image/*,application/pdf'; inp.multiple=true;
-    inp.onchange=function(){_tuMobFotoUpload(taskId,lId,datum,Array.prototype.slice.call(inp.files||[]));};
-    inp.click();
-  };
-  box.appendChild(txt);box.appendChild(fertig);box.appendChild(weiter);
-  document.body.appendChild(box);
-  setTimeout(function(){try{box.remove();}catch(e){}},12000);
-}
-async function _tuMobDriveUpload(file,name,folderId){
-  var metadata={name:name,parents:[folderId],description:'PAM Mobile Wartungsfoto'};
-  var body=new FormData();
-  body.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}));
-  body.append('file',file);
-  var _send=function(){return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',{method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:body});};
-  if(!tokenValid())await _ensureTokenSilent();
-  var r=await _send();
-  if(r.status===401&&await _ensureTokenSilent())r=await _send();
-  if(!r.ok)throw new Error('HTTP '+r.status);
-  return await r.json();
-}
+/* ⛔ v189 ENTFERNT, nicht auskommentiert: `_tuMobWeiterFrage` und `_tuMobDriveUpload`.
+   Die Leiste „✓ Angehängt. Noch eine Datei?" gibt es nicht mehr — nach dem Foto kommt
+   jetzt derselbe Dialog wie überall sonst (Verwerfen · Behalten · 📷 Weiteres Foto ·
+   ✏️ Text/Malen), und dessen Knopf „Weiteres" klickt das Leistungs-Kamerafeld, sodass
+   auch die zweite Aufnahme an derselben Leistung landet.
+   `_tuMobDriveUpload` war der eigene Upload-Weg dieser Ecke; er hatte kein lokales
+   Netz und keine Wiederholung. Beides erledigt jetzt die gemeinsame Maschine. Wer
+   danach sucht: der Weg läuft über uploadFoto → _uploadOneFotoToDrive bzw. beim
+   Nachladen über _mobUploadFromKey. */
 
 function renderHeuteMobil(){
   var el=document.getElementById('heuteList');if(!el)return;
@@ -8031,8 +8086,8 @@ async function _mobRetryPendingUploads(opts){
   try{
     _fotoPendUpdate();
     toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
-    for(const {fo,folderId} of pending){
-      try{await _mobUploadFromKey(fo,folderId);b.ok++;}
+    for(const {fo,folderId,task} of pending){
+      try{await _mobUploadFromKey(fo,folderId,task);b.ok++;} // v189: task mitgeben – siehe _tuDateiNachtragen
       catch(e){
         if(String(e&&e.message)==='BLOB_MISSING'){
           // v148: Bilddaten hier nicht vorhanden → BEVOR wir „liegt auf anderem Gerät"
@@ -8120,7 +8175,10 @@ async function _fotoOrphanReattach(){
   }
 }
 
-async function _mobUploadFromKey(fo,folderId){
+/* v189: `task` kam neu dazu — nur, um beim Nachladen die Leistung wiederzufinden,
+   zu der das Foto gehört. Ohne diesen Weg bliebe ein ohne Empfang aufgenommenes
+   Leistungs-Foto zwar erhalten, aber unzugeordnet. */
+async function _mobUploadFromKey(fo,folderId,task){
   const dataUrl=await _mobPhotoGet(fo.localKey);
   // v144: Bild-Daten liegen NUR auf dem Aufnahme-Gerät – auf anderen Geräten wurde das
   // Foto vorher STILL übersprungen und trotzdem als Erfolg gezählt („Jetzt erneut
@@ -8143,6 +8201,11 @@ async function _mobUploadFromKey(fo,folderId){
   fo.driveId=j.id;
   delete fo._uploadError; // v143: Fehler-Markierung aufheben – Warnleuchte geht aus
   fo.localUrl=dataUrl; // im Speicher behalten für schnelle Anzeige
+  /* ⛔ v189: Zweite der zwei Stellen, an denen ein Foto seine Drive-Kennung bekommt.
+     Genau hier landet ein Bild, das auf dem Dach ohne Empfang entstanden ist. Gehört
+     es zu einer wiederkehrenden Leistung, wird der Eintrag jetzt nachgetragen — bis
+     v188 war die Aufnahme in diesem Fall gar nicht erst gespeichert worden. */
+  try{if(fo.tuLeistung&&task&&task.id)_tuDateiNachtragen(task.id,fo);}catch(e){console.warn('[TU] Nachtragen (Nachladen):',e);}
   await _mobPhotoDelete(fo.localKey); // IndexedDB bereinigen
 }
 
@@ -9247,6 +9310,23 @@ function _schnellFotoVerwerfen(localKey, name, _vorschauBleibt){
 function renderBaudokuTab(t){
   const body=document.getElementById('detailBodyBau');
   if(!body)return;
+  /* ⛔ v189: laufende Eingaben über den Neuaufbau retten — dieselbe Kur, die der
+     Schnell-Reiter seit v144 hat und die hier nie nachgezogen wurde.
+     `body.innerHTML=` weiter unten zerstört die Felder und baut sie leer neu. Rund
+     ZWANZIG Stellen lösen das aus, die meisten davon im Hintergrund: fertiger
+     Foto-Upload, Gerätedrehung (resize, nur 350 ms entprellt), abgerufenes Wetter
+     (nach einem await), jede Leistungs-Aktion, jeder Abgleich. Nachgezeichneter
+     Fall: Foto machen, während des Uploads eine Notiz tippen, Upload wird fertig →
+     Text weg, ohne dass Frank irgendetwas falsch gemacht hätte.
+     Gerettet werden beide Felder des Reiters: die Notiz und die Tätigkeit der Uhr. */
+  const _rett=(function(){
+    const holen=id=>{
+      const el=document.getElementById(id);
+      if(!el||!el.value)return null;
+      return {id:id,val:el.value,foc:document.activeElement===el,ss:el.selectionStart,se:el.selectionEnd};
+    };
+    return [holen('bauNotizQuick'),holen('bauTimerDesc')].filter(Boolean);
+  })();
   const fotos=t.fotos||[];
   const zeitEntries=t.zeitEntries||[];
   const matGeplant=t.materialGeplant||[];
@@ -9318,7 +9398,15 @@ function renderBaudokuTab(t){
     +'</div>'
     +'</div></div>'
     // ── Notizen: Chronologisches Log (unified mit t.notizVerlauf) ──
-    +'<div class="sect'+oc('Notizen')+' open" data-sect="bau_Notizen">'
+    /* ⛔ v189: Hier stand hinter oc('Notizen') noch ein fest eingebautes ' open'.
+       Damit trug der Kasten die Klasse IMMER — egal was gemerkt war. Zuklappen wurde
+       korrekt gespeichert und beim nächsten Neuzeichnen vom HTML überstimmt; und
+       Neuzeichnen passiert an rund zwanzig Stellen. Es war die einzige Sektion in
+       Baudoku mit diesem Zusatz (bau_Fotos, bau_Aufwand, bau_Zeit, bau_Personal,
+       bau_Material, bau_Maschinen, bau_Wetter setzen die Klasse alle sauber über oc).
+       Die Vorbelegung „beim allerersten Mal offen" bleibt — die steht oben in der
+       Zeile `if(!('bau_Notizen' in _mOpenSections))`. */
+    +'<div class="sect'+oc('Notizen')+'" data-sect="bau_Notizen">'
     +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen'
     +((t.notizVerlauf&&t.notizVerlauf.length)?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+t.notizVerlauf.length+')</span>':'')+'</div>'
     +'<div class="sect-body">'
@@ -9399,6 +9487,16 @@ function renderBaudokuTab(t){
     // ── Tagesbericht ──
     +'<button class="inline-btn primary" style="width:100%;margin-top:8px;padding:14px;font-size:14px;font-weight:700;" onclick="generateTagesbericht()">📄 Tagesbericht als PDF</button>';
 
+  // v189: gerettete Eingaben ins frisch gebaute Feld zurückschreiben (siehe oben).
+  // Ein gesperrtes Feld wird übersprungen: bei laufender Uhr trägt bauTimerDesc
+  // `disabled`, dort gilt der gespeicherte Stand, nicht ein alter Tippversuch.
+  _rett.forEach(function(r){
+    const el=document.getElementById(r.id);
+    if(!el||el.disabled)return;
+    el.value=r.val;
+    if(el.tagName==='TEXTAREA'){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,200)+'px';}
+    if(r.foc){try{el.focus();el.setSelectionRange(r.ss,r.se);}catch(e){}}
+  });
   // Foto-Grid asynchron befüllen
   _renderBauFotoGrid(t);
   // Timer-Tick starten wenn läuft
@@ -10111,8 +10209,23 @@ async function closeDetail(){
     try{await saveFile();}catch(e){/* saveFile hat bereits Retry/Toast */}
   }
   currentTaskId=null;
-  // Sektionen beim Zurückgehen alle zuklappen — beim nächsten Öffnen beginnen alle frisch
-  _mOpenSections={};
+  /* ⛔ v189: Hier wurde die Karte der Klappzustände komplett geleert, mit dem Vermerk
+     „beim nächsten Öffnen beginnen alle frisch". Das war aus drei Gründen falsch:
+
+     1. Es widersprach der Zusage von v179 zehn Bildschirme weiter oben („Jetzt gilt
+        die Einstellung geräteweit und übersteht das Schließen") — dem Grund, aus dem
+        das Merken überhaupt gebaut wurde.
+     2. Es LÖSCHTE Einstellungen dauerhaft. Geleert wurde nur der Arbeitsspeicher,
+        ohne zu speichern. Der erste Kasten, den Frank danach irgendwo antippte,
+        schrieb die inzwischen fast leere Karte als VOLLERSATZ ins Gerät zurück und
+        nahm alle übrigen Einstellungen mit (Fotos, Kontakte, Termine, Zeiterfassung,
+        bau_Aufwand).
+     3. Jede Vorbelegung der Bauart `if(!('x' in _mOpenSections))` griff dadurch bei
+        JEDEM Öffnen neu statt einmalig — betraf `bau_Turnus` („offen, wenn etwas
+        fällig ist") und `bau_Notizen`. Zugeklappt blieb also nie zugeklappt.
+
+     Der Klappzustand bleibt jetzt stehen, so wie v179 es versprochen hat. Womit ein
+     Task beim ERSTEN Mal aufmacht, entscheiden weiterhin die Vorbelegungen. */
   _mOpenSectionsForTask=null;
   _mtbResetAufklapper(); // v130: dasselbe für die Tagebuch-Aufklapper (Fotos/Pins)
   _stopTickLoop();
@@ -10794,9 +10907,21 @@ function toggleMobileTimer(taskId){
     _afterTimerToggle(t); // v130
     toast('⏹ '+entry.von+' – '+entry.bis+' | '+beschreibung,'success');
   }else{
-    // STARTEN → Beschreibung aus Eingabefeld lesen (Task-Info oder Baudoku-Tab)
-    const descInput=document.getElementById('timerDesc')||document.getElementById('bauTimerDesc');
-    const beschreibung=(descInput?descInput.value.trim():'')||'';
+    /* ⛔ v189: STARTEN → Beschreibung lesen. Hier stand eine FESTE Reihenfolge:
+       zuerst das Feld aus Task-Info, und nur falls es fehlt, das aus Baudoku.
+       Damit gewann Task-Info immer, sobald sein Feld einmal gebaut worden war — und
+       das passiert schon, wenn man die ⏱-Kachel einmal antippt. Der Reiterwechsel
+       baut `detailBody` nicht neu, das leere Feld blieb also liegen. Wer danach im
+       Baudoku-Reiter die Tätigkeit eintippte und ▶ Start drückte, bekam das LEERE
+       Feld aus Task-Info; der Zeiteintrag hieß hinterher „Stoppuhr".
+       Jetzt entscheidet der offene Reiter — und steht dort nichts, gewinnt das Feld,
+       in dem tatsächlich etwas drinsteht. Keine der 16 Prüfdateien hat diese Stelle
+       je angefasst; test_v189.js fährt sie jetzt durch. */
+    const _wert=el=>(el&&typeof el.value==='string')?el.value.trim():'';
+    const _dInfo=document.getElementById('timerDesc');
+    const _dBau=document.getElementById('bauTimerDesc');
+    const _dAktiv=(_currentDetailTab==='bau')?_dBau:_dInfo;
+    const beschreibung=_wert(_dAktiv)||_wert(_dBau)||_wert(_dInfo)||'';
     // Alten Timer (andere Task) automatisch beenden
     if(s&&s.taskId&&s.taskId!==taskId){
       const other=findTaskById(s.taskId);
@@ -12399,7 +12524,11 @@ async function _uploadOneFotoToDrive(file,folderId){
    gesetzt (siehe `_fotoQuelle=` dort) und in uploadFoto sofort wieder geleert.
    Ausdrücklich deklariert statt beiläufig entstehen zu lassen. */
 let _fotoQuelle = '';
-async function uploadFoto(files,_zielTaskId){
+/* v189: dritter Parameter `_tuZiel` = {lId,datum}. Ist er gesetzt, gehört das Foto
+   zusätzlich zu einer wiederkehrenden Leistung. Es wird am Foto selbst vermerkt
+   (fo.tuLeistung) und reist damit durch Zwischenspeicher, Abgleich und Nachladen mit;
+   eingetragen wird es erst, wenn die Drive-Kennung da ist (_tuDateiNachtragen). */
+async function uploadFoto(files,_zielTaskId,_tuZiel){
   // v145: optionaler Ziel-Task (Blitz-Foto → Tages-Sammler, ohne dass der Task offen ist)
   if(!files||!files.length)return;
   const fileArr=Array.from(files);
@@ -12470,6 +12599,8 @@ async function uploadFoto(files,_zielTaskId){
       ts:_fotoTsFromFile(file), // v123: Aufnahmedatum (Kamera-Datei = Aufnahmezeit)
       source:'mobile'
     };
+    // v189: Zugehörigkeit zu einer wiederkehrenden Leistung am Foto festhalten.
+    if(_tuZiel&&_tuZiel.lId)fo.tuLeistung={lId:_tuZiel.lId,datum:_tuZiel.datum||''};
     t.fotos.push(fo);
     return{file,fo};
   });
@@ -12481,6 +12612,11 @@ async function uploadFoto(files,_zielTaskId){
   // nächsten Aufruf weiter (etwa wenn danach aus der Mediathek geholt wird).
   const _kameraWeg = (_fotoQuelle === 'kamera');
   _fotoQuelle = '';
+  /* ⛔ v189: Welches Kamerafeld der Knopf „📷 Weiteres Foto" auslösen soll. Kommt das
+     Foto von einer Leistung, MUSS es das Leistungs-Feld sein — sonst landet die zweite
+     Aufnahme am Objekt statt an derselben Leistung, und zwar lautlos. `_tuFotoZiel`
+     steht dabei noch, es wird erst von der nächsten Anhäng-Leiste überschrieben. */
+  const _weiterFeld = (_tuZiel&&_tuZiel.lId) ? 'tuFotoKamera' : 'fotoInputCamera';
   // v145: Anzeige/Vorschau/Vollbild nur, wenn der Ziel-Task wirklich offen ist –
   // beim Blitz-Foto (Tages-Sammler im Hintergrund) bleibt die Liste unangetastet.
   if(currentTaskId===_taskId){
@@ -12492,7 +12628,7 @@ async function uploadFoto(files,_zielTaskId){
     renderSchnellTab(t);
     // v153: ALLE frischen Aufnahmen durchreichen, nicht nur die letzte – bei einer
     // Galerie-Serie kam man an die übrigen sonst nicht mehr heran.
-    if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t);
+    if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t,{kameraFeld:_weiterFeld});
   }
   if(_currentDetailTab==='tagebuch'){try{renderTagebuchTab(t);}catch(e){console.warn('[MTB]',e);}} // v124: frisches Foto sofort im Tagesblock
   // v109: EIN neues Foto (Kamera) → direkt Vollbild mit aufgeklapptem Textfeld öffnen
@@ -12508,7 +12644,7 @@ async function uploadFoto(files,_zielTaskId){
       openFotoFullscreen(_ni);
       // v185: Erst NACH dem Öffnen einschalten – openFotoFullscreen baut die Leiste neu auf.
       // Nur beim Kamera-Weg: aus der Galerie holt man mehrere auf einmal, da hilft der Knopf nicht.
-      if(_kameraWeg) _lbWeiterBtnSetzen('fotoInputCamera');
+      if(_kameraWeg) _lbWeiterBtnSetzen(_weiterFeld); // v189: bei Leistungs-Fotos das Leistungs-Feld
       if(_autoText)setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);
     }catch(e){}}
   }
@@ -12517,7 +12653,7 @@ async function uploadFoto(files,_zielTaskId){
      im Schnell-Reiter. Wer aus der Galerie fünf Bilder holte, sah sie erst nach dem
      Zuklappen in der Liste. Jetzt bekommt er denselben Dialog wie im Schnell-Reiter. */
   else if(fotoObjs.length>1&&_currentDetailTab!=='schnell'){
-    try{_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t,{kameraFeld:'fotoInputCamera'});}catch(e){console.warn('[Foto-Vorschau]',e);}
+    try{_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t,{kameraFeld:_weiterFeld});}catch(e){console.warn('[Foto-Vorschau]',e);}
   }
   }
   // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
@@ -12567,6 +12703,12 @@ async function uploadFoto(files,_zielTaskId){
       live.download=meta.webContentLink||'';
       live._uploading=false;delete live._uploadError;
       if(live!==fo){fo.driveId=meta.id;fo._uploading=false;}
+      /* ⛔ v189: Erste der zwei Stellen, an denen ein Foto seine Drive-Kennung bekommt.
+         Gehört es zu einer wiederkehrenden Leistung, wird JETZT der Eintrag dort
+         nachgetragen — nicht vorher. Der Merker kann durch einen Konflikt-Merge am
+         alten Objekt hängen geblieben sein, deshalb vorher auf den Live-Eintrag holen. */
+      if(fo.tuLeistung&&!live.tuLeistung)live.tuLeistung=fo.tuLeistung;
+      try{_tuDateiNachtragen(_taskId,live);}catch(e2){console.warn('[TU] Nachtragen:',e2);}
       _mobPhotoSetMeta(fo.localKey,{done:1}); // Blob bleibt als Anzeige-Cache, zählt aber nicht mehr als offen
       success++;
     }catch(e){
