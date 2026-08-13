@@ -9222,13 +9222,48 @@ function _startSchnellDiktat(){
 
    ⚠ Ohne `opt` verhaelt sich alles exakt wie vorher – die vorhandene Aufrufstelle
    im Schnell-Reiter musste nicht angefasst werden.                             */
+/* ⛔ v191: Der Dialog ist kein Fenster mehr, sondern ein TOR. Er liefert jetzt ein
+   Versprechen zurück, das erst erfüllt ist, wenn über JEDES Foto entschieden wurde.
+   uploadFoto wartet darauf, bevor es hochlädt.
+
+   Warum das nötig war (Befund Frank 13.08.): „Wenn ich das Bild erstellt habe und
+   habe nicht Behalten geklickt, dann ist es ja auch noch nicht auf Drive, oder?"
+   Nein — bis v190 lief der Upload sofort los, während der Dialog noch offen stand.
+   „Behalten" startete nichts, es schloss nur das Fenster; „Verwerfen" versuchte ein
+   Bild zurückzuholen, das längst unterwegs war. Zwei Wege hängten es danach wieder
+   ein (uploadFoto über _fotoLive, und die Waisen-Rettung). Jetzt gilt: verworfen
+   heißt, es war nie in Drive.
+
+   Die Entscheidung steht am Foto selbst (`fo._entscheidung`), nicht in einer eigenen
+   Liste — so übersteht sie den Konflikt-Merge, der die Objekte austauschen kann.
+
+   ⚠ Wer den Dialog schließt, ohne zu entscheiden (App weggewischt, Akku leer), dessen
+   Foto gilt als BEHALTEN: es liegt im Gerät, taucht in der Warnleuchte auf und wird
+   nachgeladen. Ein Foto zu viel ist besser als ein verlorenes — die Linie aus den
+   Feld-Verlusten vom Juli. */
+// v191: Notausgang des gerade offenen Foto-Dialogs – siehe unten.
+let _fotoDialogFertig=null;
 function _showSchnellFotoPreview(fo, t, opt){
   opt = opt || {};
   const kameraFeld = opt.kameraFeld || 'fotoInputCamera';
   const kannBearbeiten = opt.bearbeiten !== false;
   const kannVerwerfen  = opt.verwerfen  !== false;
+  // v191: „📷 Weiteres Foto" nur, wenn die Aufnahme von der KAMERA kam. Nach einem
+  // Bild aus der Galerie wäre ein Kamera-Angebot verkehrt — dort holt man mehrere
+  // auf einmal. Bis v190 hing der Knopf ungefiltert an jedem Dialog.
+  const kannWeiteres   = opt.weiteres   !== false;
   const liste=Array.isArray(fo)?fo.filter(Boolean):(fo?[fo]:[]);
-  if(!liste.length)return;
+  /* ⛔ v191: Ein noch offener Dialog wird hier gleich ersetzt (prev.remove()). Sein
+     Versprechen MUSS vorher erfüllt werden — sonst wartet das zugehörige uploadFoto
+     für immer, die Upload-Sperre bliebe stehen und der Abgleich wäre blockiert.
+     Genau so entsteht ein Hänger, den man im Feld nie erklären kann. */
+  if(typeof _fotoDialogFertig==='function'){try{_fotoDialogFertig();}catch(e){}}
+  _fotoDialogFertig=null;
+  let _fertig=null;
+  const versprechen=new Promise(res=>{_fertig=res;});
+  if(!liste.length){if(_fertig)_fertig();return versprechen;}
+  // Alle Fotos dieses Stapels starten unentschieden.
+  liste.forEach(f=>{if(f&&!f._entscheidung)f._entscheidung='';});
   let idx=0;
   let prev=document.getElementById('schnellFotoPreview');
   if(prev)prev.remove();
@@ -9258,9 +9293,20 @@ function _showSchnellFotoPreview(fo, t, opt){
     if(i<0&&f.localKey)i=t2.fotos.findIndex(x=>x&&x.localKey===f.localKey);
     return i;
   };
+  /* v191: `alle` behält den ganzen Stapel, `liste` schrumpft beim Durchblättern.
+     Beim Schließen muss über ALLE entschieden sein — wer wegwischt, ohne alles
+     durchzugehen, hinterlässt den Rest als „behalten". */
+  const alle=liste.slice();
+  const schliessen=()=>{
+    alle.forEach(f=>{if(f&&!f._entscheidung)f._entscheidung='behalten';});
+    try{prev.remove();}catch(e){}
+    if(_fotoDialogFertig===schliessen)_fotoDialogFertig=null;
+    if(_fertig){_fertig();_fertig=null;}
+  };
+  _fotoDialogFertig=schliessen; // v191: Notausgang, falls ein neuer Dialog diesen ersetzt
   const weiterOderSchliessen=()=>{
     liste.splice(idx,1);
-    if(!liste.length){prev.remove();return;}
+    if(!liste.length){schliessen();return;}
     if(idx>=liste.length)idx=liste.length-1;
     zeige();
   };
@@ -9279,22 +9325,37 @@ function _showSchnellFotoPreview(fo, t, opt){
   const btnDel=document.createElement('button');
   btnDel.textContent='✕ Verwerfen';
   btnDel.style.cssText='padding:12px 24px;border-radius:10px;background:#E24B4A;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
-  btnDel.onclick=function(){const f=aktuell();_schnellFotoVerwerfen(f.localKey||f.driveId||'',f.name||'',true);weiterOderSchliessen();};
+  /* ⛔ v191: Erst die Entscheidung am Foto vermerken, DANN entfernen. uploadFoto liest
+     sie und lädt dieses Bild gar nicht erst hoch. Bis v190 wurde hier nur aus der
+     Liste gelöscht — und der längst laufende Upload hängte es wieder ein. */
+  btnDel.onclick=function(){
+    const f=aktuell();
+    f._entscheidung='verworfen';
+    _schnellFotoVerwerfen(f.localKey||f.driveId||'',f.name||'',true,t);
+    weiterOderSchliessen();
+  };
   const btnKeep=document.createElement('button');
   btnKeep.textContent='✓ Behalten';
   btnKeep.style.cssText='padding:12px 24px;border-radius:10px;background:#4CAF50;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
-  btnKeep.onclick=function(){weiterOderSchliessen();};
+  btnKeep.onclick=function(){aktuell()._entscheidung='behalten';weiterOderSchliessen();};
   const btnMore=document.createElement('button');
   btnMore.textContent='📷 Weiteres Foto';
   btnMore.style.cssText='padding:12px 24px;border-radius:10px;background:#2e4fc4;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
-  btnMore.onclick=function(){prev.remove();var inp=document.getElementById(kameraFeld);if(inp)inp.click();};
+  /* v191: „Weiteres" heißt: dieses Bild ist behalten, und die Kamera geht sofort
+     wieder auf. Ohne die Entscheidung bliebe der Stapel hängen und nichts ginge hoch. */
+  btnMore.onclick=function(){
+    schliessen();
+    var inp=document.getElementById(kameraFeld);if(inp)inp.click();
+  };
   // v110: ✏️ Bearbeiten – behält das Foto und öffnet direkt die Vollbild-Ansicht (Text + Malen), Wunsch Frank
   const btnEdit=document.createElement('button');
   btnEdit.textContent='✏️ Text / Malen';
   btnEdit.style.cssText='padding:12px 24px;border-radius:10px;background:#2e4fc4;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
   btnEdit.onclick=function(){
-    const i=liveIndex(aktuell());
-    prev.remove();
+    // v191: Wer schreiben oder malen will, behält das Bild – sonst gäbe es nichts zu beschriften.
+    const f=aktuell();
+    const i=liveIndex(f);
+    schliessen();
     if(i>=0)openFotoFullscreen(i);
   };
   /* v185: Knöpfe nur zeigen, wenn sie hier auch etwas bewirken. „Text / Malen"
@@ -9304,20 +9365,38 @@ function _showSchnellFotoPreview(fo, t, opt){
   row.appendChild(btnDel);row.appendChild(btnMore);row.appendChild(btnEdit);row.appendChild(btnKeep);
   if(!kannVerwerfen) btnDel.style.display='none';
   if(!kannBearbeiten) btnEdit.style.display='none';
+  if(!kannWeiteres)   btnMore.style.display='none'; // v191: nach Galerie-Bildern kein Kamera-Angebot
   prev.appendChild(img);prev.appendChild(lbl);prev.appendChild(nav);prev.appendChild(row);
   zeige();
   document.body.appendChild(prev);
+  return versprechen;
 }
 
 // v153: _vorschauBleibt=true, wenn die Vorschau selbst weiterblättert (Serie) – sonst
 // verschwände nach dem ersten Verwerfen das ganze Fenster samt der restlichen Fotos.
-function _schnellFotoVerwerfen(localKey, name, _vorschauBleibt){
-  if(localKey)_mobPhotoSetMeta(localKey,{done:1}); // v143: bewusst verworfen → Waisen-Rettung fasst es nicht mehr an
-  const t=currentTask();
+function _schnellFotoVerwerfen(localKey, name, _vorschauBleibt, _zielTask){
+  /* ⛔ v191 — zwei Reparaturen an einer Stelle, beide im Feld gefunden:
+
+     1. Hier wurde der Geräte-Eintrag nur als erledigt MARKIERT. Das Markieren patcht
+        aber nur einen bereits vorhandenen Datensatz. Der Dialog erscheint, bevor das Bild im Gerät
+        gesichert ist — wer zügig verwarf, verlor die Markierung stillschweigend, und
+        die Waisen-Rettung hängte das Foto später wieder an. Jetzt wird der Eintrag
+        GELÖSCHT statt markiert. Das wirkt in beide Richtungen: ist er noch nicht da,
+        legt uploadFoto ihn für ein verworfenes Foto gar nicht erst an.
+     2. `currentTask()` traf beim Blitz-Foto den FALSCHEN Task — dessen Sammler liegt
+        bewusst im Hintergrund, verworfen wurde also am gerade offenen Task. Jetzt
+        zählt der übergebene Ziel-Task, und nur ersatzweise der offene. */
+  if(localKey){try{_mobPhotoDelete(localKey);}catch(e){console.warn('[Foto] verwerfen:',e);}}
+  const t=_zielTask||currentTask();
   if(t&&t.fotos){
     t.fotos=t.fotos.filter(f=>!(f.localKey===localKey&&f.name===name));
     scheduleSave();
-    renderSchnellTab(t);
+    // v191: den Reiter auffrischen, der wirklich offen ist – vorher immer den Schnell-Reiter
+    try{
+      if(_currentDetailTab==='schnell')renderSchnellTab(t);
+      else if(_currentDetailTab==='bau')renderBaudokuTab(t);
+      else if(currentTaskId===t.id)renderDetail(t);
+    }catch(e){}
     _fotoPendUpdate();
   }
   if(_vorschauBleibt)return;
@@ -12634,51 +12713,55 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
      Aufnahme am Objekt statt an derselben Leistung, und zwar lautlos. `_tuFotoZiel`
      steht dabei noch, es wird erst von der nächsten Anhäng-Leiste überschrieben. */
   const _weiterFeld = (_tuZiel&&_tuZiel.lId) ? 'tuFotoKamera' : 'fotoInputCamera';
-  // v145: Anzeige/Vorschau/Vollbild nur, wenn der Ziel-Task wirklich offen ist –
-  // beim Blitz-Foto (Tages-Sammler im Hintergrund) bleibt die Liste unangetastet.
+  /* ⛔ v191: EIN Dialog nach jeder frischen Aufnahme — überall derselbe.
+
+     Bis v190 entschied hier nicht der Weg, sondern „Anzahl × Reiter":
+       genau ein Foto und nicht im Schnell-Reiter → Vollbild (ohne Verwerfen!)
+       mehrere Fotos oder Schnell-Reiter        → Dialog (mit Verwerfen)
+     Seit `multiple` in v190 entscheidet damit faktisch das GERÄT, was Frank sieht.
+     Befund Frank: „das sieht nur anders aus wie bei den anderen" und „ich kann nicht
+     abbrechen" — beides folgt aus genau dieser Verzweigung.
+
+     ⛔ Und der Block hing an `currentTaskId===_taskId`. Tippt Frank das ✓ an einer
+     Leistung im HEUTE-Bildschirm, ist gar kein Task offen — dort erschien nach der
+     Aufnahme überhaupt nichts, kein Vollbild, kein Dialog, keine Verwerfen-Frage.
+     Der Weg vom Dach war der einzige ganz ohne Rückmeldung.
+
+     Das Vollbild bleibt, wofür es gedacht ist: vorhandene Fotos ansehen, zoomen,
+     beschriften. Von hier führt „✏️ Text / Malen" mit einem Tipp hinein. */
   if(currentTaskId===_taskId){
-  _mOpenSections['Fotos']=true;
-  _mBereichZeigenWennUebersicht('Fotos'); // v188: frisches Foto zeigen – aber nur, wenn Frank auf der Übersicht steht
-  renderDetail(t);
-  if(_currentDetailTab==='schnell'){
-    _schnellArchivOffen=true; // v153: frische Fotos sollen direkt sichtbar sein
-    renderSchnellTab(t);
-    // v153: ALLE frischen Aufnahmen durchreichen, nicht nur die letzte – bei einer
-    // Galerie-Serie kam man an die übrigen sonst nicht mehr heran.
-    if(fotoObjs&&fotoObjs.length)_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t,{kameraFeld:_weiterFeld});
+    _mOpenSections['Fotos']=true;
+    _mBereichZeigenWennUebersicht('Fotos'); // v188: frisches Foto zeigen – aber nur, wenn Frank auf der Übersicht steht
+    renderDetail(t);
+    if(_currentDetailTab==='schnell'){
+      _schnellArchivOffen=true; // v153: frische Fotos sollen direkt sichtbar sein
+      renderSchnellTab(t);
+    }
+    if(_currentDetailTab==='tagebuch'){try{renderTagebuchTab(t);}catch(e){console.warn('[MTB]',e);}} // v124: frisches Foto sofort im Tagesblock
   }
-  if(_currentDetailTab==='tagebuch'){try{renderTagebuchTab(t);}catch(e){console.warn('[MTB]',e);}} // v124: frisches Foto sofort im Tagesblock
-  // v109: EIN neues Foto (Kamera) → direkt Vollbild mit aufgeklapptem Textfeld öffnen
-  // (Wunsch Frank – vorher musste man das Foto erst in der Foto-Sektion suchen).
-  // Nicht im Schnell-Tab (der hat seine eigene Vorschau + Notizfeld). Upload läuft im Hintergrund weiter.
-  if(fotoObjs.length===1&&_currentDetailTab!=='schnell'){
-    const _ni=t.fotos.indexOf(fotoObjs[0].fo);
-    // v139 (Wunsch Frank, iPhone): das Schreibfenster öffnet sich NICHT mehr ungefragt –
-    // am iPhone (≤520px) erscheint nur das Foto, Text per „📝 Text"-Knopf (Ausklappfunktion).
-    // Tablet (>520px) behält den Auto-Aufruf (S-Pen-Handschrift direkt losschreiben).
-    const _autoText=!(window.matchMedia&&window.matchMedia('(max-width:520px)').matches);
-    if(_ni>=0){try{
-      openFotoFullscreen(_ni);
-      // v185: Erst NACH dem Öffnen einschalten – openFotoFullscreen baut die Leiste neu auf.
-      // Nur beim Kamera-Weg: aus der Galerie holt man mehrere auf einmal, da hilft der Knopf nicht.
-      if(_kameraWeg) _lbWeiterBtnSetzen(_weiterFeld); // v189: bei Leistungs-Fotos das Leistungs-Feld
-      if(_autoText)setTimeout(()=>{try{lbEditCaption();}catch(e){}},300);
-    }catch(e){}}
-  }
-  /* v185: Mehrere frische Aufnahmen ausserhalb des Schnell-Reiters – bis v184 passierte
-     hier GAR NICHTS: das Vollbild oben greift nur bei genau einem Foto, der Dialog nur
-     im Schnell-Reiter. Wer aus der Galerie fünf Bilder holte, sah sie erst nach dem
-     Zuklappen in der Liste. Jetzt bekommt er denselben Dialog wie im Schnell-Reiter. */
-  else if(fotoObjs.length>1&&_currentDetailTab!=='schnell'){
-    try{_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t,{kameraFeld:_weiterFeld});}catch(e){console.warn('[Foto-Vorschau]',e);}
-  }
-  }
+  /* Der Dialog kommt IMMER — auch wenn der Ziel-Task nicht offen ist (Blitz-Foto,
+     Heute-Bildschirm). Dann fehlen nur die Knöpfe, die einen offenen Task brauchen:
+     „✏️ Text / Malen" greift über currentTask() und liefe sonst ins Leere. */
+  let _entscheidung=Promise.resolve();
+  try{
+    _entscheidung=_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),t,{
+      kameraFeld:_weiterFeld,
+      bearbeiten:(currentTaskId===_taskId),
+      weiteres:_kameraWeg   // v191: nach Galerie-Bildern kein Kamera-Angebot
+    })||Promise.resolve();
+  }catch(e){console.warn('[Foto-Vorschau]',e);}
   // Verkleinern + IndexedDB-Sicherung sequenziell, mit sichtbarem Fortschritt
   // v174: Verkleinern (v78) + GPS-Auffüllung (v145) + Warnung (v146) wohnen jetzt im
   // gemeinsamen Baustein _fotoUebernahme – dieselbe Behandlung bekommen damit auch
   // Schnellnotiz, Wartungs-Foto (v173), Dachplan-Pins und Wartungsprotokoll.
   let _fi=0;
   for(const o of fotoObjs){
+    /* ⛔ v191: Ein bereits verworfenes Foto wird gar nicht erst gesichert. Sonst legte
+       _mobPhotoSave hier einen frischen Geräte-Eintrag OHNE Erledigt-Vermerk an — und
+       die Waisen-Rettung hängte das eben verworfene Bild später wieder an den Task.
+       Genau dieser Ablauf war einer der zwei Wege, über die ein Verwerfen bis v190
+       rückgängig gemacht wurde. */
+    if(o.fo._entscheidung==='verworfen')continue;
     _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' wird übernommen…');
     const u=await _fotoUebernahme(o.file);
     o.file=u.file;
@@ -12690,6 +12773,8 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
       // v143: taskId mitspeichern – verwaiste Fotos (App-Kill vor dem Task-Save)
       // können damit beim nächsten Start wieder an ihren Task gehängt werden.
       await _mobPhotoSave(o.fo.localKey,dataUrl,{taskId:_taskId,name:o.fo.name||''});
+      // v191: Wurde WÄHREND des Verkleinerns verworfen, den Eintrag gleich wieder weg.
+      if(o.fo._entscheidung==='verworfen'){try{await _mobPhotoDelete(o.fo.localKey);}catch(e2){}}
     }catch(e){console.warn('[uploadFoto] localKey save:',e);}
   }
 
@@ -12699,13 +12784,27 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   _saveMobileBackup();
   try{clearTimeout(saveTimer);await saveFile();}catch(e){console.warn('[uploadFoto] Zwischen-Save:',e);}
 
+  /* ⛔ v191 — DAS TOR. Ab hier geht es nach Drive, und ab hier erst.
+     Bis v190 lief der Upload los, während der Dialog noch offen stand: „Behalten"
+     startete nichts, „Verwerfen" kam zu spät. Jetzt wartet der Upload auf die
+     Entscheidung. Das Bild ist zu diesem Zeitpunkt bereits im Gerät gesichert und
+     im Zwischen-Save verankert — es kann also nichts verloren gehen, während wir
+     warten. Wer die App weglegt, ohne zu entscheiden, dessen Foto gilt als behalten
+     und wird von der Warnleuchte nachgeladen: im Zweifel behalten. */
+  try{await _entscheidung;}catch(e){console.warn('[uploadFoto] Entscheidung:',e);}
+  const _behalten=fotoObjs.filter(o=>o.fo._entscheidung!=='verworfen');
+  if(_behalten.length<fotoObjs.length){
+    const _weg=fotoObjs.length-_behalten.length;
+    toast('🗑 '+_weg+' Foto'+(_weg!==1?'s':'')+' verworfen – nicht hochgeladen','info',3000);
+  }
+
   // ── Schritt 2 (v78): Upload sequenziell mit Fortschrittsanzeige ────────────
   // Vorher: alle parallel ohne Anzeige (Speicherdruck bei vielen großen Dateien).
   // v143: Schreibziel ist IMMER der LIVE-Eintrag (_fotoLive) – der Zwischen-Save
   // kann die Task-/Foto-Referenzen durch den Konflikt-Merge ersetzt haben.
   let success=0,failed=0,lastErr='';_fi=0;
-  if(_canUpload&&folderId)for(const {file,fo} of fotoObjs){
-    _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' hochladen…');
+  if(_canUpload&&folderId)for(const {file,fo} of _behalten){
+    _fi++;setSaveInd('saving','Foto '+_fi+'/'+_behalten.length+' hochladen…');
     try{
       const meta=await _uploadOneFotoToDrive(file,folderId);
       // v146: die HOCHGELADENE Fassung cachen (komprimiert + ggf. GPS-gestempelt) – vorher
@@ -12743,7 +12842,11 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   // v143: Task per ID frisch nachschlagen + alle Fotos des Stapels sicherstellen –
   // renderDetail nur, wenn der Task noch offen ist.
-  for(const o of fotoObjs)_fotoLive(_taskId,o.fo);
+  /* ⛔ v191: NUR die behaltenen wieder einhängen. Hier stand `for(const o of fotoObjs)`
+     — und _fotoLive pusht ein nicht gefundenes Foto zurück in die Liste. Damit machte
+     diese eine Zeile jedes Verwerfen wieder rückgängig, und das Bild landete beim
+     nächsten Nachladen sogar noch in Drive. Das war der zweite der beiden Wege. */
+  for(const o of _behalten)_fotoLive(_taskId,o.fo);
   const _tl=findTaskById(_taskId)||t;
   forceSave();
   if(currentTaskId===_taskId){
@@ -12752,7 +12855,8 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
     else if(_currentDetailTab==='schnell'){renderSchnellTab(_tl);}
   }
   // v144: Mehrfach-Stapel → geführtes Betexten anbieten (ein Tipp, dann Foto für Foto)
-  if(fotoObjs.length>1)_fotoTextHintShow(_taskId,fotoObjs.map(o=>o.fo.localKey));
+  // v191: nur für die behaltenen – verworfene Fotos gibt es nicht mehr zu betexten.
+  if(_behalten.length>1)_fotoTextHintShow(_taskId,_behalten.map(o=>o.fo.localKey));
   if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' lokal gespeichert','info');
   else if(!success&&failed)toast('⚠ Upload fehlgeschlagen – Foto lokal gespeichert','info');
   }finally{
@@ -16073,10 +16177,12 @@ if (navigator.storage && navigator.storage.persist) {
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbEditCaption()">📝 Text</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbStartDraw()" style="margin-left:4px">✏️ Malen</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbGpsDialog()" style="margin-left:4px">📍 GPS</button>
-      <!-- v185: „noch eins" ohne Zurücktippen. Erscheint NUR direkt nach einer frischen
-           Aufnahme (_lbKameraFeld gesetzt) – beim Durchsehen alter Fotos wäre der Knopf
-           sinnlos und würde die Leiste nur zustellen. -->
-      <button class="lb-text-edit-btn" id="lbWeiterBtn" onclick="event.stopPropagation();lbWeiteresFoto()" style="margin-left:4px;display:none">📷 Weiteres</button>
+      <!-- ⛔ v191: „📷 Weiteres" ist hier RAUS. Seit dem Umbau geht das Vollbild nach
+           einer frischen Aufnahme nicht mehr von selbst auf — es zeigt vorhandene
+           Fotos. Der Knopf wäre also nie mehr eingeschaltet worden und hätte als tote
+           Stelle dagestanden. „Weiteres Foto" gehört jetzt in den einen Dialog, der
+           nach jeder Aufnahme kommt (siehe _showSchnellFotoPreview). Dort steht er
+           groß und neben Verwerfen — genau die Einheitlichkeit, die gefehlt hat. -->
     </div>
     <div class="lb-text-edit-form">
       <textarea id="lbTextInput" placeholder="Kurze Beschreibung zum Foto…" rows="2" autocomplete="off"></textarea>
@@ -16150,35 +16256,26 @@ function openLightbox(src,name,externalUrl,opts){
   lb.classList.add('open');
   document.addEventListener('keydown',_lbOnKey);
 }
-/* ── v185: „📷 Weiteres" im Vollbild ───────────────────────────────────────────
-   Bis v184 musste man nach jeder Aufnahme zurücktippen und den Kamera-Knopf neu
-   suchen. Der Grund: Die Kamera von iPhone und Android gibt immer GENAU EIN Bild
-   zurück und schließt sich – daran ändert auch `multiple` nichts. Der einzige
-   verlässliche Weg ist deshalb, das Eingabefeld erneut zu öffnen.
+/* ⛔ v191 ENTFERNT: `_lbKameraFeld`, `_lbWeiterBtnSetzen`, `lbWeiteresFoto`.
 
-   Der Knopf erscheint NUR direkt nach einer frischen Aufnahme. Beim Durchsehen
-   alter Fotos bleibt er aus (`_lbKameraFeld` ist dann leer) – sonst stünde er
-   sinnlos in der Leiste und würde „Text/Malen/GPS" verdrängen. */
-let _lbKameraFeld = '';
-function _lbWeiterBtnSetzen(feld){
-  _lbKameraFeld = feld || '';
-  const b = document.getElementById('lbWeiterBtn');
-  if(b) b.style.display = _lbKameraFeld ? '' : 'none';
-}
-function lbWeiteresFoto(){
-  const feld = _lbKameraFeld;
-  closeLightbox();                       // setzt _lbKameraFeld über den Aufruf unten zurück
-  const inp = feld && document.getElementById(feld);
-  if(inp) inp.click();
-  else toast('Kamera nicht erreichbar','error');
-}
+   Sie waren die Vollbild-Fassung von „noch eins" aus v185. Seit v191 geht das
+   Vollbild nach einer frischen Aufnahme nicht mehr von selbst auf — es ist der
+   Betrachter für vorhandene Fotos. Damit hätte der Knopf nie wieder eingeschaltet
+   werden können und wäre eine tote Stelle geblieben.
+
+   „📷 Weiteres Foto" steht jetzt ausschließlich im gemeinsamen Dialog, neben
+   „✕ Verwerfen". Genau darum ging es Frank: „das sieht nur anders aus wie bei den
+   anderen — warum machen wir das nicht gleich."
+
+   ⚠ `_fotoQuelle` bleibt wichtig und ist NICHT tot: es entscheidet jetzt, ob der
+   Dialog „Weiteres Foto" überhaupt anbietet (nach einem Galerie-Bild wäre ein
+   Kamera-Angebot verkehrt). Die Regel aus test_v190 gilt also weiter. */
 function closeLightbox(){
   const lb=document.getElementById('lightbox');if(!lb)return;
   lb.classList.remove('open');
   lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
   document.removeEventListener('keydown',_lbOnKey);
   _lbFotoIdx=-1;_lbFotoKey='';
-  _lbWeiterBtnSetzen('');                // v185: Knopf wieder aus – gilt nur für die frische Aufnahme
 }
 function _lbHandleTap(e){
   // v100: Touch-Tipps schließen über die Gesten-Logik (Einzeltipp verzögert, Doppeltipp = Zoom).
