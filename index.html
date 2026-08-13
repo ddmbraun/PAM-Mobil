@@ -162,9 +162,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-diktat-btn.recording{background:rgba(248,113,113,.18);border-color:var(--red);color:var(--red);animation:bauMicPulse 1.2s infinite;}
 .bau-diktat-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-right:5px;vertical-align:middle;}
 /* ── Baudoku-Timer ── */
-.bau-timer-display{background:rgba(74,222,128,.1);border:1px solid var(--green);border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;}
-.bau-timer-uhr{font-size:20px;font-weight:700;color:var(--green);font-variant-numeric:tabular-nums;letter-spacing:.04em;}
-.bau-timer-lbl{font-size:12px;color:var(--text2);}
+/* ⛔ v192 ENTFERNT: .bau-timer-display, .bau-timer-uhr, .bau-timer-lbl – Reste einer
+   früheren Stoppuhr-Fassung, im ganzen Aufbau null Verwendungen (nachgezählt).
+   Ebenso .timer-bar samt Untervarianten, .timer-top-row und .timer-display weiter
+   unten. Sie schadeten nicht, führten aber jeden in die Irre, der an ihnen schraubt
+   und sich wundert, dass nichts passiert. Die benutzten Klassen heißen bau-timer-bar,
+   bau-timer-big, bau-timer-bar-desc, timer-btn, timer-collapsed-* und timer-pulse-dot. */
 /* ── Wetter erweitert ── */
 .bau-wetter-fetched{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 13px;margin-top:8px;font-size:13px;}
 .bau-wetter-temp{font-size:calc(22px * var(--m-scale,1));font-weight:700;color:var(--accent2);}
@@ -307,6 +310,43 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-aufwand-body .sect:first-child{border-top:none}
 .bau-aufwand-body .sect-head{padding-left:0;padding-right:0}
 .bau-aufwand-body .sect-body{padding-left:0;padding-right:0;border-top:none}
+/* ══ v192: EINE FORMENSPRACHE FÜR BAUDOKU ══════════════════════════════════════
+   Befund Frank 13.08.: „das sieht anders aus wie bei den anderen." Er hatte recht,
+   und zwar an mehreren Stellen gleichzeitig: die Leistungen trugen drei nackte
+   Kreise, die Notiz-Knöpfe waren breite Textbalken, die Stoppuhr eine eigene
+   Erfindung — während Wetter längst beschriftete Kästchen hatte.
+   Ab hier gilt überall dasselbe: Symbol oben, Wort darunter, gleich groß.
+   ⚠ Die Kästchen erben die Schriftgröße vom „Aa"-Regler (--m-scale). Feste px
+   wären auf 200 % unlesbar klein. */
+.bau-karte{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.bau-karte-kopf{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px}
+.bau-karte-punkt{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:6px}
+.bau-karte-name{flex:1;min-width:0;font-size:calc(15px * var(--m-scale,1));font-weight:600;color:var(--text);line-height:1.3;overflow-wrap:anywhere}
+.bau-kaestchen{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.bau-kaestchen.zwei{grid-template-columns:repeat(2,1fr)}
+.bau-kn{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:8px 2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;min-height:52px;color:var(--text);font-family:inherit}
+.bau-kn-ico{font-size:calc(19px * var(--m-scale,1));line-height:1.1}
+.bau-kn-lbl{font-size:calc(11px * var(--m-scale,1));font-weight:700;color:var(--text2);text-align:center;line-height:1.15}
+.bau-kn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.bau-kn.primary .bau-kn-lbl{color:#fff}
+.bau-kn.fertig{background:#4a43a0;border-color:#4a43a0;color:#fff}
+.bau-kn.fertig .bau-kn-lbl{color:#fff}
+.bau-kn-zahl{font-size:calc(11px * var(--m-scale,1));font-weight:700;color:var(--accent2)}
+/* „+" im Sektionskopf – gleiche Bauart wie bei den Formularen in Task-Info */
+.sect-plus{font-size:calc(20px * var(--m-scale,1));line-height:1;padding:2px 12px;border-radius:7px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:inherit;cursor:pointer;font-weight:400;margin-right:20px;font-family:inherit}
+/* ── Stoppuhr, ausgeklappt ── */
+.uhr-neu{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 13px 13px;margin-bottom:10px}
+.uhr-neu.laeuft{border-color:var(--orange);border-width:2px;padding:11px 12px 12px}
+.uhr-neu-kopf{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.uhr-neu-zeit{font-family:'SF Mono',Consolas,monospace;font-size:calc(30px * var(--m-scale,1));font-weight:800;letter-spacing:1px;color:var(--text);font-variant-numeric:tabular-nums;flex:1}
+.uhr-neu.laeuft .uhr-neu-zeit{color:var(--orange)}
+.uhr-neu-marke{font-size:calc(10px * var(--m-scale,1));font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);background:var(--bg3);border-radius:5px;padding:3px 7px;flex-shrink:0}
+.uhr-neu.laeuft .uhr-neu-marke{color:var(--orange);background:rgba(251,146,60,.16)}
+.uhr-neu-zu{color:var(--text2);font-size:calc(16px * var(--m-scale,1));flex-shrink:0;background:none;border:none;cursor:pointer;padding:0 4px}
+.uhr-neu-feld{width:100%;box-sizing:border-box;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 12px;font-size:calc(15px * var(--m-scale,1));color:var(--text);font-family:inherit;outline:none;margin-bottom:9px;min-height:48px}
+.uhr-neu-knopf{width:100%;min-height:58px;border:none;border-radius:10px;font-size:calc(17px * var(--m-scale,1));font-weight:800;letter-spacing:.5px;cursor:pointer;font-family:inherit;color:#fff}
+.uhr-neu-knopf.start{background:var(--accent)}
+.uhr-neu-knopf.stop{background:var(--orange)}
 .field{margin-bottom:12px}
 .field label{display:block;font-size:calc(13px * var(--m-scale));color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
 .field input,.field textarea,.field select{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:12px 14px;border-radius:8px;font-size:calc(16px * var(--m-scale));font-family:inherit}
@@ -360,20 +400,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .schnell-verlauf-entry{display:flex;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--border);}
 .schnell-verlauf-ts{font-size:10px;color:var(--text2);white-space:nowrap;padding-top:2px;min-width:42px;}
 .schnell-verlauf-text{font-size:13px;color:var(--text);line-height:1.4;}
-/* ── TIMER ── */
-.timer-bar{display:flex;flex-direction:column;gap:7px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--accent);border-radius:12px;margin-bottom:10px;width:100%;box-sizing:border-box}
-.timer-bar.running{background:var(--bg2);border-color:var(--orange)}
-.timer-bar.top{position:sticky;top:0;z-index:5;margin:0 0 12px;border-width:2px;box-shadow:0 2px 10px rgba(0,0,0,.14);border-radius:0 0 12px 12px;border-top:none;}
-.timer-bar.collapsed{padding:0;gap:0;background:transparent;border:none;box-shadow:none;margin:0;}
+/* ── TIMER ── (v192: .timer-bar samt Untervarianten entfernt – siehe oben, 0 Verwendungen) */
 .timer-collapsed-strip{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--bg2);border:1px solid var(--border);border-bottom:2px solid var(--accent2);cursor:pointer;min-height:38px;border-radius:0 0 10px 10px;}
 .timer-collapsed-strip.running{border-bottom-color:var(--orange);}
 .timer-collapsed-time{font-family:'SF Mono',Consolas,monospace;font-size:16px;font-weight:700;letter-spacing:1px;color:var(--text);}
 .timer-collapsed-strip.running .timer-collapsed-time{color:var(--orange);}
 .timer-collapsed-desc{font-size:12px;color:var(--text2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .timer-collapsed-expand{font-size:18px;color:var(--text2);flex-shrink:0;}
-.timer-top-row{display:flex;align-items:center;gap:8px;width:100%}
-.timer-display{flex:0 0 auto;font-family:'SF Mono',Consolas,monospace;font-size:clamp(18px,5vw,24px);font-weight:700;letter-spacing:1px;color:var(--text);line-height:1.1;min-width:0;overflow:hidden}
-.timer-bar.running .timer-display{color:var(--orange)}
+/* v192: .timer-top-row und .timer-display entfernt – 0 Verwendungen, siehe oben. */
 .timer-btn{flex:1;padding:0;border-radius:9px;font-weight:700;border:none;cursor:pointer;font-size:14px;height:44px;min-width:0}
 .timer-btn.start{background:var(--accent);color:white}
 .timer-btn.stop{background:var(--orange);color:white}
@@ -6019,14 +6053,18 @@ function _tuMobObjektZeilen(t,gross,schlank){
     // v180: In der schlanken Fassung stehen Name und Knöpfe UNTEREINANDER –
     // sonst quetschen die drei Knöpfe lange Namen weg (Befund Frank). Der Name
     // bekommt die volle Breite und darf umbrechen.
-    var knoepfe=_tuMobKnopfReihe(t,l,kH,sIco);
+    var knoepfe=_tuMobKnopfReihe(t,l,kH,sIco,!!schlank); // v192: in Baudoku beschriftet
     if(schlank){
-      return '<div style="padding:10px 0;border-bottom:0.5px solid var(--border);">'
-        + '<div style="display:flex;align-items:flex-start;gap:9px;">'
-        +   '<span style="width:8px;height:8px;border-radius:50%;background:'+farbe+';flex-shrink:0;margin-top:6px;"></span>'
-        +   '<div style="flex:1;min-width:0;font-size:'+_tuMs(sName)+';font-weight:600;color:var(--text);overflow-wrap:anywhere;line-height:1.3;">'+esc(l.name||'')+'</div>'
+      /* v192: aus der Zeile mit Trennstrich wird eine Karte. Der Ampelpunkt bleibt –
+         er sagt „dran oder nicht" und war nie das Problem. Der Statustext bleibt
+         bewusst WEG: das war Franks Entscheidung aus v179 („draußen zählt der
+         Handgriff; Datum und Zähler stehen in Task-Info"). */
+      return '<div class="bau-karte">'
+        + '<div class="bau-karte-kopf">'
+        +   '<span class="bau-karte-punkt" style="background:'+farbe+';"></span>'
+        +   '<span class="bau-karte-name">'+esc(l.name||'')+'</span>'
         + '</div>'
-        + '<div style="display:flex;justify-content:flex-end;gap:9px;margin-top:8px;">'+knoepfe+'</div>'
+        + knoepfe
         + '</div>';
     }
     return '<div style="display:flex;align-items:center;gap:9px;padding:'+(gross?'11px 0':'9px 0')+';border-bottom:0.5px solid var(--border);">'
@@ -6044,7 +6082,30 @@ function _tuMobObjektZeilen(t,gross,schlank){
 // gebraucht (rechts neben dem Text in Task-Info, unter dem Namen in Baudoku).
 // Die Knopfhöhe bleibt fest, sonst springt bei 200 % Schrift die ganze Zeile
 // aus dem Bild; getroffen werden sie so oder so.
-function _tuMobKnopfReihe(t,l,kH,sIco){
+/* v192: `beschriftet` = die drei Knöpfe als Kästchen mit Wort darunter, statt als
+   nackte Kreise. Befund Frank: „das sieht anders aus wie bei den anderen" — welcher
+   Kreis was tut, sieht man ihnen nicht an.
+   ⚠ Gilt NUR für die schlanke Fassung (Baudoku). In Task-Info stehen die Knöpfe
+   rechts NEBEN dem Textblock in einer Zeile; Beschriftungen hätten dort keinen Platz.
+   Die Weiche steht in _tuMobObjektZeilen, wo `gross` und `schlank` ohnehin bekannt
+   sind — es ist dieselbe Ein-Zeilen-Entscheidung wie bei der Knopfhöhe. */
+function _tuMobKnopfReihe(t,l,kH,sIco,beschriftet){
+  if(beschriftet){
+    var kn=function(ico,lbl,klasse,ruf,titel){
+      return '<button type="button" class="bau-kn'+(klasse?' '+klasse:'')+'" title="'+escAttr(titel||'')+'"'
+        +' onclick="event.stopPropagation();'+ruf+'">'
+        +'<span class="bau-kn-ico">'+ico+'</span><span class="bau-kn-lbl">'+lbl+'</span></button>';
+    };
+    return '<div class="bau-kaestchen">'
+      + kn('📎','Anhang','', '_tuMobFotoNachreichen(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Foto oder Protokoll anhängen – auch schon vor dem Abhaken')
+      + kn('📝','Notiz','',  '_tuMobNotiz(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Notiz zum letzten Termin')
+      + kn('✓','Erledigt','fertig','_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Heute als erledigt eintragen')
+      + '</div>';
+  }
+  /* ⚠ Die runde Fassung bleibt in DERSELBEN Funktion, bewusst nicht in einer eigenen.
+     Vier Prüfsuiten schneiden `_tuMobKnopfReihe` aus dem Quelltext und führen sie aus;
+     eine ausgelagerte Hilfsfunktion kennen sie nicht und die Suiten brechen ab. Beim
+     ersten Anlauf ist mir genau das passiert. */
   return '<span onclick="event.stopPropagation();_tuMobFotoNachreichen(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" title="Foto oder Protokoll anhängen – auch schon vor dem Abhaken" style="flex-shrink:0;min-width:'+(kH+4)+'px;height:'+kH+'px;border-radius:'+Math.round(kH/2)+'px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);display:inline-flex;align-items:center;justify-content:center;font-size:'+sIco+'px;cursor:pointer;">📎</span>'
     + _tuMobNotizKnopf(t.id,l.id,kH)
     + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" title="Heute als erledigt eintragen" style="flex-shrink:0;min-width:'+(kH+6)+'px;height:'+kH+'px;border-radius:'+Math.round(kH/2)+'px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:'+(sIco+1)+'px;font-weight:700;cursor:pointer;">✓</span>';
@@ -6059,10 +6120,16 @@ function _tuMobBaudokuBlock(t){
   var faellig=ls.filter(function(l){return _tuFaellig(l);}).length;
   // v179: als richtiger Klappkasten. Vorbelegung nur EINMAL – danach gilt, was
   // Frank zuletzt eingestellt hat (der Zustand liegt jetzt dauerhaft im Gerät).
-  if(!('bau_Turnus' in _mOpenSections))_mOpenSections['bau_Turnus']=faellig>0;
+  /* ⛔ v192: Die Vorbelegung „offen, wenn etwas fällig ist" ist RAUS. Wunsch Frank:
+     „ich hätte gerne alles geschlossen." Es wird dabei nichts versteckt — die neue
+     Kurzfassung im Kopf sagt „3 Leistungen · 1 fällig", die Information steht also
+     weiterhin da, nur einen Fingertipp entfernt. Damit gilt: was Frank zuklappt,
+     bleibt zu (seit v189 überlebt der Zustand auch den Zurück-Pfeil). */
   return '<div class="sect'+(isSectOpen('bau_Turnus')?' open':'')+'" data-sect="bau_Turnus" style="margin:10px 0 14px;">'
-    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">🔁 Leistungen'
-    +' <span style="font-size:11px;font-weight:400;text-transform:none;">('+ls.length+(faellig?' · '+faellig+' fällig':'')+')</span></div>'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>🔁 Leistungen</span>'
+    +'<span class="bau-sect-summary">'+ls.length+' Leistung'+(ls.length!==1?'en':'')+(faellig?' · '+faellig+' fällig':' · nichts fällig')+'</span>'
+    +'</div></div>'
     +'<div class="sect-body"><div id="mTuListBau">'+_tuMobObjektZeilen(t,true,true)+'</div></div>'
     +'</div>';
 }
@@ -9403,6 +9470,34 @@ function _schnellFotoVerwerfen(localKey, name, _vorschauBleibt, _zielTask){
   const prev=document.getElementById('schnellFotoPreview');
   if(prev)prev.remove();
 }
+/* ── v192: Kurzfassungen für die Kopfzeilen ───────────────────────────────────
+   Zugeklappt soll jede Zeile sagen, was dahintersteckt. Wetter und der Sammelkasten
+   konnten das schon; Leistungen, Fotos und Notizen nicht — dort stand nur eine Zahl
+   in Klammern. Genau das war Franks „zwei sehen anders aus als drei". */
+function _bauHeuteFotos(t){
+  try{
+    const heute=_tuHeute();
+    return (t.fotos||[]).filter(f=>String((f&&(f.ts||f.uploadedAt))||'').slice(0,10)===heute).length;
+  }catch(e){return 0;}
+}
+function _bauNotizKurz(t){
+  const v=(t&&t.notizVerlauf)||[];
+  if(!v.length)return 'noch keine';
+  const letzte=v[v.length-1];
+  let zeit='';
+  try{
+    const roh=String((letzte&&letzte.ts)||'');
+    if(/^\d{4}-\d{2}-\d{2}T/.test(roh))zeit=new Date(roh).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+    else if(/\d{2}:\d{2}/.test(roh))zeit=(roh.match(/\d{2}:\d{2}/)||[''])[0];
+  }catch(e){}
+  return v.length+' Eintr'+(v.length!==1?'äge':'ag')+(zeit?' · zuletzt '+zeit:'');
+}
+// Neue Notiz aus dem Kopf heraus: aufklappen und das Feld scharf stellen.
+function _bauNotizNeu(){
+  const kasten=document.querySelector('[data-sect="bau_Notizen"]');
+  if(kasten&&!kasten.classList.contains('open'))toggleMSect(kasten);
+  setTimeout(function(){const ta=document.getElementById('bauNotizQuick');if(ta)try{ta.focus();}catch(e){}},60);
+}
 function renderBaudokuTab(t){
   const body=document.getElementById('detailBodyBau');
   if(!body)return;
@@ -9430,8 +9525,11 @@ function renderBaudokuTab(t){
   const maschinen=t.baudokuMaschinen||[];
   const personalAusgewaehlt=t.baudokuPersonal||[];
   const wetter=t.wetter||'';
-  // Notizen standardmäßig offen
-  if(!('bau_Notizen' in _mOpenSections))_mOpenSections['bau_Notizen']=true;
+  /* ⛔ v192: Die Vorbelegung „Notizen standardmäßig offen" ist RAUS. Wunsch Frank:
+     „ich hätte gerne alles geschlossen." Das harte ' open' im Markup war schon in
+     v189 weg — beides zusammen war nötig, eines allein hätte nichts bewirkt.
+     Neu tippen geht trotzdem ohne Umweg: das „+" im Kopf klappt auf und stellt das
+     Feld scharf. */
   const oc=k=>isSectOpen('bau_'+k)?' open':'';
   const _pm=(von,bis)=>{try{const[vh,vm]=(von||'0:0').split(':').map(Number);const[bh,bm]=(bis||'0:0').split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
   const zeitMin=zeitEntries.reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
@@ -9470,21 +9568,38 @@ function renderBaudokuTab(t){
           +'</div>'
         +'</div>';
       }
-      return '<div id="bauTimerBar" class="bau-timer-bar'+(running?' running':'')+'">'
-        +'<div class="bau-timer-bar-row">'
-          +'<div id="bauTimerDisplay" class="bau-timer-big">'+formatTimerFor(t.id)+'</div>'
-          +(running
-            ?'<button class="timer-btn stop" style="min-height:52px;" onclick="stopBauTimer()">⏹ Stop</button>'
-            :'<button class="timer-btn start" style="min-height:52px;" onclick="startBauTimer()">▶ Start</button>')
-          +'<button onclick="toggleTimerCollapse()" title="Einklappen" style="flex:0 0 44px;height:52px;background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text2);padding:0;">▴</button>'
+      /* ⛔ v192: Zahl und Knopf teilten sich eine Zeile — die Zahl bis 28 px fett, der
+         Knopf schmal daneben. Mit Handschuhen ist das die falsche Verteilung: der
+         Knopf ist das, was getroffen werden muss. Jetzt steht die Zeit allein und
+         groß, darunter die Tätigkeit, darunter EIN Knopf über die volle Breite.
+         Und man sieht sofort, ob sie läuft: Marke „LÄUFT" plus Pulspunkt, bisher gab
+         es den Punkt nur im eingeklappten Streifen — also genau dann, wenn man
+         ohnehin nicht hinschaut. Dieselbe Bauart steht in Task-Info (Suche: uhr-neu). */
+      return '<div id="bauTimerBar" class="uhr-neu'+(running?' laeuft':'')+'" style="position:sticky;top:0;z-index:5;">'
+        +'<div class="uhr-neu-kopf">'
+          +'<span class="timer-pulse-dot'+(running?' running':'')+'"'+(running?'':' style="animation:none;opacity:.45;"')+' aria-hidden="true"></span>'
+          +'<span id="bauTimerDisplay" class="uhr-neu-zeit">'+formatTimerFor(t.id)+'</span>'
+          +'<span class="uhr-neu-marke">'+(running?'läuft':'gestoppt')+'</span>'
+          +'<button type="button" class="uhr-neu-zu" title="Einklappen" onclick="toggleTimerCollapse()">▴</button>'
         +'</div>'
-        +'<input id="bauTimerDesc" class="bau-timer-bar-desc" type="text" placeholder="Tätigkeitsbeschreibung vor dem Start eingeben…" maxlength="120"'
-          +(running?' disabled':'')+' value="'+escAttr(savedDesc)+'" onchange="_bauSaveDesc(this.value)" autocomplete="off">'
+        +'<input id="bauTimerDesc" class="uhr-neu-feld" type="text" placeholder="Woran arbeitest du gerade?" maxlength="120"'
+          +' value="'+escAttr(savedDesc)+'" onchange="_bauSaveDesc(this.value)" autocomplete="off">'
+        +(running
+          ?'<button type="button" class="uhr-neu-knopf stop" onclick="stopBauTimer()">⏹  Stoppen</button>'
+          :'<button type="button" class="uhr-neu-knopf start" onclick="startBauTimer()">▶  Starten</button>')
       +'</div>';
     })()
     // ── Fotos: 4-Grid, einklappbar ──
+    /* v192: Kurzfassung im Kopf – bis v191 hatten nur Wetter und der Sammelkasten eine.
+       Zugeklappt stand da „📷 Fotos (9)": man sah die Zahl, aber nicht, ob die Bilder
+       von heute sind. Dazu ein „+", das sofort die Kamera öffnet, ohne aufzuklappen. */
     +'<div class="sect'+(isSectOpen('bau_Fotos')?' open':'')+'" data-sect="bau_Fotos">'
-    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📷 Fotos'+(fotos.length?' ('+fotos.length+')':'')+'</div>'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>📷 Fotos</span>'
+    +'<span class="bau-sect-summary">'+(fotos.length?(fotos.length+' Bild'+(fotos.length!==1?'er':'')+(_bauHeuteFotos(t)?' · '+_bauHeuteFotos(t)+' heute':'')):'noch keine')+'</span>'
+    +'</div>'
+    +'<button type="button" class="sect-plus" title="Neues Foto" onclick="event.stopPropagation();document.getElementById(\'fotoInputCamera\').click()">+</button>'
+    +'</div>'
     +'<div class="sect-body" style="padding-bottom:12px;">'
     +'<div id="bauFotoGrid" class="bau-foto-grid"></div>'
     +'<div style="display:flex;gap:8px;margin-top:4px;">'
@@ -9502,19 +9617,28 @@ function renderBaudokuTab(t){
        bau_Material, bau_Maschinen, bau_Wetter setzen die Klasse alle sauber über oc).
        Die Vorbelegung „beim allerersten Mal offen" bleibt — die steht oben in der
        Zeile `if(!('bau_Notizen' in _mOpenSections))`. */
+    /* v192: Kurzfassung mit Uhrzeit des letzten Eintrags + „+" für eine neue Notiz,
+       ohne vorher aufzuklappen (Wunsch Frank: „kann ich hier auch ein Plus bekommen,
+       das eine neue Notiz möglich macht"). */
     +'<div class="sect'+oc('Notizen')+'" data-sect="bau_Notizen">'
-    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">📝 Notizen'
-    +((t.notizVerlauf&&t.notizVerlauf.length)?' <span style="font-size:11px;font-weight:400;text-transform:none;">('+t.notizVerlauf.length+')</span>':'')+'</div>'
+    +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'
+    +'<div class="bau-sect-head-inner"><span>📝 Notizen</span>'
+    +'<span class="bau-sect-summary">'+_bauNotizKurz(t)+'</span>'
+    +'</div>'
+    +'<button type="button" class="sect-plus" title="Neue Notiz" onclick="event.stopPropagation();_bauNotizNeu()">+</button>'
+    +'</div>'
     +'<div class="sect-body">'
     +'<textarea id="bauNotizQuick" class="bau-notiz-quick" placeholder="Notiz, Befund, Beobachtung…" maxlength="500" rows="2" autocomplete="off" style="width:100%;margin-bottom:8px;"'
     +' onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();_addBauNotizFromInput();}"'
     +' oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\';"></textarea>'
-    +'<div style="display:flex;gap:8px;margin-bottom:12px;">'
-    +'<button class="inline-btn bau-diktat-btn" id="baudokuDiktatBtn" style="flex:1;min-height:48px;font-size:15px;" onclick="startBaudokuDiktat()">🎤 Diktieren</button>'
-    +'<button class="inline-btn primary" style="flex:1;min-height:48px;font-size:15px;font-weight:700;" onclick="_addBauNotizFromInput()">✓ Speichern</button>'
-    +'</div>'
-    +'<div id="bauNotizVerlaufToggle" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--accent2);padding:4px 0 6px;" onclick="_toggleBauNotizVerlauf()">'
-    +'▸ Verlauf ('+(t.notizVerlauf&&t.notizVerlauf.length?t.notizVerlauf.length:0)+' Einträge)'
+    /* v192: drei gleich große Kästchen statt zwei breiter Balken und einer kleinen
+       blauen Zeile. Der Verlauf ging als Textzeile unter — jetzt steht er gleich-
+       berechtigt daneben und trägt seine Zahl. */
+    +'<div class="bau-kaestchen" style="margin-bottom:10px;">'
+    +'<button type="button" class="bau-kn bau-diktat-btn" id="baudokuDiktatBtn" onclick="startBaudokuDiktat()"><span class="bau-kn-ico">🎤</span><span class="bau-kn-lbl">Diktieren</span></button>'
+    +'<button type="button" class="bau-kn primary" onclick="_addBauNotizFromInput()"><span class="bau-kn-ico">✓</span><span class="bau-kn-lbl">Speichern</span></button>'
+    +'<button type="button" class="bau-kn" id="bauNotizVerlaufToggle" onclick="_toggleBauNotizVerlauf()"><span class="bau-kn-ico">🕘</span><span class="bau-kn-lbl">Verlauf</span>'
+    +'<span class="bau-kn-zahl">'+(t.notizVerlauf&&t.notizVerlauf.length?t.notizVerlauf.length:0)+'</span></button>'
     +'</div>'
     +'<div id="bauNotizList" style="display:none;">'+renderNotizen(t.notizVerlauf||[])+'</div>'
     +'</div></div>'
@@ -9634,11 +9758,15 @@ function _renderBauFotoGrid(t){
 function _toggleBauNotizVerlauf(){
   const list=document.getElementById('bauNotizList');
   const toggle=document.getElementById('bauNotizVerlaufToggle');
-  if(!list||!toggle)return;
-  const open=list.style.display!=='none';
-  list.style.display=open?'none':'block';
-  const n=toggle.textContent.replace(/[^0-9]/g,'');
-  toggle.textContent=(open?'▸ ':'▾ ')+'Verlauf ('+n+' Einträge)';
+  if(!list)return;
+  const offen=list.style.display!=='none';
+  list.style.display=offen?'none':'block';
+  /* ⛔ v192: Hier wurde die Beschriftung des Knopfes neu geschrieben. Das hätte den neuen Kästchen-Knopf
+     beim ERSTEN Antippen zerlegt — textContent ersetzt sämtliche Kindelemente durch
+     reinen Text, Symbol und Zahl wären weg gewesen und der Knopf danach nur noch ein
+     Wort. Ein Fehler, den keine Prüfung sieht und der erst beim zweiten Blick auffällt.
+     Jetzt wird nur noch die Hervorhebung umgeschaltet; Symbol und Zahl bleiben stehen. */
+  if(toggle)toggle.classList.toggle('primary',!offen);
 }
 
 function _addBauNotizFromInput(){
@@ -10443,16 +10571,18 @@ function renderDetail(t){
       // findet), die beiden Drive-Verweise stehen jetzt auf ihrer eigenen Seite –
       // der Drive-Ordner für Fotos gehört zu den Fotos, nicht in die Kopfzeile.
       if(!collapsed){
-        h+='<div id="timerBar" class="bau-timer-bar'+(running?' running':'')+'" style="position:static;border-radius:12px;border-top:2px solid '+(running?'var(--orange)':'var(--accent2)')+';">'
-          +'<div class="bau-timer-bar-row">'
-            +'<div id="timerDisplay" class="bau-timer-big">'+formatTimerFor(t.id)+'</div>'
-            +'<button class="timer-btn '+(running?'stop':'start')+'" style="min-height:52px;" onclick="toggleMobileTimer(\''+escAttr(t.id)+'\')">'+(running?'⏹ Stopp':'▶ Start')+'</button>'
-            +'<button onclick="toggleTimerCollapse()" title="Einklappen" style="flex:0 0 44px;height:52px;background:transparent;border:none;cursor:pointer;font-size:18px;color:var(--text2);padding:0;">▴</button>'
+        // v192: dieselbe Bauart wie in Baudoku – eine Stoppuhr, ein Aussehen.
+        h+='<div id="timerBar" class="uhr-neu'+(running?' laeuft':'')+'">'
+          +'<div class="uhr-neu-kopf">'
+            +'<span class="timer-pulse-dot'+(running?' running':'')+'"'+(running?'':' style="animation:none;opacity:.45;"')+' aria-hidden="true"></span>'
+            +'<span id="timerDisplay" class="uhr-neu-zeit">'+formatTimerFor(t.id)+'</span>'
+            +'<span class="uhr-neu-marke">'+(running?'läuft':'gestoppt')+'</span>'
+            +'<button type="button" class="uhr-neu-zu" title="Einklappen" onclick="toggleTimerCollapse()">▴</button>'
           +'</div>'
-          +'<input id="timerDesc" type="text" placeholder="Tätigkeitsbeschreibung vor dem Start eingeben…" maxlength="120"'
-            +(running?' disabled':'')
-            +' value="'+escAttr(savedDesc)+'"'
-            +' class="bau-timer-bar-desc" autocomplete="off">'
+          +'<input id="timerDesc" class="uhr-neu-feld" type="text" placeholder="Woran arbeitest du gerade?" maxlength="120"'
+            +' value="'+escAttr(savedDesc)+'" autocomplete="off">'
+          +'<button type="button" class="uhr-neu-knopf '+(running?'stop':'start')+'" onclick="toggleMobileTimer(\''+escAttr(t.id)+'\')">'
+            +(running?'⏹  Stoppen':'▶  Starten')+'</button>'
         +'</div>';
       }
       // v188: 🏠 Dachplan und 📴 Offline stehen nicht mehr hier oben, sondern in
