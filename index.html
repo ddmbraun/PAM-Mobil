@@ -10173,6 +10173,10 @@ function renderDetail(t){
     // ── ➕ AUFTRAG AM OBJEKT (v181) ── ganz oben: dafür steht Frank vor Ort da.
     //    Öffnet das Schnell-Erfassen mit schon vorgewähltem Objekt.
     +_qaObjektAuftragKnopf(t)
+    // ── v186: darunter die Aufträge, die schon dranhängen (auch die am PC
+    //    ausgebauten), und am Auftrag selbst der Rückweg zum Objekt.
+    +_qaObjektAuftragListe(t)
+    +_qaObjektRueckweg(t)
     // ── WIEDERKEHRENDE LEISTUNGEN (v177) ── steht weit oben, weil man am Objekt
     //    genau deswegen hier ist. Erscheint nur, wenn welche angelegt sind.
     +_tuMobObjektSektion(t,oc)
@@ -14571,6 +14575,72 @@ function _qaObjektAuftragKnopf(t){
   }catch(e){return '';}
 }
 
+/* ── v186: Was hängt an diesem Objekt? ────────────────────────────────────────
+   Gesucht wird in ALLEN Töpfen, die das Handy kennt: den freigegebenen Boards
+   (boards), den nicht freigegebenen (hiddenBoards) und den durch den Spaltenfilter
+   weggefilterten Karten (_mobileFilteredOut). Grund: Wird der Auftrag am PC zum
+   richtigen Auftrag ausgebaut, wandert er in ein anderes Board – ist das am Handy
+   nicht freigegeben, verschwände er sonst stillschweigend aus der Liste. So steht
+   er grau da mit dem Vermerk „nur am PC" und man weiß wenigstens, dass es ihn gibt. */
+function _qaObjektAuftraegeSammle(objektId){
+  var treffer=[];
+  if(!objektId)return treffer;
+  var nimm=function(topf,sichtbar){
+    if(!topf)return;
+    Object.keys(topf).forEach(function(b){
+      if(b.charAt(0)==='_')return;
+      (topf[b]||[]).forEach(function(t){
+        if(t&&t.objektId===objektId)treffer.push({t:t,board:b,sichtbar:sichtbar});
+      });
+    });
+  };
+  nimm(boards,true);
+  try{nimm(hiddenBoards,false);}catch(e){}
+  try{nimm(_mobileFilteredOut,false);}catch(e){}
+  treffer.sort(function(a,b){return String(b.t.createdAt||'').localeCompare(String(a.t.createdAt||''));});
+  return treffer;
+}
+function _qaObjektAuftragListe(t){
+  try{
+    var bn=findBoardByTaskId(t.id);
+    if((boardTypes[bn]||'baustelle')!=='immobilie'||t.objektId)return '';
+    var liste=_qaObjektAuftraegeSammle(t.id);
+    if(!liste.length)return '';
+    var zeilen=liste.map(function(e){
+      var roh=String(e.t.createdAt||'').substring(0,10);
+      var datum=/^\d{4}-\d{2}-\d{2}$/.test(roh)?roh.split('-').reverse().join('.'):'';
+      var wo=e.sichtbar?(esc(e.board)+(e.t.status?' · '+esc(e.t.status):'')):'nur am PC';
+      return '<div style="display:flex;align-items:center;gap:8px;padding:'+_tuMs(9)+' 2px;border-top:0.5px solid var(--border);'
+        +(e.sichtbar?'':'opacity:.55;')+'"'
+        +(e.sichtbar?' onclick="openDetail(\''+esc(e.t.id)+'\')"':'')+'>'
+        +'<span style="flex:1;min-width:0;">'
+          +'<span style="display:block;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(e.t.title||'(ohne Titel)')+'</span>'
+          +'<span style="display:block;font-size:'+_tuMs(11)+';color:var(--text2);">'+wo+(datum?' · '+datum:'')+'</span>'
+        +'</span>'
+        +(e.sichtbar?'<span style="flex-shrink:0;color:var(--text2);font-size:'+_tuMs(16)+';">›</span>':'')
+        +'</div>';
+    }).join('');
+    return '<div style="margin:0 0 12px;padding:'+_tuMs(8)+' '+_tuMs(10)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);">'
+      +'<div style="font-size:'+_tuMs(12)+';font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;">🛠 Aufträge an diesem Objekt ('+liste.length+')</div>'
+      +zeilen
+      +'</div>';
+  }catch(e){console.warn('[v186] Auftragsliste:',e);return '';}
+}
+/* v186: Rückweg – am Auftrag steht, zu welchem Objekt er gehört. Antippen öffnet es. */
+function _qaObjektRueckweg(t){
+  try{
+    if(!t||!t.objektId)return '';
+    var offen=null;
+    Object.keys(boards||{}).forEach(function(b){
+      if(offen||b.charAt(0)==='_')return;
+      (boards[b]||[]).forEach(function(x){if(!offen&&x&&x.id===t.objektId)offen=x;});
+    });
+    var name=esc(t.objektName||(offen&&offen.title)||'Objekt');
+    if(!offen)return '<div style="margin:2px 0 10px;padding:'+_tuMs(9)+' '+_tuMs(12)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);font-size:'+_tuMs(13)+';color:var(--text2);">🏠 '+name+' <span style="opacity:.8;">· nur am PC</span></div>';
+    return '<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="openDetail(\''+esc(t.objektId)+'\')">🏠 Zum Objekt: '+name+'</button>';
+  }catch(e){console.warn('[v186] Rückweg:',e);return '';}
+}
+
 function newTask(vorObjekt){
   const savedBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
   // v181: mit vorgewähltem Objekt braucht es kein Schnell-Board – Ziel ist das Objekt-Board
@@ -14650,6 +14720,15 @@ async function _submitQuickAdd(){
     newT.objektId=auftragObjekt.id;
     newT.objektName=auftragObjekt.title||'';
     if(!newT.adresse)newT.adresse=auftragObjekt.adresse||'';
+    // v186: NAS-Pfad des Objekts erben. Bis v185 blieb er leer bzw. stand auf dem
+    // allgemeinen Kunden-Ordner – am Rechner (b642) wurde er dagegen immer geerbt.
+    // Beim Ausbauen zum richtigen Auftrag setzt b652 ihn dann auf den neuen Ordner.
+    if(!newT.nas&&auftragObjekt.nas)newT.nas=auftragObjekt.nas;
+    // v187: dasselbe für „Auftraggeber / Hausverwaltung". Der Rechner erbt sie seit
+    // b642, das Handy nicht – bei allen 8 bisher am Handy angelegten Aufträgen war
+    // die Zeile leer, obwohl sie an allen 31 Objekten gefüllt ist. Damit erben Handy
+    // und Rechner jetzt dasselbe: Adresse, NAS-Pfad, Hausverwaltung.
+    if(!newT.hausverwaltung&&auftragObjekt.hausverwaltung)newT.hausverwaltung=auftragObjekt.hausverwaltung;
   }
   // Foto-Referenzen VOR _closeQuickAdd() sichern – _closeQuickAdd leert _quickAddFotoFiles
   const fotoFiles=_quickAddFotoFiles.slice();
