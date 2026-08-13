@@ -9423,7 +9423,16 @@ function _showSchnellFotoPreview(fo, t, opt){
     const f=aktuell();
     const i=liveIndex(f);
     schliessen();
-    if(i>=0)openFotoFullscreen(i);
+    if(i>=0){
+      openFotoFullscreen(i);
+      /* ⛔ v192: Hier ging es bisher nicht weiter. Wer „Text / Malen" wählte, landete
+         im Vollbild und hatte danach keinen Weg zur nächsten Aufnahme — Befund Frank:
+         „wie komme ich dann zurück um weitere Fotos zu machen?"
+         Erst NACH dem Öffnen einschalten: openFotoFullscreen baut die Leiste neu auf
+         und würde den Knopf sonst wieder verstecken. Nur beim Kamera-Weg, denn aus
+         der Galerie holt man mehrere auf einmal. */
+      if(kannWeiteres)_lbWeiterBtnSetzen(kameraFeld);
+    }
   };
   /* v185: Knöpfe nur zeigen, wenn sie hier auch etwas bewirken. „Text / Malen"
      braucht den offenen Task (currentTask()), „Verwerfen" den Schnell-Weg –
@@ -12978,6 +12987,13 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
      nächsten Nachladen sogar noch in Drive. Das war der zweite der beiden Wege. */
   for(const o of _behalten)_fotoLive(_taskId,o.fo);
   const _tl=findTaskById(_taskId)||t;
+  /* ⛔ v192: Im Baudoku-Reiter ist der Foto-Kasten zugeklappt (Wunsch Frank: „alles
+     geschlossen"). Nach einer frischen Aufnahme sah er sein Bild dort deshalb nicht —
+     Befund: „in der Baudoku-Ansicht kann ich jetzt nicht sehen, welche Fotos ich
+     aufgenommen habe."
+     Genau nach dem Fotografieren ist der eine Moment, in dem der Kasten offen gehört.
+     Dieselbe Bauart wie bei den sieben Aufklapp-Stellen aus v188: nur AUF, nie zu. */
+  if(_behalten.length&&_currentDetailTab==='bau')_mOpenSections['bau_Fotos']=true;
   forceSave();
   if(currentTaskId===_taskId){
     renderDetail(_tl);
@@ -16307,12 +16323,17 @@ if (navigator.storage && navigator.storage.persist) {
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbEditCaption()">📝 Text</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbStartDraw()" style="margin-left:4px">✏️ Malen</button>
       <button class="lb-text-edit-btn" onclick="event.stopPropagation();lbGpsDialog()" style="margin-left:4px">📍 GPS</button>
-      <!-- ⛔ v191: „📷 Weiteres" ist hier RAUS. Seit dem Umbau geht das Vollbild nach
-           einer frischen Aufnahme nicht mehr von selbst auf — es zeigt vorhandene
-           Fotos. Der Knopf wäre also nie mehr eingeschaltet worden und hätte als tote
-           Stelle dagestanden. „Weiteres Foto" gehört jetzt in den einen Dialog, der
-           nach jeder Aufnahme kommt (siehe _showSchnellFotoPreview). Dort steht er
-           groß und neben Verwerfen — genau die Einheitlichkeit, die gefehlt hat. -->
+      <!-- ⛔ v192: „📷 Weiteres" ist WIEDER DA — und diesmal aus gutem Grund.
+           In v191 hatte ich ihn entfernt, weil das Vollbild nach einer frischen
+           Aufnahme nicht mehr von selbst aufgeht und er dort tot gewesen wäre.
+           Übersehen: über „✏️ Text / Malen" im Dialog landet man sehr wohl im
+           Vollbild — und stand danach in der Sackgasse.
+           Befund Frank 13.08.: „wenn ich auf dem Foto Malen ausgewählt habe oder
+           Text, wie komme ich dann zurück um weitere Fotos zu machen?"
+           Er erscheint deshalb NUR, wenn man aus einer frischen Aufnahme hierher
+           gekommen ist (_lbKameraFeld gesetzt) — beim Durchsehen alter Fotos bleibt
+           er aus. -->
+      <button class="lb-text-edit-btn" id="lbWeiterBtn" onclick="event.stopPropagation();lbWeiteresFoto()" style="margin-left:4px;display:none">📷 Weiteres</button>
     </div>
     <div class="lb-text-edit-form">
       <textarea id="lbTextInput" placeholder="Kurze Beschreibung zum Foto…" rows="2" autocomplete="off"></textarea>
@@ -16386,26 +16407,36 @@ function openLightbox(src,name,externalUrl,opts){
   lb.classList.add('open');
   document.addEventListener('keydown',_lbOnKey);
 }
-/* ⛔ v191 ENTFERNT: `_lbKameraFeld`, `_lbWeiterBtnSetzen`, `lbWeiteresFoto`.
+/* ⛔ v192: In v191 hatte ich diese drei entfernt — mit der Begründung, das Vollbild
+   gehe nach einer frischen Aufnahme nicht mehr von selbst auf, der Knopf sei also tot.
+   Das stimmte nur zur Hälfte: über „✏️ Text / Malen" im Dialog kommt man sehr wohl
+   dorthin, und dann fehlte jeder Weg zur nächsten Aufnahme. Frank stand in der
+   Sackgasse und hat es gemeldet. Sie sind zurück — aber nur für diesen einen Fall.
 
-   Sie waren die Vollbild-Fassung von „noch eins" aus v185. Seit v191 geht das
-   Vollbild nach einer frischen Aufnahme nicht mehr von selbst auf — es ist der
-   Betrachter für vorhandene Fotos. Damit hätte der Knopf nie wieder eingeschaltet
-   werden können und wäre eine tote Stelle geblieben.
-
-   „📷 Weiteres Foto" steht jetzt ausschließlich im gemeinsamen Dialog, neben
-   „✕ Verwerfen". Genau darum ging es Frank: „das sieht nur anders aus wie bei den
-   anderen — warum machen wir das nicht gleich."
-
-   ⚠ `_fotoQuelle` bleibt wichtig und ist NICHT tot: es entscheidet jetzt, ob der
-   Dialog „Weiteres Foto" überhaupt anbietet (nach einem Galerie-Bild wäre ein
-   Kamera-Angebot verkehrt). Die Regel aus test_v190 gilt also weiter. */
+   ⚠ Der Unterschied zu v185: Damals wurde der Knopf nach JEDER frischen Aufnahme
+   eingeschaltet und stand deshalb neben dem großen Dialog-Knopf, der dasselbe tat —
+   genau die Doppelung, über die Frank sich beschwert hat. Jetzt schaltet ihn
+   ausschließlich der Weg über „Text / Malen" ein. Zwei Wege, ein Knopf je Weg. */
+let _lbKameraFeld = '';
+function _lbWeiterBtnSetzen(feld){
+  _lbKameraFeld = feld || '';
+  const b = document.getElementById('lbWeiterBtn');
+  if(b) b.style.display = _lbKameraFeld ? '' : 'none';
+}
+function lbWeiteresFoto(){
+  const feld = _lbKameraFeld;
+  closeLightbox();                       // setzt _lbKameraFeld über den Aufruf unten zurück
+  const inp = feld && document.getElementById(feld);
+  if(inp) inp.click();
+  else toast('Kamera nicht erreichbar','error');
+}
 function closeLightbox(){
   const lb=document.getElementById('lightbox');if(!lb)return;
   lb.classList.remove('open');
   lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
   document.removeEventListener('keydown',_lbOnKey);
   _lbFotoIdx=-1;_lbFotoKey='';
+  _lbWeiterBtnSetzen('');                // v192: Knopf wieder aus – gilt nur für die frische Aufnahme
 }
 function _lbHandleTap(e){
   // v100: Touch-Tipps schließen über die Gesten-Logik (Einzeltipp verzögert, Doppeltipp = Zoom).
