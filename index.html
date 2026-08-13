@@ -322,6 +322,12 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .bau-karte-kopf{display:flex;align-items:flex-start;gap:9px;margin-bottom:9px}
 .bau-karte-punkt{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:6px}
 .bau-karte-name{flex:1;min-width:0;font-size:calc(15px * var(--m-scale,1));font-weight:600;color:var(--text);line-height:1.3;overflow-wrap:anywhere}
+/* v195: der Stand der Leistung („zuletzt 03.08.2026 · vor 10 Tagen"). Frank wollte
+   die Karte an BEIDEN Orten gleich – und diese Angabe ausdrücklich behalten. Sie
+   sitzt unter dem Namen, eingerückt auf Höhe des Textes, damit der Ampelpunkt seine
+   eigene Spalte behält. Die Größe folgt dem „Aa"-Regler, feste px wären auf 200 %
+   unlesbar klein. */
+.bau-karte-stand{font-size:calc(11px * var(--m-scale,1));color:var(--text2);margin:-3px 0 9px 18px;line-height:1.35}
 /* v193: schmale Info-Zeile in der Leistungs-Karte – nur wenn etwas dranhängt. */
 .bau-karte-info{display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:8px;cursor:pointer;font-size:calc(12px * var(--m-scale,1));color:var(--text2);font-weight:600}
 .bau-karte-info-pfeil{margin-left:auto;font-size:calc(15px * var(--m-scale,1));color:var(--accent2)}
@@ -6051,7 +6057,15 @@ function _tuMobObjektSektion(t,oc){
      diesen übersehen — es war die einzige weitere Stelle dieser Bauart. */
   return '<div class="sect'+oc('Turnus')+'" data-sect="Turnus">'
     +'<div class="sect-head" onclick="toggleMSect(this.parentElement)">'+kopf+'</div>'
-    +'<div class="sect-body"><div id="mTuList">'+_tuMobObjektZeilen(t)+'</div>'
+    /* ⛔ v195: Task-Info zeigt dieselbe Karte wie Baudoku. Bis v194 wurde hier ohne
+       die beiden Schalter gerufen, also die alte Zeilen-Fassung gebaut. Franks Ansage
+       vom 13.08.: „ich möchte, dass die wiederkehrenden Leistungen von der Optik und
+       Funktion genauso in Task-Info sind."
+       Der eigentliche Gewinn ist nicht die Optik: die antippbare Info-Zeile in den
+       Verlauf gab es nur in der Karte — in Task-Info führte kein Weg dorthin.
+       ⚠ Das kippt die Aufteilung aus v179 („Datum und Zähler stehen in Task-Info,
+       draußen nur der Handgriff"). Deshalb trägt die Karte seit v195 den Stand. */
+    +'<div class="sect-body"><div id="mTuList">'+_tuMobObjektZeilen(t,true,true)+'</div>'
     +'<div style="font-size:'+_tuMs(12)+';color:var(--text2);margin-top:8px;padding:6px;background:var(--bg3);border-radius:6px;">ℹ️ Leistungen anlegen und ändern am Rechner</div>'
     +'</div></div>';
 }
@@ -6097,11 +6111,19 @@ function _tuMobObjektZeilen(t,gross,schlank){
           + '<span class="bau-karte-info-pfeil">›</span>'
           + '</div>'
         : '';
+      /* ⛔ v195: Der Stand kommt in die Karte. In v179 war er hier ausdrücklich NICHT
+         drin („draußen zählt der Handgriff"); Frank hat das am 13.08. widerrufen, als
+         die Karte auch nach Task-Info kam: „zuletzt soll in der Karte bleiben."
+         Damit steht die Angabe an beiden Orten – Baudoku gewinnt sie dazu.
+         ⚠ Der Notiz-TEXT kommt bewusst nicht mit: er steht in der Info-Zeile als
+         Marke „📝 Notiz" und im Verlauf dahinter vollständig. */
+      var _stand='<div class="bau-karte-stand">'+esc(_tuStatusText(l))+'</div>';
       return '<div class="bau-karte">'
         + '<div class="bau-karte-kopf">'
         +   '<span class="bau-karte-punkt" style="background:'+farbe+';"></span>'
         +   '<span class="bau-karte-name">'+esc(l.name||'')+'</span>'
         + '</div>'
+        + _stand
         + _info
         + knoepfe
         + '</div>';
@@ -6184,14 +6206,41 @@ function _tuLeistungAnhaenge(taskId,lId){
     if(i>=0){treffer.push({f:fotos[i],i:i});gesehen[x.d.id]=1;}
     else ohneBild.push(x);
   });
+  /* ⛔ v194: Aus der reinen Dateiliste wird der VERLAUF. Franks Wunsch vom 13.08.:
+     „Kann ich die einzelnen Leistungen anklicken, damit ich seh …" — gemeint war:
+     wann wurde sie gemacht, was steht in der Notiz, was hängt dran.
+     Gruppiert wird nach TERMIN, neueste zuerst. „Vorab" ist eine eigene Gruppe: das
+     sind Dateien, die vor dem Abhaken abgelegt wurden und beim nächsten ✓ in den dann
+     entstehenden Termin wandern (v180). Fotos, die noch hochladen, hängen bereits an
+     ihrem Termin (fo.tuLeistung.datum) und erscheinen deshalb gleich an der richtigen
+     Stelle — auch ohne Eintrag in `dateien`. */
+  var gruppen=[];
+  var _fotosVon=function(dat){
+    return treffer.filter(function(x){
+      var d=(x.f.tuLeistung&&x.f.tuLeistung.datum)||'';
+      if(d)return d===dat;
+      // Altbestand ohne eigene Zuordnung: über die Dateiliste des Termins zuordnen
+      return eintraege.some(function(y){return y.wann===(dat||'vorab')&&y.d&&y.d.id===x.f.driveId;});
+    });
+  };
+  gruppen.push({titel:'Vorab abgelegt',unter:'wandert beim nächsten ✓ in den Termin',
+    fotos:_fotosVon(''),dateien:((l.dateien)||[]),notiz:''});
+  ((l.eintraege)||[]).forEach(function(e){
+    if(!e)return;
+    gruppen.push({titel:e.datum?_tuDe(e.datum):'Ohne Datum',unter:e.skip?'übersprungen':'erledigt',
+      fotos:_fotosVon(e.datum||''),dateien:((e.dateien)||[]),notiz:(e.notiz||'')});
+  });
+  gruppen=gruppen.filter(function(g){return g.fotos.length||g.dateien.length||g.notiz;});
+
   var alt=document.getElementById('tuAnhOv');if(alt)alt.remove();
   var ov=document.createElement('div');
   ov.id='tuAnhOv';
-  ov.style.cssText='position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,.88);display:flex;flex-direction:column;padding:14px;gap:12px;overflow:auto;';
+  ov.style.cssText='position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,.9);display:flex;flex-direction:column;padding:14px;gap:12px;overflow:auto;';
   var kopf=document.createElement('div');
-  kopf.style.cssText='display:flex;align-items:flex-start;gap:10px;color:#fff;';
+  kopf.style.cssText='display:flex;align-items:flex-start;gap:10px;color:#fff;position:sticky;top:0;background:rgba(0,0,0,.9);padding-bottom:6px;';
+  var nTermine=((l.eintraege)||[]).length;
   kopf.innerHTML='<div style="flex:1;min-width:0;"><div style="font-size:15px;font-weight:700;overflow-wrap:anywhere;">🔁 '+esc(l.name||'Leistung')+'</div>'
-    +'<div style="font-size:12px;opacity:.75;margin-top:2px;">'+(treffer.length+ohneBild.length)+' Datei(en)</div></div>';
+    +'<div style="font-size:12px;opacity:.75;margin-top:2px;">'+nTermine+' Termin'+(nTermine!==1?'e':'')+' · '+(treffer.length+ohneBild.length)+' Datei(en)</div></div>';
   var zu=document.createElement('button');
   zu.type='button';zu.textContent='✕';
   zu.style.cssText='flex-shrink:0;width:44px;height:44px;border-radius:22px;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:18px;cursor:pointer;';
@@ -6199,47 +6248,61 @@ function _tuLeistungAnhaenge(taskId,lId){
   kopf.appendChild(zu);
   ov.appendChild(kopf);
 
-  if(!treffer.length&&!ohneBild.length){
+  if(!gruppen.length){
     var leer=document.createElement('div');
     leer.style.cssText='color:#fff;opacity:.8;font-size:14px;';
-    leer.textContent='Noch nichts angehängt.';
+    leer.textContent='Noch nichts eingetragen — weder Termin noch Datei.';
     ov.appendChild(leer);
   }
-  if(treffer.length){
-    var raster=document.createElement('div');
-    raster.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;';
-    treffer.forEach(function(x){
-      var z=document.createElement('div');
-      z.style.cssText='position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#222;cursor:pointer;';
-      var im=document.createElement('img');
-      im.alt='';im.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
-      try{_fotoVorschauLaden(x.f,im);}catch(e){}
-      z.appendChild(im);
-      if(x.f.caption){
-        var c=document.createElement('span');
-        c.textContent=x.f.caption;
-        c.style.cssText='position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        z.appendChild(c);
-      }
-      z.onclick=function(){ov.remove();openFotoFullscreen(x.i);};
-      raster.appendChild(z);
+
+  gruppen.forEach(function(g){
+    var block=document.createElement('div');
+    block.style.cssText='background:rgba(255,255,255,.07);border-radius:12px;padding:11px 12px;display:flex;flex-direction:column;gap:9px;';
+    var zeile=document.createElement('div');
+    zeile.style.cssText='color:#fff;font-size:13px;font-weight:700;display:flex;align-items:baseline;gap:8px;';
+    zeile.innerHTML='<span>'+esc(g.titel)+'</span><span style="font-size:11px;font-weight:400;opacity:.65;">'+esc(g.unter)+'</span>';
+    block.appendChild(zeile);
+    if(g.notiz){
+      var nz=document.createElement('div');
+      nz.style.cssText='color:#fff;font-size:14px;line-height:1.45;overflow-wrap:anywhere;opacity:.95;';
+      nz.textContent='📝 '+g.notiz;
+      block.appendChild(nz);
+    }
+    if(g.fotos.length){
+      var raster=document.createElement('div');
+      raster.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px;';
+      g.fotos.forEach(function(x){
+        var z=document.createElement('div');
+        z.style.cssText='position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#222;cursor:pointer;';
+        var im=document.createElement('img');
+        im.alt='';im.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+        try{_fotoVorschauLaden(x.f,im);}catch(e){}
+        z.appendChild(im);
+        if(x.f.caption){
+          var c=document.createElement('span');
+          c.textContent=x.f.caption;
+          c.style.cssText='position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+          z.appendChild(c);
+        }
+        z.onclick=function(){ov.remove();openFotoFullscreen(x.i);};
+        raster.appendChild(z);
+      });
+      block.appendChild(raster);
+    }
+    // Dateien ohne Bild am Handy (Altbestand, PDF): wenigstens mit Namen zeigen.
+    var ohne=g.dateien.filter(function(d){
+      return d&&d.id&&!g.fotos.some(function(x){return x.f.driveId===d.id;});
     });
-    ov.appendChild(raster);
-  }
-  if(ohneBild.length){
-    var liste=document.createElement('div');
-    liste.style.cssText='color:#fff;font-size:13px;display:flex;flex-direction:column;gap:6px;';
-    liste.innerHTML='<div style="opacity:.7;font-size:12px;margin-top:4px;">Nur in Drive (älter, ohne Vorschau am Handy):</div>'
-      +ohneBild.map(function(x){return '<div style="background:rgba(255,255,255,.08);border-radius:8px;padding:8px 10px;overflow-wrap:anywhere;">📎 '+esc(x.d.name||'Datei')+(x.wann&&x.wann!=='vorab'?' <span style="opacity:.6;">· '+esc(_tuDe(x.wann))+'</span>':' <span style="opacity:.6;">· vorab</span>')+'</div>';}).join('');
-    ov.appendChild(liste);
-  }
-  var e0=((l.eintraege)||[])[0];
-  if(e0&&e0.notiz&&String(e0.notiz).trim()){
-    var nz=document.createElement('div');
-    nz.style.cssText='background:rgba(255,255,255,.1);border-radius:10px;padding:10px 12px;color:#fff;font-size:14px;line-height:1.45;overflow-wrap:anywhere;';
-    nz.textContent='📝 '+e0.notiz;
-    ov.appendChild(nz);
-  }
+    if(ohne.length){
+      var liste=document.createElement('div');
+      liste.style.cssText='display:flex;flex-direction:column;gap:5px;';
+      liste.innerHTML=ohne.map(function(d){
+        return '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:7px 10px;color:#fff;font-size:12px;overflow-wrap:anywhere;">📎 '+esc(d.name||'Datei')+'</div>';
+      }).join('');
+      block.appendChild(liste);
+    }
+    ov.appendChild(block);
+  });
   document.body.appendChild(ov);
 }
 function _tuMobBaudokuBlock(t){
@@ -6273,7 +6336,8 @@ function _tuMobFotoNachreichen(taskId,lId){
   var t=findTaskById(taskId); if(!t)return;
   var l=(t.turnusListe||[]).find(function(x){return x&&x.id===lId;}); if(!l)return;
   var e=((l.eintraege)||[])[0];
-  _tuMobFotoFrage(taskId,lId,e?e.datum:'');
+  // v194: Über die Büroklammer wird zuerst nach dem Ziel gefragt (Leistung oder Objekt).
+  _tuMobFotoFrage(taskId,lId,e?e.datum:'',true);
 }
 // Nach jeder Änderung: Heute-Liste UND das offene Objekt auffrischen. Ohne das
 // bliebe die Zeile im Objekt auf dem alten Stand stehen (die Aktionen kamen
@@ -6303,6 +6367,13 @@ function _tuFotoAusFeld(inp){
   if(inp)inp.value='';
   if(!files.length||!_tuFotoZiel)return;
   var z=_tuFotoZiel;
+  /* ⛔ v194: Zwei Ziele. Franks Einwand vom 13.08.: „Ich hab hier ‚Foto oder Protokoll
+     zu dieser Leistung anhängen‘, aber das ist ja Quatsch, wenn es nicht eine Leistung
+     ist, wo ich das Protokoll brauche, sondern für das gesamte Objekt."
+     „Objekt" heißt: derselbe Weg wie jedes normale Task-Foto — ohne Eintrag an der
+     Leistung und ohne Herkunfts-Balken. Das Bild gehört dann dem Objekt, nicht der
+     einzelnen Leistung, und soll auch nicht so aussehen. */
+  if(z.ziel==='objekt'){uploadFoto(files,z.taskId);return;}
   _tuMobFotoUpload(z.taskId,z.lId,z.datum,files);
 }
 /* Die Leiste unten am Bildschirm — einmal als Frage vor dem ersten Bild, einmal als
@@ -6315,8 +6386,8 @@ function _tuFotoAusFeld(inp){
    Dabei ist die Fingergeste abgerissen, und ein direktes inp.click() hätte iOS/
    Android blockieren können. Die Leiste ist nur DOM — der echte Klick passiert
    erst beim Antippen eines Knopfes und trägt damit wieder eine frische Geste. */
-function _tuFotoLeiste(taskId,lId,datum,text){
-  _tuFotoZiel={taskId:taskId,lId:lId,datum:datum};
+function _tuFotoLeiste(taskId,lId,datum,text,ziel){
+  _tuFotoZiel={taskId:taskId,lId:lId,datum:datum,ziel:ziel||'leistung'};
   var alt=document.getElementById('tuWeiterBox'); if(alt)alt.remove();
   var box=document.createElement('div');
   box.id='tuWeiterBox';
@@ -6342,11 +6413,48 @@ function _tuFotoLeiste(taskId,lId,datum,text){
      und die Leiste hat einen eigenen Schließen-Knopf, sie muss nicht von selbst weg. */
   setTimeout(function(){try{box.remove();}catch(e){}},60000);
 }
-function _tuMobFotoFrage(taskId,lId,datum){
+function _tuMobFotoFrage(taskId,lId,datum,mitZielwahl){
   var t=findTaskById(taskId);
   var l=t&&(t.turnusListe||[]).find(function(x){return x&&x.id===lId;});
   var nm=(l&&l.name)||'diese Leistung';
-  _tuFotoLeiste(taskId,lId,datum,'Anhängen an: '+nm);
+  if(!mitZielwahl){_tuFotoLeiste(taskId,lId,datum,'Anhängen an: '+nm);return;}
+  /* ⛔ v194: Zielwahl VOR der Quelle — aber nur, wenn Frank die Büroklammer selbst
+     antippt. Nach dem Abhaken (✓) läuft dieselbe Frage automatisch an; dort ist „an
+     diese Leistung" praktisch immer richtig, und bei zehn Objekten hintereinander
+     wäre eine Entscheidung mehr genau die Bremse, die v179 abschaffen sollte.
+     Zwei Schritte statt vier Knöpfe in einer Reihe: erst wohin, dann womit. */
+  var alt=document.getElementById('tuWeiterBox'); if(alt)alt.remove();
+  var box=document.createElement('div');
+  box.id='tuWeiterBox';
+  box.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9200;background:var(--bg2);border-top:1px solid var(--border);padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:10px;align-items:center;box-shadow:0 -6px 20px rgba(0,0,0,.25);';
+  var txt=document.createElement('div');
+  txt.style.cssText='flex:1 1 100%;min-width:0;font-size:13px;color:var(--text2);line-height:1.35;';
+  txt.textContent='Wohin gehört die Datei?';
+  box.appendChild(txt);
+  var kn=function(beschriftung,unter,haupt,tunwas){
+    var b=document.createElement('button');
+    b.type='button';
+    b.style.cssText='flex:1 1 100%;min-height:54px;padding:8px 12px;border-radius:10px;font-family:inherit;cursor:pointer;text-align:left;'
+      +(haupt?'border:none;background:#4a43a0;color:#fff;':'border:1px solid var(--border);background:var(--bg3);color:var(--text);');
+    b.innerHTML='<span style="display:block;font-size:14px;font-weight:700;">'+beschriftung+'</span>'
+      +'<span style="display:block;font-size:11px;opacity:.8;margin-top:2px;">'+unter+'</span>';
+    b.onclick=tunwas;
+    box.appendChild(b);
+    return b;
+  };
+  kn('🔁 An diese Leistung',esc(nm),true,function(){
+    box.remove();_tuFotoLeiste(taskId,lId,datum,'Anhängen an: '+nm,'leistung');
+  });
+  kn('🏠 Ans ganze Objekt','Prüfprotokoll, Übersichtsfoto — gehört nicht zu einer einzelnen Leistung',false,function(){
+    box.remove();_tuFotoLeiste(taskId,lId,datum,'Anhängen ans Objekt','objekt');
+  });
+  var ab=document.createElement('button');
+  ab.type='button';ab.textContent='Abbrechen';
+  ab.style.cssText='flex:1 1 100%;min-height:46px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:14px;font-family:inherit;cursor:pointer;';
+  ab.onclick=function(){box.remove();};
+  box.appendChild(ab);
+  document.body.appendChild(box);
+  setTimeout(function(){try{box.remove();}catch(e){}},60000);
 }
 /* ⛔ v189: Der Eintrag an der Leistung wird NICHT mehr beim Hochladen geschrieben,
    sondern genau in dem Moment, in dem das Foto seine Drive-Kennung bekommt. Das sind
@@ -6500,7 +6608,7 @@ function renderHeuteMobil(){
         +'style="width:40px;height:40px;border-radius:50%;background:#1a6fc4;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+phoneIcon+'</a>'
       :'';
     var mapsBtn=adr
-      ?'<a href="https://maps.google.com/?q='+encodeURIComponent(adr)+'" target="_blank" onclick="event.stopPropagation()" '
+      ?'<a href="https://maps.google.com/?q='+encodeURIComponent(_pamGeoQuery(adr)||adr)+'" target="_blank" onclick="event.stopPropagation()" '
         +'style="width:40px;height:40px;border-radius:50%;background:#2e7d32;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+pinIcon+'</a>'
       :'';
     var mainText='<div style="flex:1;min-width:0;">'
@@ -8974,7 +9082,7 @@ function renderList(resetScroll){
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#1a6fc4;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PHONE+'</a>'
       :'';
     const cardMapsBtn=cardAdr
-      ?'<a href="https://maps.google.com/?q='+encodeURIComponent(cardAdr)+'" target="_blank" class="card-akt" onclick="event.stopPropagation()" '
+      ?'<a href="https://maps.google.com/?q='+encodeURIComponent(_pamGeoQuery(cardAdr)||cardAdr)+'" target="_blank" class="card-akt" onclick="event.stopPropagation()" '
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#2e7d32;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PIN+'</a>'
       :'';
     // v130 (Wunsch Frank): Stoppuhr direkt aus der Liste starten – kleines Icon VOR dem
@@ -10796,7 +10904,7 @@ function renderDetail(t){
       +(isNotiz?'<div class="field"><label>📅 Fälligkeitsdatum</label><input type="date" value="'+escAttr(t.due||'')+'" onchange="updateField(\'due\',this.value)" autocomplete="off"></div>':'')
       +(isNotiz?'<div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"><label style="margin:0">Beschreibung</label><button type="button" class="inline-btn" style="padding:4px 10px;font-size:11px" onclick="toggleExpandTA(this.parentElement.nextElementSibling)">🔍 vergrößern</button></div><textarea id="mSchTA" class="expandable-ta" oninput="updateField(\'schadensbild\',this.value)" autocomplete="off">'+esc(t.schadensbild||'')+'</textarea></div>':'')
       // Baustellen-Board: nur Adresse + Task-Typ + Kostenstelle
-      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="_syncAddrField(this)" onblur="_autoFillSbOrdner()" autocomplete="off"><button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
+      +(!isNotiz?'<div class="field"><label>Adresse</label><div class="field-row" style="gap:6px"><input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Straße, PLZ Ort" oninput="_syncAddrField(this)" onblur="_autoFillSbOrdner()" autocomplete="off"><button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;">✏️</button><a id="navBtn" class="nav-link'+(t.adresse?'':' disabled')+'" href="'+(t.adresse?'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_pamGeoQuery(t.adresse)||t.adresse):'#')+'" target="_blank">🗺️</a></div></div>':'')
       +(!isNotiz && (t.links||[]).filter(l=>l&&l.url&&(l.url||'').trim()).length ? '<div class="field"><label>🔗 Links</label><div class="field-row" style="flex-wrap:wrap;gap:6px">'+(t.links||[]).filter(l=>l&&l.url&&(l.url||'').trim()).map(l=>'<a class="nav-link" style="background:#185FA5" href="'+escAttr(l.url.trim())+'" target="_blank">📂 '+esc(l.label||'Link')+'</a>').join('')+'</div></div>' : '')
       +(!isNotiz?'<div class="field-row" style="gap:8px;">'
         +'<div class="field" style="margin:0"><label>Task-Typ</label><select onchange="updateField(\'taskTyp\',this.value)">'
@@ -11108,7 +11216,7 @@ function updateTags(value){
 function updateNavBtn(){
   const t=currentTask();if(!t)return;
   const btn=document.getElementById('navBtn');if(!btn)return;
-  if(t.adresse){btn.classList.remove('disabled');btn.href='https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t.adresse);}
+  if(t.adresse){btn.classList.remove('disabled');btn.href='https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_pamGeoQuery(t.adresse)||t.adresse);}
   else{btn.classList.add('disabled');btn.href='#';}
 }
 
@@ -15118,6 +15226,57 @@ async function _ensureQuickNoteParent(){
   return '';
 }
 // v62: pro Notiz einen Unterordner – nur bei Bedarf (erstes Foto)
+// ══ v195: gemeinsame Helfer für Adress-Aufbereitung und Titel-Vorspann ═══════════
+// Beide sind mit dem Rechner (b654) wortgleich – der Titel eines Auftrags darf nicht
+// davon abhängen, ob er hier oder dort angelegt wurde.
+//
+// _pamGeoQuery: Objektadressen tragen bewusst mehrere Hausnummern („Musterstraße 10,
+// 10a" – das Objekt IST der ganze Block). Als Ganzes findet Google die Adresse nicht;
+// amtlich gibt es „10" und „10a" getrennt. Die Logik lag seit v96 im Dachplan-Modul
+// und wirkte deshalb NUR bei „🏠 Dach"; die Maps- und Navi-Knöpfe schickten die
+// Adresse ungekürzt raus. Angezeigt wird weiter die volle Adresse.
+function _pamGeoQuery(a){
+  a=String(a||'').replace(/\s+/g,' ').trim();
+  if(!a)return '';
+  var plz='',ort='',str=a;
+  var m=a.match(/\b(\d{5})\b/);
+  if(m){
+    plz=m[1];
+    str=a.slice(0,m.index).replace(/[,\s]+$/,'').trim();
+    ort=a.slice(m.index+5).replace(/^[,\s]+/,'').replace(/,/g,' ').replace(/\s+/g,' ').trim();
+  }else{
+    str=a.replace(/,/g,' ').replace(/\s+/g,' ').trim();
+  }
+  str=str.replace(/\s(\d+\s*[a-zA-Z]?)(\s*[,\-\/]\s*\d+\s*[a-zA-Z]?)+\s*$/,' $1').replace(/\s+/g,' ').trim();
+  return (str+(plz?', '+plz:'')+(ort?' '+ort:'')).trim();
+}
+// Titel-Vorspann: Das Kürzel steht an den Objektdaten nirgends (dort steht der
+// ausgeschriebene Firmenname), wohl aber im NAS-Pfad im Ordner unterhalb von
+// 01_Hausverwaltungen – erstes Wort. So bringt jede Hausverwaltung ihr Kürzel mit.
+const V195_TRENNER=' – ';
+function _objKuerzelAusNas(nas){
+  const teile=String(nas||'').split(/[\\/]+/).filter(Boolean);
+  const i=teile.findIndex(x=>/^01_Hausverwaltungen$/i.test(x));
+  const ordner=(i>=0&&teile[i+1])?teile[i+1]:'';
+  const wort=(ordner.trim().split(/\s+/)[0]||'');
+  return /^[A-ZÄÖÜ]{2,5}$/.test(wort)?wort:'';
+}
+function _objTitelVorspann(obj){
+  if(!obj)return '';
+  const ohneKs=String(obj.title||'').replace(/\s*\(\d+\)\s*$/,'').trim(); // Kostenstelle raus
+  if(!ohneKs)return '';
+  const k=_objKuerzelAusNas(obj.nas);
+  return (k?k+' ':'')+ohneKs;
+}
+function _objAuftragTitel(obj,kurz){
+  const vorspann=_objTitelVorspann(obj);
+  if(!vorspann)return kurz;
+  const flach=s=>String(s||'').toLowerCase().replace(/ß/g,'ss').replace(/[^a-z0-9äöü]/g,'');
+  const ohneKs=String(obj.title||'').replace(/\s*\(\d+\)\s*$/,'').trim();
+  // Adresse schon selbst mitgetippt? Dann nicht doppeln.
+  if(ohneKs&&flach(kurz).includes(flach(ohneKs)))return kurz;
+  return vorspann+V195_TRENNER+kurz;
+}
 async function _ensureQuickNoteFolder(t,title,dateSlug){
   const existing=extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner);
   if(existing)return existing;
@@ -15528,6 +15687,12 @@ async function _submitQuickAdd(){
     // die Zeile leer, obwohl sie an allen 31 Objekten gefüllt ist. Damit erben Handy
     // und Rechner jetzt dasselbe: Adresse, NAS-Pfad, Hausverwaltung.
     if(!newT.hausverwaltung&&auftragObjekt.hausverwaltung)newT.hausverwaltung=auftragObjekt.hausverwaltung;
+    // v195: Titel-Vorspann „<Kürzel> <Objekt> – <Kurztext>", wortgleich zum Rechner
+    // (b654). Vorher hieß die Karte nur „Spechtloch" – auf dem Board war nicht zu
+    // sehen, an welchem Haus. ⛔ NUR newT.title bekommt den Vorspann: der Drive-Ordner
+    // entsteht weiter aus der Roh-Eingabe `title` (siehe _ensureQuickNoteFolder-Aufruf
+    // weiter unten), sonst reißt der Name die 260-Zeichen-Grenze im Objektordner.
+    newT.title=_objAuftragTitel(auftragObjekt,title);
   }
   // Foto-Referenzen VOR _closeQuickAdd() sichern – _closeQuickAdd leert _quickAddFotoFiles
   const fotoFiles=_quickAddFotoFiles.slice();
@@ -18004,7 +18169,9 @@ window.Dachplan=(function(){
       else say('Adresse nicht gefunden','error');
     }catch(e){say('Suche fehlgeschlagen (offline?)','error');}
   }
-  function _geoQuery(a){a=String(a||'').replace(/\s+/g,' ').trim();if(!a)return '';var plz='',ort='',str=a;var m=a.match(/\b(\d{5})\b/);if(m){plz=m[1];str=a.slice(0,m.index).replace(/[,\s]+$/,'').trim();ort=a.slice(m.index+5).replace(/^[,\s]+/,'').replace(/,/g,' ').replace(/\s+/g,' ').trim();}else{str=a.replace(/,/g,' ').replace(/\s+/g,' ').trim();}str=str.replace(/\s(\d+\s*[a-zA-Z]?)(\s*[,\-\/]\s*\d+\s*[a-zA-Z]?)+\s*$/,' $1').replace(/\s+/g,' ').trim();return (str+(plz?', '+plz:'')+(ort?' '+ort:'')).trim();}
+  // v195: leitet auf die globale _pamGeoQuery um – dieselbe Logik gilt jetzt auch für
+  // die Maps- und Navi-Knöpfe. Der Name bleibt, damit searchDach/setBase unverändert bleiben.
+  function _geoQuery(a){return _pamGeoQuery(a);}
   function searchDach(){var a=(t&&t.adresse)?String(t.adresse).trim():'';if(!a){say('Keine Auftragsadresse hinterlegt – Adresse ins Suchfeld tippen','error');return;}var q=_geoQuery(a)||a;try{var s=E.screen.querySelector('#dpSearch');if(s)s.value=q;}catch(_){}doSearch(q+', Deutschland');}
   function pinHere(){
     if(dp.base==='bild'){say('Standort-Pin nur in der Kartenansicht (🗺️)','error');return;}
