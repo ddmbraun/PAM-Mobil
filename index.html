@@ -5280,6 +5280,12 @@ function parseMinutes(von,bis){try{if(!von||!bis)return 0;const[vh,vm]=von.split
 // ── GLOBALE ICON-SVGs (für Karten-Vorschau und Heute-View) ──
 const _SVG_PHONE='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.61 19a19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-2.89-8.18A2 2 0 0 1 4.72 2.72h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.91 10.09a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
 const _SVG_PIN='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+/* ⛔ v202: Ein NAVI-PFEIL, ausdrücklich kein zweiter Pin und keine zweite Karte.
+   In der Liste macht die Farbe keinen Unterschied — `#taskList .card-akt` setzt alle
+   Rundknöpfe auf dasselbe Grau. Unterscheiden kann man sie dort nur am Zeichen, und
+   zwei kartenartige Zeichen nebeneinander wären beim Losfahren mit Handschuhen genau
+   die Verwechslung, die niemand braucht. Deshalb die spitze Pfeilform. */
+const _SVG_NAV='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>';
 // Baukran-Icon für Auftrag/Baustelle-Boards
 const _SVG_CRANE='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="22" x2="9" y2="7"/><line x1="1" y1="7" x2="21" y2="7"/><line x1="9" y1="4" x2="21" y2="7"/><line x1="1" y1="7" x2="9" y2="4"/><line x1="17" y1="7" x2="17" y2="16"/><path d="M15 16 q2 2 4 0"/><line x1="6" y1="22" x2="12" y2="22"/></svg>';
 
@@ -7104,6 +7110,7 @@ function renderHeuteMobil(){
 
   var phoneIcon=_SVG_PHONE;
   var pinIcon=_SVG_PIN;
+  var navIcon=_SVG_NAV; // v202
 
   function uhrBtn(t){
     var isRunning=t.id===runningTaskId;
@@ -7124,6 +7131,14 @@ function renderHeuteMobil(){
       ?'<a href="https://maps.google.com/?q='+encodeURIComponent(_pamGeoQuery(adr)||adr)+'" target="_blank" onclick="event.stopPropagation()" '
         +'style="width:40px;height:40px;border-radius:50%;background:#2e7d32;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+pinIcon+'</a>'
       :'';
+    /* v202: derselbe Navi-Pfeil wie in der Liste. Morgens vor der Fahrt schaut Frank
+       eher hierher als in die Liste, deshalb gehört er an beide Stellen. Blau wie der
+       Routen-Knopf im Task, nicht grün wie der Pin — hier trägt Farbe noch Bedeutung
+       (die Graustufen-Regel gilt nur für #taskList). */
+    var routeBtn=adr
+      ?'<a href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_pamGeoQuery(adr)||adr)+'" target="_blank" title="Route planen" onclick="event.stopPropagation()" '
+        +'style="width:40px;height:40px;border-radius:50%;background:#185FA5;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+navIcon+'</a>'
+      :'';
     var mainText='<div style="flex:1;min-width:0;">'
       +(k&&k.name?'<div style="font-size:13px;color:var(--text);">'+esc(k.name)+'</div>':'')
       /* v197: durfte bis v196 nur eine Zeile hoch sein und wurde mit „…" gekappt.
@@ -7132,7 +7147,7 @@ function renderHeuteMobil(){
       +(adr?'<div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;line-height:1.25;">'+esc(adr)+'</div>':'')
       +'</div>';
     return'<div style="display:flex;align-items:center;gap:8px;padding:5px 10px 8px;border-top:1px solid var(--border);">'
-      +mainText+uhrBtn(t)+telBtn+mapsBtn+'</div>';
+      +mainText+routeBtn+uhrBtn(t)+telBtn+mapsBtn+'</div>'; // v202: Route ganz links
   }
   function timerBadge(t){
     return t.id===runningTaskId
@@ -9611,6 +9626,17 @@ function renderList(resetScroll){
       ?'<a href="https://maps.google.com/?q='+encodeURIComponent(_pamGeoQuery(cardAdr)||cardAdr)+'" target="_blank" class="card-akt" onclick="event.stopPropagation()" '
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#2e7d32;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PIN+'</a>'
       :'';
+    /* ⛔ v202: Routenplanung aus der GESCHLOSSENEN Karte. Franks Fall: „das mach ich am
+       Handy wenn ich losfahre, und dann möchte ich nicht erst noch klicken." Bis v201
+       lag der Weg dorthin am tiefsten von allen — Task öffnen, Objektadresse öffnen, 🗺️.
+       Der Pin daneben bleibt und tut weiter dasselbe wie immer (nur zeigen); es kommt
+       etwas hinzu, es wird nichts ersetzt.
+       Ziel und Kürzung sind identisch mit dem Knopf im Task (_pamGeoQuery): Sammel-
+       Adressen mit mehreren Hausnummern findet Google nur mit der ersten. */
+    const cardRouteBtn=cardAdr
+      ?'<a href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(_pamGeoQuery(cardAdr)||cardAdr)+'" target="_blank" class="card-akt" title="Route planen" onclick="event.stopPropagation()" '
+        +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#185FA5;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_NAV+'</a>'
+      :'';
     // v130 (Wunsch Frank): Stoppuhr direkt aus der Liste starten – kleines Icon VOR dem
     // Maps-Knopf. Läuft die Uhr, wird er orange und stoppt beim Antippen; die laufende Zeit
     // steht weiterhin oben im ⏱-Badge der Karte. Die Knopfzeile erscheint jetzt IMMER,
@@ -9681,7 +9707,11 @@ function renderList(resetScroll){
           +(cardTelK&&cardTelK.name
             ?'<span style="flex:1;font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(cardTelK.name)+'</span>'
             :'<span style="flex:1"></span>')
-          +cardUhrBtn+cardTelBtn+cardMapsBtn // v130: Uhr vor Telefon/Maps
+          /* v130: Uhr vor Telefon/Maps · v202: Route GANZ LINKS, Objekt ganz rechts.
+             Franks Vorgabe: „vielleicht nicht direkt nebeneinander". Zwischen den beiden
+             Kartenwegen liegen jetzt zwei Knöpfe — losfahren und nachsehen kann man mit
+             Handschuhen nicht mehr verwechseln. */
+          +cardRouteBtn+cardUhrBtn+cardTelBtn+cardMapsBtn
           +'</div>'
         :'')
       +'</div>'  // .task-card-body
