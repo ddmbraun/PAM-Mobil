@@ -6162,13 +6162,27 @@ function _tuMobObjektZeilen(t,gross,schlank){
          zeigt genau die Dateien DIESER Leistung.
          Eine Leistung ohne Anhänge bleibt so schlank wie bisher — die v179-Regel
          („draußen zählt der Handgriff") gilt für den Normalfall weiter. */
-      var _n=nDat+nVor;
+      /* ⛔ v200: Gezählt wurden bisher nur die EINTRÄGE in den Dateilisten. Ein Foto, das
+         gerade noch hochlädt, steht dort naturgemäß nicht — es bekommt seinen Eintrag
+         erst mit der Drive-Kennung. Folge: die Zeile erschien gar nicht, und damit gab
+         es keinen Weg in das Fenster, in dem das Foto längst zu sehen ist. Wer ohne
+         Empfang fotografiert, sah an der Leistung nichts von seiner eigenen Aufnahme.
+         Gezählt wird deshalb zusätzlich, was seine Leistung schon trägt, aber noch in
+         keiner Liste steht — und das wird auch benannt („lädt"), damit klar ist, warum
+         die Zahl höher ist als die der abgelegten Dateien. */
+      var _idsHier={};
+      ((l.dateien)||[]).forEach(function(d){if(d&&d.id)_idsHier[d.id]=1;});
+      ((l.eintraege)||[]).forEach(function(x){((x&&x.dateien)||[]).forEach(function(d){if(d&&d.id)_idsHier[d.id]=1;});});
+      var nOffen=(((t&&t.fotos)||[]).filter(function(f){
+        return f&&f.tuLeistung&&f.tuLeistung.lId===l.id&&!(f.driveId&&_idsHier[f.driveId]);
+      })).length;
+      var _n=nDat+nVor+nOffen;
       /* v199: Auch eine VORAB geschriebene Notiz macht die Zeile sichtbar — sonst hätte
          Frank sie geschrieben und fände draußen keinen Weg mehr zurück zu ihr. */
       var _notiz=((e&&e.notiz&&String(e.notiz).trim())||(l.notizVorab&&l.notizVorab.text&&String(l.notizVorab.text).trim()))?1:0;
       var _info=(_n||_notiz)
         ? '<div class="bau-karte-info" onclick="event.stopPropagation();_tuLeistungAnhaenge(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')">'
-          + (_n?'<span>📎 '+_n+(nVor?' · '+nVor+' vorab':'')+'</span>':'')
+          + (_n?'<span>📎 '+_n+(nVor?' · '+nVor+' vorab':'')+(nOffen?' · '+nOffen+' lädt':'')+'</span>':'')
           + (_notiz?'<span>📝 Notiz</span>':'')
           + '<span class="bau-karte-info-pfeil">›</span>'
           + '</div>'
@@ -6276,12 +6290,23 @@ function _tuLeistungAnhaenge(taskId,lId){
      entstehenden Termin wandern (v180). Fotos, die noch hochladen, hängen bereits an
      ihrem Termin (fo.tuLeistung.datum) und erscheinen deshalb gleich an der richtigen
      Stelle — auch ohne Eintrag in `dateien`. */
+  /* ⚠ `gruppen` steht bewusst allein in seiner Zeile: test_v193 und test_v194 schneiden
+     den Verlaufs-Teil genau an dieser Stelle aus dem Quelltext. Beim ersten v200-Anlauf
+     hing hier eine zweite Deklaration mit dran — beide Suiten fanden ihre Marke nicht
+     mehr und stürzten ab, statt rot zu werden. Die Anker dort sind inzwischen gelockert,
+     die Zeile bleibt trotzdem so. */
   var gruppen=[];
+  var verteilt={};
+  /* ⛔ v200: Hier stand die Bedingung „hat es ein Datum?" statt „trägt es eine
+     Zuordnung?". Für ein VORAB angehängtes Foto ist das Datum leer — es fiel damit in
+     den Zweig für den Altbestand und wurde über die Drive-Kennung gesucht. Die gibt es
+     aber noch nicht, solange es hochlädt. Ergebnis: das Foto stand in KEINER Gruppe,
+     obwohl es seine Leistung längst kennt. Genau der Fall vom Dach ohne Empfang.
+     Jetzt entscheidet die Zuordnung selbst — auch mit leerem Datum. Nur wer gar keine
+     hat (Altbestand vor v189), geht weiter über die Dateiliste. */
   var _fotosVon=function(dat){
     return treffer.filter(function(x){
-      var d=(x.f.tuLeistung&&x.f.tuLeistung.datum)||'';
-      if(d)return d===dat;
-      // Altbestand ohne eigene Zuordnung: über die Dateiliste des Termins zuordnen
+      if(x.f.tuLeistung)return (((x.f.tuLeistung.datum)||'')===dat);
       return eintraege.some(function(y){return y.wann===(dat||'vorab')&&y.d&&y.d.id===x.f.driveId;});
     });
   };
@@ -6293,6 +6318,15 @@ function _tuLeistungAnhaenge(taskId,lId){
     gruppen.push({titel:e.datum?_tuDe(e.datum):'Ohne Datum',unter:e.skip?'übersprungen':'erledigt',
       fotos:_fotosVon(e.datum||''),dateien:((e.dateien)||[]),notiz:(e.notiz||'')});
   });
+  /* ⛔ v200: Auffangnetz. Ein Foto kann eine Leistung UND ein Datum tragen, zu dem es
+     keinen Termin (mehr) gibt — etwa weil der Termin am Rechner gelöscht oder sein
+     Datum geändert wurde. Vorher fiel es dann still aus allen Gruppen, während die
+     Kopfzeile es weiter mitzählte: „3 Datei(en)", zu sehen waren zwei. Lieber eine
+     ehrliche Gruppe als ein Bild, das der Zähler verspricht und niemand findet. */
+  gruppen.forEach(function(g){g.fotos.forEach(function(x){verteilt[x.i]=1;});});
+  var _rest=treffer.filter(function(x){return !verteilt[x.i];});
+  if(_rest.length)gruppen.push({titel:'Ohne passenden Termin',
+    unter:'die Leistung steht am Bild, der Termin dazu fehlt',fotos:_rest,dateien:[],notiz:''});
   gruppen=gruppen.filter(function(g){return g.fotos.length||g.dateien.length||g.notiz;});
 
   var alt=document.getElementById('tuAnhOv');if(alt)alt.remove();
@@ -6331,7 +6365,21 @@ function _tuLeistungAnhaenge(taskId,lId){
       nz.textContent='📝 '+g.notiz;
       block.appendChild(nz);
     }
-    if(g.fotos.length){
+    /* ⛔ v200: Dateien, zu denen es kein Foto im Objekt gibt, standen hier als graue
+       Textzeile — „📎 2026-08-09_Rinnen-Eingangsseite_1.jpg" und sonst nichts. Genau
+       Franks Befund: „die Bilder werden nicht mehr angezeigt". Sechs von fünfzehn
+       Verweisen sahen so aus; sie stammen aus der Zeit vor v189, als der Leistungs-Weg
+       direkt nach Drive lud, ohne einen Eintrag in der Fotoliste anzulegen.
+       Ein Foto-Objekt fehlt also wirklich — die DRIVE-KENNUNG steht aber im Eintrag, und
+       mehr braucht die Vorschau-Kette nicht. Sie bekommen deshalb dieselbe Kachel wie
+       die echten Fotos. Bleibt die Vorschau leer (Datei gelöscht, kein Zugriff), steht
+       weiterhin der Name da — lieber ein Name als ein Loch, die Regel aus v193 gilt.
+       ⚠ Antippen führt nach Drive, nicht ins Vollbild: ohne Foto-Objekt gibt es keinen
+         Eintrag in der Liste, durch die das Vollbild blättert. */
+    var _ohneFoto=(g.dateien||[]).filter(function(d){
+      return d&&d.id&&!g.fotos.some(function(x){return x.f.driveId===d.id;});
+    });
+    if(g.fotos.length||_ohneFoto.length){
       var raster=document.createElement('div');
       raster.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px;';
       g.fotos.forEach(function(x){
@@ -6350,19 +6398,30 @@ function _tuLeistungAnhaenge(taskId,lId){
         z.onclick=function(){ov.remove();openFotoFullscreen(x.i);};
         raster.appendChild(z);
       });
+      // v200: dieselbe Kachel für die Dateien ohne Foto-Objekt – die Drive-Kennung reicht.
+      _ohneFoto.forEach(function(d){
+        var z=document.createElement('div');
+        z.style.cssText='position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#222;cursor:pointer;';
+        /* Das Platzhalter-Zeichen liegt UNTER dem Bild und verschwindet, sobald eine
+           Quelle geliefert hat. Kommt nichts, bleibt es stehen – zusammen mit dem Namen
+           darunter ist die Kachel dann genauso aussagekräftig wie die alte Textzeile. */
+        var platz=document.createElement('div');
+        platz.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;opacity:.5;pointer-events:none;';
+        platz.textContent='📎';
+        z.appendChild(platz);
+        var im=document.createElement('img');
+        im.alt='';im.style.cssText='width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+        z.appendChild(im);
+        try{_fotoVorschauLaden({driveId:d.id,name:(d.name||'')},im,{beiBild:function(){platz.style.display='none';}});}catch(e){}
+        var nm=document.createElement('span');
+        nm.textContent=d.name||'Datei';
+        nm.style.cssText='position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        z.appendChild(nm);
+        z.title=d.name||'Datei';
+        z.onclick=function(){try{window.open('https://drive.google.com/file/d/'+d.id+'/view','_blank');}catch(e){}};
+        raster.appendChild(z);
+      });
       block.appendChild(raster);
-    }
-    // Dateien ohne Bild am Handy (Altbestand, PDF): wenigstens mit Namen zeigen.
-    var ohne=g.dateien.filter(function(d){
-      return d&&d.id&&!g.fotos.some(function(x){return x.f.driveId===d.id;});
-    });
-    if(ohne.length){
-      var liste=document.createElement('div');
-      liste.style.cssText='display:flex;flex-direction:column;gap:5px;';
-      liste.innerHTML=ohne.map(function(d){
-        return '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:7px 10px;color:#fff;font-size:12px;overflow-wrap:anywhere;">📎 '+esc(d.name||'Datei')+'</div>';
-      }).join('');
-      block.appendChild(liste);
     }
     ov.appendChild(block);
   });
