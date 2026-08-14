@@ -8830,13 +8830,46 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
     scheduleSave();
     _wpMobRenderFotos(bericht,grid); // Vorschau sofort sichtbar (blob-URL)
 
+    /* ⛔ v203: DAS TOR AUS v191 — hier fehlte es bis v202. Der Berichts-Weg lud jede
+       Aufnahme sofort nach Drive; wer danach „verwerfen" wollte, hatte die Datei bereits
+       oben liegen und musste sie in Drive von Hand hinterherlöschen. Jetzt gilt auch
+       hier: entschieden wird VOR dem Upload, und verworfen heißt „war nie in Drive".
+       ⚠ Kein „📷 Weiteres" und kein „Text/Malen": dieser Weg baut ein Wegwerf-Eingabefeld
+         (es gibt kein festes Kamerafeld zum Anklicken), und die Berichts-Fotos liegen in
+         `bericht.fotos`, nicht in `t.fotos` — die Vollbild-Ansicht fände sie dort nicht.
+         Lieber zwei Knöpfe weniger als zwei, die ins Leere greifen (Regel aus v185). */
+    let _wpEntscheidung=Promise.resolve();
+    try{
+      _wpEntscheidung=_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),null,{
+        bearbeiten:false,
+        weiteres:false,
+        verwerfenFn:function(f){
+          const i=bericht.fotos.indexOf(f);
+          if(i>=0)bericht.fotos.splice(i,1);
+          if(f.localKey){try{_mobPhotoDelete(f.localKey);}catch(e){}}
+          try{_wpMobRenderFotos(bericht,grid);}catch(e){}
+          scheduleSave();
+        }
+      })||Promise.resolve();
+    }catch(e){console.warn('[WP-Foto] Vorschau:',e);}
+
     // Schritt B: Parallel in IndexedDB sichern (persistent über Neuladen hinaus)
     fotoObjs.forEach(({file,fo})=>{
+      // v203: ein verworfenes Bild wird gar nicht erst abgelegt (wie in uploadFoto)
+      if(fo._entscheidung==='verworfen')return;
       _fileToDataUrl(file).then(dataUrl=>{
+        if(fo._entscheidung==='verworfen')return null; // während des Einlesens verworfen
         fo.localUrl=dataUrl; // blob-URL durch persistente data-URL ersetzen
         return _mobPhotoSave(fo.localKey,dataUrl);
       }).then(()=>{scheduleSave();}).catch(e=>console.warn('[MobPhoto]',e));
     });
+
+    /* ⛔ Erst hier weiter: solange der Dialog offen ist, geht nichts nach Drive. Genau
+       das ist das Tor. Der Notausgang aus v191 (ein neuer Dialog erfüllt das Versprechen
+       des alten) gilt mit, weil es derselbe Dialog ist. */
+    try{await _wpEntscheidung;}catch(e){console.warn('[WP-Foto] Entscheidung:',e);}
+    const _wpBehalten=fotoObjs.filter(o=>o.fo._entscheidung!=='verworfen');
+    if(!_wpBehalten.length){try{_wpMobRenderFotos(bericht,grid);}catch(e){}return;}
 
     // ── 2. Uploads parallel im Hintergrund ─────────────────────────────────
     if(typeof gdriveToken!=='undefined'&&gdriveToken){
@@ -8844,11 +8877,13 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
       const fid=ct?_extractFolderIdMob(ct.gdrive||ct.gdriveOrdner||''):null;
       if(fid){
         // Upload-Spinner einblenden
-        fotoObjs.forEach(({fo})=>{fo._uploading=true;});
+        // v203: nur für die BEHALTENEN – ein verworfenes Bild bekommt keinen Spinner
+        // und keinen Upload, es ist zu diesem Zeitpunkt schon aus der Liste heraus.
+        _wpBehalten.forEach(({fo})=>{fo._uploading=true;});
         _wpMobRenderFotos(bericht,grid);
 
         let ok=0,fail=0;
-        await Promise.all(fotoObjs.map(async({file,fo})=>{
+        await Promise.all(_wpBehalten.map(async({file,fo})=>{
           try{
             const form=new FormData();
             form.append('metadata',new Blob([JSON.stringify({name:file.name,parents:[fid],mimeType:file.type})],{type:'application/json'}));
@@ -10204,10 +10239,16 @@ function _showSchnellFotoPreview(fo, t, opt){
   /* ⛔ v191: Erst die Entscheidung am Foto vermerken, DANN entfernen. uploadFoto liest
      sie und lädt dieses Bild gar nicht erst hoch. Bis v190 wurde hier nur aus der
      Liste gelöscht — und der längst laufende Upload hängte es wieder ein. */
+  /* v203: `verwerfenFn` — das Aufräumen ist der EINZIGE Teil dieses Dialogs, der weiß,
+     wo die Fotos liegen. Der Standardweg räumt aus `t.fotos`; Wartungsprotokoll und
+     Dachplan-Pin führen eigene Listen und geben deshalb ihr eigenes Aufräumen mit.
+     Ohne diesen Schalter hätte der Dialog dort ein Foto als „verworfen" vermerkt, es
+     aber in der fremden Liste stehen lassen — sichtbar, obwohl weggeworfen. */
   btnDel.onclick=function(){
     const f=aktuell();
     f._entscheidung='verworfen';
-    _schnellFotoVerwerfen(f.localKey||f.driveId||'',f.name||'',true,t);
+    if(typeof opt.verwerfenFn==='function'){try{opt.verwerfenFn(f);}catch(e){console.warn('[Foto-Dialog] Verwerfen:',e);}}
+    else _schnellFotoVerwerfen(f.localKey||f.driveId||'',f.name||'',true,t);
     weiterOderSchliessen();
   };
   const btnKeep=document.createElement('button');
@@ -18530,12 +18571,49 @@ window.Dachplan=(function(){
     const p=cur();if(!p)return;if(!p.fotos)p.fotos=[];
     const folderId=resolveFolder();
     try{if(typeof ensureToken==='function')await ensureToken();}catch(e){}
+    /* ⛔ v203: DAS TOR AUS v191 — bis v202 lief hier je Foto sofort der Upload. Wer eine
+       misslungene Aufnahme wegwerfen wollte, hatte sie bereits in Drive liegen.
+       Umgebaut in drei Schritte: erst ALLE ins Gerät, dann entscheiden, dann hochladen. */
+    const neu=[];
     for(const f of files){
       if(!/^image\//.test(f.type||''))continue;
       const key='dpph_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
       let small=f;try{small=(await _fotoUebernahme(f)).file;}catch(_){} // v174: + GPS-Auffüllung wie überall
-      try{const durl=await _fileToDataUrl(small);await _mobPhotoSave(key,durl);}catch(_){}
-      const fo={key:key,driveId:null};p.fotos.push(fo);drawThumbs(p);save();
+      let durl='';
+      try{durl=await _fileToDataUrl(small);await _mobPhotoSave(key,durl);}catch(_){}
+      const fo={key:key,driveId:null};
+      p.fotos.push(fo);
+      neu.push({file:small,fo:fo,durl:durl});
+    }
+    if(!neu.length)return;
+    drawThumbs(p);save();
+    /* ⛔ Der Dialog bekommt EIGENE Anzeige-Objekte, nicht die Pin-Einträge selbst. Grund:
+       er zeigt das Bild aus `localUrl` — hinge die Bilddatei am Pin-Eintrag, landete sie
+       beim nächsten Speichern in `workboard.json` und damit als Base64-Ungetüm in der
+       Datenbank in Drive. Die Vorschaubilder wohnen im Gerät (`_mobPhotoSave`), dort
+       gehören sie hin. Die Entscheidung wird nach dem Dialog an den Pin-Eintrag
+       zurückgeschrieben. */
+    const anzeige=neu.map(o=>({localUrl:o.durl,name:(o.file&&o.file.name)||'Foto',_entscheidung:'',_ziel:o.fo}));
+    let ent=Promise.resolve();
+    try{
+      ent=_showSchnellFotoPreview(anzeige,null,{
+        bearbeiten:false, // die Vollbild-Ansicht kennt nur t.fotos, nicht die Pin-Fotos
+        weiteres:false,   // der Dachplan hat kein festes Kamerafeld zum Anklicken
+        verwerfenFn:function(a){
+          const fo=a&&a._ziel;if(!fo)return;
+          const i=p.fotos.indexOf(fo);
+          if(i>=0)p.fotos.splice(i,1);
+          if(fo.key){try{_mobPhotoDelete(fo.key);}catch(e){}}
+          drawThumbs(p);save();
+        }
+      })||Promise.resolve();
+    }catch(e){console.warn('[Dachplan-Foto] Vorschau:',e);}
+    try{await ent;}catch(e){console.warn('[Dachplan-Foto] Entscheidung:',e);}
+    anzeige.forEach(a=>{if(a._ziel)a._ziel._entscheidung=a._entscheidung;});
+    const behalten=neu.filter(o=>o.fo._entscheidung!=='verworfen');
+    if(!behalten.length){drawThumbs(p);return;}
+    for(const o of behalten){
+      const small=o.file,fo=o.fo;
       if(folderId){try{const meta=await _uploadOneFotoToDrive(small,folderId);fo.driveId=meta.id;save();}
         catch(e){say('Foto lokal gesichert – Drive-Upload später','error');}}
       else{say('Kein Foto-Ordner – Foto nur lokal gesichert','error');}
