@@ -5896,9 +5896,15 @@ function switchMobView(view){
 // (12 Monatsspalten sind auf dem Handy unlesbar) – das bleibt am Desktop.
 //
 // Datenform am Task (vom Desktop angelegt):
-//   task.turnusListe = [{id,name,intervall,eintraege:[{datum,notiz,skip}]}]
+//   task.turnusListe = [{id,name,intervall,nichtHeute?,eintraege:[{datum,notiz,skip}]}]
 // Die Mobil-App speichert Tasks unverändert durch – das Feld überlebt hier
 // automatisch, es braucht keinen Eintrag in einer Feldliste wie am Desktop.
+//
+// v204: `nichtHeute:true` heißt „am Objekt abgewählt" (Haken „in Heute" weg).
+// Gesetzt wird der Haken ausschließlich am Rechner – hier wird ja bewusst nur
+// angesehen und abgehakt. Das Handy BEACHTET ihn nur: die Leistung fällt aus
+// der Heute-Übersicht, bleibt aber am Objekt normal sichtbar und abhakbar.
+// Fehlt das Feld, gilt die Leistung als angehakt.
 // ══════════════════════════════════════════════════════════════════════════
 var TU_INTERVALLE={woechentlich:{label:'wöchentlich',tage:7},monatlich:{label:'monatlich',tage:30},
   zweimonatlich:{label:'2-monatlich',tage:61},quartal:{label:'vierteljährlich',tage:91},
@@ -5953,7 +5959,10 @@ function _tuMobSammle(){
     if(bn.startsWith('_'))return;
     (boards[bn]||[]).forEach(function(t){
       if(!t||t.archiviert||t.spaeterBearbeiten)return;
-      (t.turnusListe||[]).forEach(function(l){ if(l&&_tuFaellig(l))flach.push({t:t,board:bn,l:l}); });
+      // v204: am Rechner abgewählte Leistungen („in Heute" ohne Haken) bleiben hier
+      // draußen. Sie sind weder erledigt noch übersprungen – am Objekt stehen sie
+      // unverändert und lassen sich dort auch am Handy abhaken.
+      (t.turnusListe||[]).forEach(function(l){ if(l&&_tuFaellig(l)&&!l.nichtHeute)flach.push({t:t,board:bn,l:l}); });
     });
   });
   flach.sort(function(a,b){
@@ -6221,7 +6230,10 @@ function _tuMobObjektZeilen(t,gross,schlank){
       return '<div class="bau-karte">'
         + '<div class="bau-karte-kopf">'
         +   '<span class="bau-karte-punkt" style="background:'+farbe+';"></span>'
-        +   '<span class="bau-karte-name">'+esc(l.name||'')+'</span>'
+        /* v204: nur ANZEIGE. Ist die Leistung am Rechner abgewählt, steht hier ein
+           leeres Kästchen — sonst sucht man draußen vergeblich, warum sie in „Heute"
+           fehlt. Gesetzt wird der Haken ausschließlich am Rechner. */
+        +   '<span class="bau-karte-name">'+(l.nichtHeute?'<span title="nicht in der Heute-Übersicht (am Rechner abgewählt)">☐ </span>':'')+esc(l.name||'')+'</span>'
         + '</div>'
         + _stand
         + _info
@@ -6231,7 +6243,7 @@ function _tuMobObjektZeilen(t,gross,schlank){
     return '<div style="display:flex;align-items:center;gap:9px;padding:'+(gross?'11px 0':'9px 0')+';border-bottom:0.5px solid var(--border);">'
       + '<span style="width:8px;height:8px;border-radius:50%;background:'+farbe+';flex-shrink:0;"></span>'
       + '<div style="flex:1;min-width:0;">'
-      +   '<div style="font-size:'+_tuMs(sName)+';'+(gross?'font-weight:600;':'')+'color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(l.name||'')+'</div>'
+      +   '<div style="font-size:'+_tuMs(sName)+';'+(gross?'font-weight:600;':'')+'color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+(l.nichtHeute?'<span title="nicht in der Heute-Übersicht (am Rechner abgewählt)">☐ </span>':'')+esc(l.name||'')+'</div>' // v204
       +   '<div style="font-size:'+_tuMs(sInfo)+';color:var(--text2);">'+esc(_tuStatusText(l))+(nDat?(' · 📎 '+nDat):'')+(nVor?(' · 📎 '+nVor+' vorab'):'')+'</div>'
       +   _tuMobNotizZeile(l,gross)
       + '</div>'
