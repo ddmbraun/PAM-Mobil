@@ -6046,10 +6046,22 @@ function _tuMobNotizZeile(l,gross){
   return '<div style="font-size:'+_tuMs(gross?13:11)+';color:var(--text2);overflow:hidden;text-overflow:ellipsis;'
     +'white-space:nowrap;font-style:italic;">📝 '+esc(e.notiz)+'</div>';
 }
-function _tuMobNotiz(taskId,lId){
+function _tuMobNotiz(taskId,lId,datum){
   var t=findTaskById(taskId); if(!t)return;
   var l=(t.turnusListe||[]).find(function(x){return x&&x.id===lId;}); if(!l)return;
-  var e=((l.eintraege)||[])[0];
+  /* v201: `datum` wählt den Termin aus. OHNE Angabe bleibt alles wie bisher — der
+     jüngste Termin, sonst vorab. Genau so rufen die Knöpfe an der Karte und in Baudoku
+     weiter, und die v199-Wege gelten unverändert.
+     Mit Angabe: '' heißt ausdrücklich die Vorab-Notiz, ein Datum heißt genau dieser
+     Termin. Gibt es ihn nicht (am Rechner gelöscht, während das Fenster offen stand),
+     wird nichts angelegt — lieber nichts tun als eine Notiz ins Leere schreiben. */
+  var e;
+  if(datum===undefined)e=((l.eintraege)||[])[0];
+  else if(datum==='')e=null;
+  else{
+    e=((l.eintraege)||[]).find(function(x){return x&&x.datum===datum;});
+    if(!e){if(typeof toast==='function')toast('Diesen Termin gibt es nicht mehr');return;}
+  }
   /* ⛔ v199: Vor dem ersten ✓ ging gar keine Notiz — die Meldung lautete sinngemäß
      „erst abhaken". Franks Fall aus dem Feld: hinfahren, sehen, Arbeit noch nicht
      fertig. Ein FOTO durfte er in dieser Lage seit v180 vorab ablegen, die Notiz
@@ -6178,8 +6190,14 @@ function _tuMobObjektZeilen(t,gross,schlank){
       })).length;
       var _n=nDat+nVor+nOffen;
       /* v199: Auch eine VORAB geschriebene Notiz macht die Zeile sichtbar — sonst hätte
-         Frank sie geschrieben und fände draußen keinen Weg mehr zurück zu ihr. */
-      var _notiz=((e&&e.notiz&&String(e.notiz).trim())||(l.notizVorab&&l.notizVorab.text&&String(l.notizVorab.text).trim()))?1:0;
+         Frank sie geschrieben und fände draußen keinen Weg mehr zurück zu ihr.
+         ⛔ v201: Gezählt wurde hier nur der JÜNGSTE Termin (`e`). Stand die Notiz an einer
+         älteren Erledigung und hing sonst nichts dran, erschien die Zeile gar nicht — und
+         damit gab es am Handy KEINEN Weg zu dieser Notiz. Sie war da und unsichtbar.
+         Halbjährliche Leistungen trifft das zwangsläufig: im August sucht man den Befund
+         vom Februar. Jetzt zählt jede Erledigung. */
+      var _notiz=(((l.eintraege)||[]).some(function(x){return !!(x&&x.notiz&&String(x.notiz).trim());})
+        ||(l.notizVorab&&l.notizVorab.text&&String(l.notizVorab.text).trim()))?1:0;
       var _info=(_n||_notiz)
         ? '<div class="bau-karte-info" onclick="event.stopPropagation();_tuLeistungAnhaenge(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')">'
           + (_n?'<span>📎 '+_n+(nVor?' · '+nVor+' vorab':'')+(nOffen?' · '+nOffen+' lädt':'')+'</span>':'')
@@ -6310,12 +6328,17 @@ function _tuLeistungAnhaenge(taskId,lId){
       return eintraege.some(function(y){return y.wann===(dat||'vorab')&&y.d&&y.d.id===x.f.driveId;});
     });
   };
+  /* v201: `ziel` sagt, welchen Termin der 📝 dieser Gruppe bearbeitet — '' ist die
+     Vorab-Notiz, ein Datum ist genau dieser Termin. Gruppen ohne `ziel` (Auffangnetz
+     unten, Termin ohne Datum) bekommen keinen Knopf: dort gäbe es nichts, woran die
+     Notiz hängen könnte. */
   gruppen.push({titel:'Vorab abgelegt',unter:'wandert beim nächsten ✓ in den Termin',
-    fotos:_fotosVon(''),dateien:((l.dateien)||[]),
+    fotos:_fotosVon(''),dateien:((l.dateien)||[]),ziel:'',
     notiz:((l.notizVorab&&l.notizVorab.text)||'')}); // v199: die Vorab-Notiz gehört hierher
   ((l.eintraege)||[]).forEach(function(e){
     if(!e)return;
     gruppen.push({titel:e.datum?_tuDe(e.datum):'Ohne Datum',unter:e.skip?'übersprungen':'erledigt',
+      ziel:(e.datum||null),
       fotos:_fotosVon(e.datum||''),dateien:((e.dateien)||[]),notiz:(e.notiz||'')});
   });
   /* ⛔ v200: Auffangnetz. Ein Foto kann eine Leistung UND ein Datum tragen, zu dem es
@@ -6358,6 +6381,28 @@ function _tuLeistungAnhaenge(taskId,lId){
     var zeile=document.createElement('div');
     zeile.style.cssText='color:#fff;font-size:13px;font-weight:700;display:flex;align-items:baseline;gap:8px;';
     zeile.innerHTML='<span>'+esc(g.titel)+'</span><span style="font-size:11px;font-weight:400;opacity:.65;">'+esc(g.unter)+'</span>';
+    /* ⛔ v201: Bis v200 war dieses Fenster nur zum Ansehen. Der 📝 an der Karte traf
+       IMMER den jüngsten Termin — die Notiz vom Februar war am Handy nicht zu ändern,
+       während am Rechner jede Datumszeile ihren eigenen 📝 hat. Jetzt hat ihn jede
+       Gruppe, die ein Ziel kennt. Der Knopf sitzt in der Kopfzeile der Gruppe, damit er
+       auch dann erreichbar ist, wenn noch gar keine Notiz da steht.
+       ⚠ Nach dem Schreiben wird das Fenster neu aufgebaut, sonst stünde der alte Text
+       noch da. Das passiert HIER und nicht in _tuMobNotiz: vier Suiten schneiden diese
+       Funktion aus und kennen _tuLeistungAnhaenge nicht — ein Aufruf von dort würde sie
+       abstürzen lassen statt rot werden. */
+    if(g.ziel!==undefined&&g.ziel!==null){
+      var nk=document.createElement('button');
+      nk.type='button';
+      nk.textContent='📝';
+      nk.title=g.notiz?'Notiz ändern':'Notiz schreiben';
+      nk.style.cssText='margin-left:auto;align-self:center;flex-shrink:0;min-width:44px;height:32px;border-radius:16px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.12);color:#fff;font-size:15px;cursor:pointer;';
+      nk.onclick=function(ev){
+        try{if(ev&&ev.stopPropagation)ev.stopPropagation();}catch(_){}
+        _tuMobNotiz(taskId,lId,g.ziel);
+        _tuLeistungAnhaenge(taskId,lId);
+      };
+      zeile.appendChild(nk);
+    }
     block.appendChild(zeile);
     if(g.notiz){
       var nz=document.createElement('div');
