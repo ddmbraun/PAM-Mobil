@@ -5259,6 +5259,23 @@ function _taskErstelltAm(t){
   if(t.createdAt){const d=new Date(t.createdAt);if(!isNaN(d.getTime()))return d;}
   const m=/📅\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\D{0,3}(\d{1,2}):(\d{2})/.exec(t.desc||'');
   if(m){const d=new Date(+m[3],+m[2]-1,+m[1],+m[4],+m[5]);if(!isNaN(d.getTime()))return d;}
+  // v205: Quelle 3 – der Zeitstempel in der Task-Nummer. `generateId()` baut sie
+  // hier UND am Rechner als 't_<Millisekunden>_<zufall>' (siehe oben, Zeile mit
+  // Date.now()). Das ist der ECHTE Anlegezeitpunkt, also **kein Raten, sondern
+  // eine Ableitung** – der Rechner macht es seit b620 genauso (_pamAngelegtDate),
+  // und der Kommentar dort nennt die Handy-IDs ausdrücklich als passend.
+  //
+  // ⛔ Der frühere Satz „geraten wird nicht" stimmte für die 📅-Zeile, nicht für
+  // die Nummer: alte Desktop-Tasks blieben dadurch am Handy ohne Datum, obwohl
+  // der Zeitpunkt in der ID stand. Befund aus dem Parallel-Chat, 15.08.2026.
+  //
+  // Zwei Wächter, wortgleich zum Rechner: Jahr ab 2020 und nicht in der Zukunft.
+  // Fremde ID-Formen (Importe) liefern damit weiterhin null → Anzeige bleibt leer.
+  const mi=/^t_(\d{10,16})_/.exec(String(t.id||''));
+  if(mi){
+    const d=new Date(Number(mi[1]));
+    if(!isNaN(d.getTime())&&d.getFullYear()>=2020&&d.getTime()<=Date.now()+86400000)return d;
+  }
   return null;
 }
 function _taskErstelltText(t,kurz){
@@ -7452,7 +7469,19 @@ async function findOrPickFile(){
 // Splittet rohe Drive-Daten in statuses / sichtbare boards / hiddenBoards / Whitelist
 let _remoteBoardStatuses={}; // wird vom Desktop gesetzt, Mobil schreibt es unverändert zurück
 let _remoteBoardOrder=[];    // v182: Board-Reihenfolge (Desktop-Merkfeld b643) – Mobil reicht sie durch und schreibt danach sortiert
-let boardTypes={}; // 'baustelle' | 'notiz' pro Board-Name
+let boardTypes={}; // 'baustelle' | 'notiz' | 'email' | 'immobilie' pro Board-Name
+// ⛔ v205: Der Kommentar nannte hier bis heute nur „baustelle | notiz" — und genau
+// so verhielt sich die Anzeige auch: Die Board-Symbole kannten `email` zwar, aber
+// **`immobilie` nicht**. Ein Objekt-Board bekam am Handy das Auftrags-Symbol 🏗.
+// Der Rechner konnte es längst richtig; das Handy kannte den Typ nur an einer
+// einzigen Stelle (dem Knopf „➕ Auftrag an diesem Objekt").
+//
+// EINE Funktion für alle Listen — wer einen Typ ergänzt, ändert nur noch hier.
+// Ohne Leerzeichen; wo eins gebraucht wird, hängt der Aufrufer es an.
+function _bIconTyp(n){
+  const t=(boardTypes[n]||'baustelle');
+  return t==='notiz'?'✅':t==='email'?'📧':t==='immobilie'?'🏠':'🏗';
+}
 // ── v151: Schutzriegel „ein leeres Feld überschreibt nie ein gefülltes" ──
 // Hintergrund: der Desktop kennt createdAt (v150) und skizzen nicht – sein
 // saveTaskData baut Tasks aus einer festen Feldliste komplett neu und wirft beide
@@ -9479,7 +9508,7 @@ function renderBoardBar(){
   const names=Object.keys(boards);
   bar.innerHTML=names.map(n=>{
     const cnt=(boards[n]||[]).length;
-    const bIcon=(boardTypes[n]||'baustelle')==='notiz'?'✅ ':(boardTypes[n]||'baustelle')==='email'?'📧 ':'🏗 ';
+    const bIcon=_bIconTyp(n)+' '; // v205: kannte vorher kein 🏠 Objekt
     return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="switchBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
   if(lbl){
@@ -9519,7 +9548,7 @@ function _mkUpdate(){
   const btn=document.getElementById('mkBoardBtn');
   if(btn){
     const cnt=(boards[currentBoard]||[]).length;
-    const bIcon=(boardTypes[currentBoard]||'baustelle')==='notiz'?'✅':(boardTypes[currentBoard]||'baustelle')==='email'?'📧':'🏗';
+    const bIcon=_bIconTyp(currentBoard); // v205: kannte vorher kein 🏠 Objekt
     btn.innerHTML='<span>'+bIcon+'</span><span class="mk-board-txt">'+esc(currentBoard||'Board wählen')+' ('+cnt+')</span><span style="color:var(--text2);flex-shrink:0">▾</span>';
   }
   const fb=document.getElementById('mkFilterBtn');
@@ -9532,7 +9561,7 @@ function _mkTogglePanel(){
   let h='<div class="mk-panel-lbl">Board</div>';
   h+=names.map(n=>{
     const cnt=(boards[n]||[]).length;
-    const bIcon=(boardTypes[n]||'baustelle')==='notiz'?'✅ ':(boardTypes[n]||'baustelle')==='email'?'📧 ':'🏗 ';
+    const bIcon=_bIconTyp(n)+' '; // v205: kannte vorher kein 🏠 Objekt
     return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="_mkPickBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
   const tasks=boards[currentBoard]||[];
