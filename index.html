@@ -4615,7 +4615,12 @@ function _buildMobileSaveObj(){
   for(const[k,v]of Object.entries(hiddenBoards||{}))_alleB[k]=v;
   for(const[k,v]of Object.entries(boards||{})){
     const _fo=_mobileFilteredOut[k]||[];
-    _alleB[k]=_fo.length?[...v,..._fo]:v;
+    // v210: nur einmischen, was nicht schon in v steht. Nach einem Konflikt-Abgleich
+    // traegt v bereits den vollstaendigen Remote-Stand - das alte [...v,..._fo] legte
+    // dann jede weggefilterte Karte ein zweites Mal ab.
+    const _foIds=new Set((v||[]).map(function(t){return t&&t.id;}).filter(Boolean));
+    const _foNeu=_fo.filter(function(t){return !(t&&t.id&&_foIds.has(t.id));});
+    _alleB[k]=_foNeu.length?[...v,..._foNeu]:v;
   }
   _remoteBoardOrder.forEach(k=>{if(_alleB[k]!==undefined){obj[k]=_alleB[k];delete _alleB[k];}});
   for(const[k,v]of Object.entries(_alleB))obj[k]=v;
@@ -7883,7 +7888,12 @@ async function saveFile(){
       for(const[k,v]of Object.entries(boards||{})){
         // Weggefilterte Tasks (andere Spalten + archivierte) wieder einmischen
         const _fo=_mobileFilteredOut[k]||[];
-        _alleB[k]=_fo.length?[...v,..._fo]:v;
+        // v210: nur einmischen, was nicht schon in v steht. Nach einem Konflikt-Abgleich
+        // traegt v bereits den vollstaendigen Remote-Stand - das alte [...v,..._fo] legte
+        // dann jede weggefilterte Karte ein zweites Mal ab.
+        const _foIds=new Set((v||[]).map(function(t){return t&&t.id;}).filter(Boolean));
+        const _foNeu=_fo.filter(function(t){return !(t&&t.id&&_foIds.has(t.id));});
+        _alleB[k]=_foNeu.length?[...v,..._foNeu]:v;
       }
       _remoteBoardOrder.forEach(k=>{if(_alleB[k]!==undefined){obj[k]=_alleB[k];delete _alleB[k];}});
       for(const[k,v]of Object.entries(_alleB))obj[k]=v; // Boards ohne Merkfeld-Eintrag hinten anfügen
