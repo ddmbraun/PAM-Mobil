@@ -18532,9 +18532,13 @@ window.Dachplan=(function(){
     q('#dpTitle').oninput=e=>{const p=cur();if(p){p.title=e.target.value;save();}};
     q('#dpNote').oninput=e=>{const p=cur();if(p){p.note=e.target.value;save();}};
     q('#dpPhotoBtn').onclick=()=>q('#dpPhotoInput').click();
-    q('#dpPhotoInput').onchange=e=>{addPhotos([...e.target.files]);e.target.value='';};
+    /* v209: die Herkunft wird als Aufrufwert weitergereicht, NICHT über das globale
+       `_fotoQuelle`. Grund: das wird allein in `uploadFoto` gelesen und dort sofort
+       wieder geleert (Zeile ~13795). Setzte der Dachplan es, bliebe es stehen und der
+       nächste normale Foto-Weg hielte ein Galeriebild für eine Kameraaufnahme. */
+    q('#dpPhotoInput').onchange=e=>{addPhotos([...e.target.files],true);e.target.value='';};
     q('#dpGalBtn').onclick=()=>q('#dpGalInput').click();
-    q('#dpGalInput').onchange=e=>{addPhotos([...e.target.files]);e.target.value='';};
+    q('#dpGalInput').onchange=e=>{addPhotos([...e.target.files],false);e.target.value='';};
     q('#dpNav').onclick=()=>{const p=cur();if(!p)return;let lat=p.lat,lng=p.lng;if((lat==null||lng==null)&&p.nx!=null){const w=calFrToLatLng(p.nx,p.ny);if(w){lat=w.lat;lng=w.lng;}}if(lat!=null&&lng!=null)window.open('https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng,'_blank');else say('Navigation im Bild-Modus braucht die Kalibrierung');};
     q('#dpDel').onclick=()=>{const p=cur();if(!p)return;if(!confirm('Pin '+p.nr+' löschen?'))return;
       (p.fotos||[]).forEach(fo=>{try{_mobPhotoDelete(fo.key);}catch(_){}});
@@ -18693,7 +18697,7 @@ window.Dachplan=(function(){
     setCoord(p);markStat(p);drawThumbs(p);pinBtnHide();E.sheet.classList.add('show');} // v129: Knopf weg, sobald das Fenster offen ist
   function closeSheet(){E.sheet.classList.remove('show');}
 
-  async function addPhotos(files){
+  async function addPhotos(files,vonKamera){
     const p=cur();if(!p)return;if(!p.fotos)p.fotos=[];
     const folderId=resolveFolder();
     try{if(typeof ensureToken==='function')await ensureToken();}catch(e){}
@@ -18724,7 +18728,19 @@ window.Dachplan=(function(){
     try{
       ent=_showSchnellFotoPreview(anzeige,null,{
         bearbeiten:false, // die Vollbild-Ansicht kennt nur t.fotos, nicht die Pin-Fotos
-        weiteres:false,   // der Dachplan hat kein festes Kamerafeld zum Anklicken
+        /* ⛔ v209: Hier stand `weiteres:false` mit der Begründung „der Dachplan hat kein
+           festes Kamerafeld zum Anklicken". Gemessen am 19.08.: das stimmt nicht — die
+           Begründung gilt für den Wartungsprotokoll-Weg (`_wpMobFotoAufnehmen` baut sein
+           Eingabefeld je Aufnahme neu und wirft es weg), hier aber liegt `#dpPhotoInput`
+           mit `capture="environment"` fest im Pin-Fenster, samt sichtbarem Knopf
+           „📸 Kamera". Es war dieselbe Bauart wie bei den normalen Fotos, nur ohne Knopf.
+           ⚠ Nur nach einer KAMERA-Aufnahme — nach Galeriebildern wäre ein Kamera-Angebot
+           verkehrt, dort holt man mehrere auf einmal (Hausregel aus v191). */
+        weiteres:vonKamera===true,
+        kameraFeld:'dpPhotoInput', // ⛔ das Feld des LAUFENDEN Dachplans (v2). Der alte
+        // Baustein v1 legt zwar ein zweites `#dpPhotoInput` an, baut seine Oberfläche
+        // aber nie: `window.Dachplan` wird von v2 überschrieben, sein `open()` ist
+        // unerreichbar und `build()` läuft nur von dort. Im Fenster liegt also genau eins.
         verwerfenFn:function(a){
           const fo=a&&a._ziel;if(!fo)return;
           const i=p.fotos.indexOf(fo);

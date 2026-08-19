@@ -1,12 +1,12 @@
 ﻿// Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v208';
+const CACHE_NAME = 'pam-mobil-v209';
 // Aenderungsnotizen stehen bewusst NICHT hier, sondern lokal in CHANGES.md -
 // diese Datei wird oeffentlich ausgeliefert (v183, Datenschutz; wie b646 am Desktop).
 
 // â”€â”€ v167: Vorschaubild-Speicher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Der Kern: Wir dÃ¼rfen den INHALT eines fremden Bildes nicht lesen â€“ aber wir dÃ¼rfen
+// Der Kern: Wir dürfen den INHALT eines fremden Bildes nicht lesen â€“ aber wir dürfen
 // die Antwort unveraendert AUFHEBEN und spaeter wieder anzeigen. Zwei verschiedene
 // Erlaubnisse. Genau das macht diese Datei seit v137 schon mit den CDN-Bibliotheken
 // (siehe unten "opaque"): sie werden gespeichert, ohne je gelesen zu werden.
@@ -122,10 +122,10 @@ self.addEventListener('fetch', e => {
         // v137: Bibliotheken vom CDN (Leaflet, jsPDF, â€¦) laden als <script>/<link> ohne
         // CORS â†’ resp.status ist 0 ("opaque"), nie 200 â†’ sie wurden im laufenden Betrieb
         // NIE nachgespeichert. Scheiterte ihr Vorladen bei der SW-Installation einmal
-        // (Netz-Wackler), blieb die LÃ¼cke fÃ¼r immer und z.B. der Dachplan fiel bei jedem
+        // (Netz-Wackler), blieb die Lücke für immer und z.B. der Dachplan fiel bei jedem
         // Start-Schluckauf aus ("Karte braucht einmal Internet"). Jetzt: opaque-Antworten
-        // der bekannten CDN-Hosts werden mitgespeichert â€“ die LÃ¼cke heilt sich beim
-        // nÃ¤chsten erfolgreichen Laden von selbst.
+        // der bekannten CDN-Hosts werden mitgespeichert â€“ die Lücke heilt sich beim
+        // nächsten erfolgreichen Laden von selbst.
         // v184: die Bibliotheken stehen jetzt IN der index.html - es gibt keine
         // fremden Adressen mehr, fuer die hier eine Ausnahme noetig waere.
         const istCdn = false;
