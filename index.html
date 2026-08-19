@@ -18339,16 +18339,24 @@ window.Dachplan=(function(){
   let _vsT=null;const saveViewSoon=()=>{clearTimeout(_vsT);_vsT=setTimeout(()=>save(),800);};
 
   function css(){const s=document.createElement('style');s.textContent=
-   '#dpScreen{position:fixed;inset:0;z-index:99990;background:#0f1115;color:#e7eaf0;display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
+   '#dpScreen{position:fixed;inset:0;z-index:99990;background:var(--bg);color:var(--text);display:flex;flex-direction:column;font-family:system-ui,-apple-system,sans-serif}'
   +'#dpScreen.dp-hidden,.dp-hidden{display:none!important}'
-  +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:#171a21;border-bottom:1px solid #2a2f3a;flex-wrap:wrap;position:relative;z-index:1400}'
-  +'.dpb{min-height:52px;padding:0 14px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;font-size:16px;font-weight:600;cursor:pointer}' /* v116: Kopfleiste größer (42/14 → 52/16, Wunsch Frank) */
-  +'.dpb.on{background:#153a6b;border-color:#3b82f6}.dpb.primary{background:#3b82f6;border-color:#3b82f6;color:#fff}'
-  +'#dpMap{flex:1;min-height:0;background:#0d0f14}#dpImap{flex:1;min-height:0;background:#0d0f14}'
+  /* v208: Rahmen-Ton nach dem Muster der Tagesansicht (v171) und des Task-Fensters
+     (v172). --border ist von Haus aus zu schwach: Knopfrand zu Leiste nur 1,6:1 dunkel
+     und 1,5:1 hell. Hier ueberschrieben wirkt eine Zeile auf alle Raender des Dachplans.
+     ⚠ Dunkel steht hier #7e7e8a statt der #6e6e7a von Heute/Task-Fenster: dort sitzen
+     nur Linien auf --bg2, hier haben die Knoepfe eine eigene Flaeche (--bg3). Gegen die
+     kam #6e6e7a nur auf 2,57:1; #7e7e8a schafft 3,22:1 - und 3,91:1 gegen die Leiste. */
+  +'#dpScreen{--border:#7e7e8a}'
+  +'body.light #dpScreen{--border:#000000;--accent2:#2b5fd0}'
+  +'#dpBar{display:flex;align-items:center;gap:6px;padding:7px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;position:relative;z-index:1400}'
+  +'.dpb{min-height:52px;padding:0 14px;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:16px;font-weight:600;cursor:pointer}' /* v116: Kopfleiste größer (42/14 → 52/16, Wunsch Frank) */
+  +'.dpb.on{background:var(--accent);border-color:var(--accent);color:#fff}.dpb.primary{background:var(--accent);border-color:var(--accent);color:#fff}'
+  +'#dpMap{flex:1;min-height:0;background:var(--bg)}#dpImap{flex:1;min-height:0;background:var(--bg)}'
   /* v127: ⋯-Menü, Handy-Kompaktleiste, „Kein Bild"-Hinweis */
-  +'#dpMoreMenu{position:absolute;top:calc(100% + 4px);right:6px;background:#171a21;border:1px solid #2a2f3a;border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:6px;z-index:1600;box-shadow:0 6px 24px rgba(0,0,0,.55);min-width:230px}'
+  +'#dpMoreMenu{position:absolute;top:calc(100% + 4px);right:6px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:6px;z-index:1600;box-shadow:0 6px 24px rgba(0,0,0,.55);min-width:230px}'
   +'#dpMoreMenu .dpb{width:100%;text-align:left}'
-  +'#dpNoImg{position:absolute;left:16px;right:16px;top:36%;display:flex;flex-direction:column;align-items:center;gap:12px;z-index:1100;color:#9aa3b2;font-size:15px;text-align:center}'
+  +'#dpNoImg{position:absolute;left:16px;right:16px;top:36%;display:flex;flex-direction:column;align-items:center;gap:12px;z-index:1100;color:var(--text2);font-size:15px;text-align:center}'
   +'@media (max-width:520px){#dpBar .dpb{min-height:44px;padding:0 10px;font-size:14px}#dpBar #dpSearch{order:99;flex-basis:100%;min-height:44px;font-size:14px}}'
   /* v135 (Wunsch Frank, iPhone): Kompakt-Modus – Vollbild-Karte, schwebende Elemente statt
      Knopfleiste. dp-compact setzt open() bei Bildschirmbreite ≤520px. Der Kopfbalken bleibt
@@ -18361,9 +18369,9 @@ window.Dachplan=(function(){
   /* v136: Standort-Einträge im ⋯-Menü nur im Kompakt-Modus (Tablet hat sie in der Leiste) */
   +'.dpCOnly{display:none}'
   +'#dpScreen.dp-compact #dpMoreMenu .dpCOnly{display:block}'
-  +'#dpScreen.dp-compact #dpListPanel{top:0;left:auto;width:84%;max-width:380px;border-left:1px solid #2a2f3a;box-shadow:-10px 0 28px rgba(0,0,0,.6);z-index:1500}'
+  +'#dpScreen.dp-compact #dpListPanel{top:0;left:auto;width:84%;max-width:380px;border-left:1px solid var(--border);box-shadow:-10px 0 28px rgba(0,0,0,.6);z-index:1500}'
   +'#dpCTop{position:absolute;top:8px;left:8px;right:8px;z-index:1450;display:flex;gap:8px;align-items:center}'
-  +'#dpCTop .dpc{min-height:46px;border:1px solid #2a2f3a;background:rgba(23,26,33,.92);color:#e7eaf0;font-size:16px;font-weight:600;cursor:pointer}'
+  +'#dpCTop .dpc{min-height:46px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:16px;font-weight:600;cursor:pointer}'
   +'#dpFab{position:absolute;right:12px;bottom:18px;z-index:1460;width:58px;height:58px;border-radius:50%;border:none;background:#2b4fc4;color:#fff;font-size:24px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.5)}'
   +'#dpFab.on{background:#e8791a}'
   +'#dpFabMenu{position:absolute;right:12px;bottom:88px;z-index:1460;display:flex;flex-direction:column;gap:10px;align-items:flex-end}'
@@ -18371,15 +18379,15 @@ window.Dachplan=(function(){
   +'#dpCSearchRow{position:absolute;top:62px;left:8px;right:8px;z-index:1450}'
   +'.dpMk{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}'
   +'.dpMk span{transform:rotate(45deg);color:#fff;font-weight:800;font-size:12px}'
-  +'#dpListPanel{position:absolute;top:58px;left:0;right:0;bottom:0;background:#0f1115;z-index:1300;overflow:auto;padding:12px}'
-  +'.dpLi{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid #2a2f3a;border-radius:12px;margin-bottom:8px;background:#1e222b;cursor:pointer}'
+  +'#dpListPanel{position:absolute;top:58px;left:0;right:0;bottom:0;background:var(--bg);z-index:1300;overflow:auto;padding:12px}'
+  +'.dpLi{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;background:var(--bg3);cursor:pointer}'
   +'.dpLi .b{width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:13px}'
-  +'.dpLi .tx{flex:1;min-width:0}.dpLi .tx b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dpLi .tx span{color:#9aa3b2;font-size:12px}'
-  +'#dpMsg{position:absolute;top:58px;left:50%;transform:translateX(-50%);background:#1e222b;border:1px solid #3b82f6;color:#e7eaf0;padding:9px 15px;border-radius:20px;font-size:13px;z-index:1400;max-width:92%;text-align:center;box-shadow:0 3px 14px rgba(0,0,0,.55)}'
-  +'#dpSheet{position:absolute;left:0;right:0;bottom:0;background:#171a21;border-top:1px solid #2a2f3a;border-radius:16px 16px 0 0;padding:12px 14px 20px;max-height:66%;overflow:auto;transform:translateY(110%);transition:transform .2s;box-shadow:0 -6px 24px rgba(0,0,0,.45);z-index:1200}'
+  +'.dpLi .tx{flex:1;min-width:0}.dpLi .tx b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dpLi .tx span{color:var(--text2);font-size:12px}'
+  +'#dpMsg{position:absolute;top:58px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--accent2);color:var(--text);padding:9px 15px;border-radius:20px;font-size:13px;z-index:1400;max-width:92%;text-align:center;box-shadow:0 3px 14px rgba(0,0,0,.55)}'
+  +'#dpSheet{position:absolute;left:0;right:0;bottom:0;background:var(--bg2);border-top:1px solid var(--border);border-radius:16px 16px 0 0;padding:12px 14px 20px;max-height:66%;overflow:auto;transform:translateY(110%);transition:transform .2s;box-shadow:0 -6px 24px rgba(0,0,0,.45);z-index:1200}'
   +'#dpSheet.show{transform:none}'
-  +'.dpf{font-size:12px;color:#9aa3b2;margin:10px 0 4px;font-weight:600}'
-  +'#dpSheet input,#dpSheet textarea{width:100%;background:#1e222b;border:1px solid #2a2f3a;color:#e7eaf0;border-radius:9px;padding:10px;font-size:15px;font-family:inherit;box-sizing:border-box}'
+  +'.dpf{font-size:12px;color:var(--text2);margin:10px 0 4px;font-weight:600}'
+  +'#dpSheet input,#dpSheet textarea{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:10px;font-size:15px;font-family:inherit;box-sizing:border-box}'
   +'.dpStat{display:flex;gap:8px}.dpStat button{flex:1;min-height:44px;border-radius:9px;border:2px solid transparent;color:#fff;font-weight:700;cursor:pointer}.dpStat button.sel{border-color:#fff}'
   +'.dpThumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}'
   +'.dpThumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#000}.dpThumb img{width:100%;height:100%;object-fit:cover}'
@@ -18395,36 +18403,40 @@ window.Dachplan=(function(){
     d.innerHTML=
      '<div id="dpBar">'
       +'<button class="dpb" id="dpBack">←</button>'
-      +'<input id="dpSearch" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:90px;min-height:52px;border-radius:9px;border:1px solid #2a2f3a;background:#1e222b;color:#e7eaf0;padding:0 12px;font-size:16px">'
+      +'<input id="dpSearch" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:90px;min-height:52px;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--text);padding:0 12px;font-size:16px">'
       +'<button class="dpb" id="dpDach" title="Karte auf die Auftragsadresse springen">🏠 Dach</button>'
+      // v207: 📍 (zeigt nur an) und 📍➕ (legt sofort einen Pin an) standen nackt und
+      // ohne Beschriftung direkt nebeneinander – auf dem Dach griff man im Vorbeitippen
+      // daneben. 📍➕ steht jetzt bei den Anlege-Knöpfen, 📍 bleibt bei der Navigation.
+      // Beschriften ginge nicht: die Leiste ist voll und bräche um. Ids unverändert.
       +'<button class="dpb" id="dpLoc" title="Mein Standort">📍</button>'
-      +'<button class="dpb" id="dpPinHere" title="Pin an meinem Standort setzen">📍➕</button>'
       +'<button class="dpb" id="dpLive" title="Live-Standort: Punkt wandert mit, ±m-Anzeige, Blickrichtung">📡 Live</button>'
       +'<button class="dpb" id="dpAdd">➕ Pin</button>'
+      +'<button class="dpb" id="dpPinHere" title="Pin an meinem Standort setzen">📍➕</button>'
       +'<button class="dpb" id="dpList" title="Pin-Liste">☰</button>'
       +'<button class="dpb" id="dpFilter">Alle</button>'
       // v127 (Wunsch Frank, Handy-Aufräumen): Selten-Funktionen ins ⋯-Menü –
       // Karte↔Bild, Bild laden, Kalibrieren, Zurücksetzen. Ids/Handler unverändert.
+      // v208: Hell/Dunkel im Dachplan. Er liegt als Vollbild ueber der App, der
+      // uebliche Umschalter in der Kopfzeile ist von hier aus nicht erreichbar –
+      // man muesste zum Umschalten jedes Mal heraus und wieder herein.
+      +'<button class="dpb theme-toggle-btn" id="dpTheme" title="Hell-Modus (Sonnenlicht)">☀️</button>'
       +'<button class="dpb" id="dpMore" title="Weitere Funktionen">⋯</button>'
       +'<div id="dpMoreMenu" class="dp-hidden">'
         // v129 (Wunsch Frank): Ebenen-Auswahl sitzt nicht mehr als Leaflet-Kästchen IM Bild,
         // sondern hier im Menü – die Karte bleibt frei. Namen = Schlüssel aus _lays.
-        +'<div style="font-size:12px;color:#9aa3b2;font-weight:700;padding:2px 4px 0;">Kartenansicht</div>'
+        +'<div style="font-size:12px;color:var(--text2);font-weight:700;padding:2px 4px 0;">Kartenansicht</div>'
         +'<button class="dpb dpLay" data-lay="Luftbild amtlich (TH)">🛰 Luftbild amtlich (TH)</button>'
         +'<button class="dpb dpLay" data-lay="Luftbild Welt (Esri)">🌍 Luftbild Welt (Esri)</button>'
         +'<button class="dpb dpLay" data-lay="Luftbild Google">🟩 Luftbild Google</button>'
         +'<button class="dpb dpLay" data-lay="Karte">🗺 Karte (OpenStreetMap)</button>'
-        +'<div style="height:1px;background:#2a2f3a;margin:4px 0;"></div>'
-        // v136: im Kompakt-Modus (iPhone) fehlten Standort-Funktionen der alten Leiste
-        // komplett (Befund Frank) – hier nur bei dp-compact sichtbar, Tablet hat sie in der Leiste
-        +'<div class="dpCOnly" style="font-size:12px;color:#9aa3b2;font-weight:700;padding:2px 4px 0;">Standort</div>'
-        +'<button class="dpb dpCOnly" id="dpCLoc">📍 Mein Standort zeigen</button>'
-        +'<button class="dpb dpCOnly" id="dpCPinHere">📍➕ Pin an meinem Standort</button>'
-        +'<div class="dpCOnly" style="height:1px;background:#2a2f3a;margin:4px 0;"></div>'
+        +'<div style="height:1px;background:var(--border);margin:4px 0;"></div>'
+        // v207: die beiden Standort-Knöpfe sind von hier ins Menü des blauen Knopfes
+        // gewandert (v136 hatte sie hier eine Ebene zu tief abgelegt: 3 Tipps statt 2).
         +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">🖼️ Zum Bild wechseln</button>'
         +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild laden</button>'
         +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kalibrieren</button>'
-        +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen" style="color:#e5484d;border-color:#e5484d">🗑 Zurücksetzen</button>'
+        +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen" style="color:var(--red);border-color:var(--red)">🗑 Zurücksetzen</button>'
       +'</div>'
       +'<input type="file" id="dpBildInput" accept="image/*" style="display:none">'
      +'</div>'
@@ -18432,27 +18444,33 @@ window.Dachplan=(function(){
      +'<div id="dpImap" class="dp-hidden"></div>'
      +'<div id="dpNoImg" class="dp-hidden">' // v127: dauerhafter Hinweis statt schwarzer Fläche im Bild-Modus ohne Bild
       +'<div>Kein eigenes Bild geladen.</div>'
-      +'<button class="dpb" id="dpNoImgLoad" style="border-color:#3b82f6;color:#7db4ff">📷 Bild laden</button>'
+      +'<button class="dpb" id="dpNoImgLoad" style="border-color:var(--accent2);color:var(--accent2)">📷 Bild laden</button>'
       +'<button class="dpb" id="dpNoImgMap">🗺️ Zur Luftbild-Karte wechseln</button>'
      +'</div>'
      +'<div id="dpListPanel" class="dp-hidden"></div>'
      // v129 (Wunsch Frank): Aus dem Tagebuch geöffnete Pins zeigen nur noch die Karte –
      // das Pin-Fenster nimmt auf dem Handy zu viel Platz weg. Dieser kleine Knopf oben
      // rechts holt es bei Bedarf hervor.
-     +'<button class="dpb" id="dpPinBtn" style="position:absolute;top:64px;right:8px;z-index:1350;border-color:#3b82f6;color:#7db4ff;display:none;">📋 Pin öffnen</button>'
+     +'<button class="dpb" id="dpPinBtn" style="position:absolute;top:64px;right:8px;z-index:1350;border-color:var(--accent2);color:var(--accent2);display:none;">📋 Pin öffnen</button>'
      // v135 (Wunsch Frank, iPhone): schwebende Kompakt-Bedienung – oben ← / Adresse / 🔍,
      // unten rechts EIN Menü-Knopf (FAB) mit Aufklapp-Auswahl. Nur sichtbar im dp-compact-Modus.
      +'<div id="dpCTop" class="dp-hidden">'
       +'<button class="dpc" id="dpCBack" style="width:46px;border-radius:50%;padding:0;flex:none;">←</button>'
       +'<button class="dpc" id="dpCAddr" title="Karte auf die Auftragsadresse springen" style="flex:1;min-width:0;border-radius:23px;padding:0 14px;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;">🏠</button>'
       +'<button class="dpc" id="dpCSearch" title="Adresse suchen" style="width:46px;border-radius:50%;padding:0;flex:none;">🔍</button>'
+      // v208: derselbe Knopf in der Handy-Kopfzeile
+      +'<button class="dpc theme-toggle-btn" id="dpCTheme" title="Hell-Modus (Sonnenlicht)" style="width:46px;border-radius:50%;padding:0;flex:none;">☀️</button>'
      +'</div>'
      +'<div id="dpCSearchRow" class="dp-hidden">'
-      +'<input id="dpCSearchInput" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="width:100%;min-height:46px;border-radius:23px;border:1px solid #2a2f3a;background:rgba(23,26,33,.95);color:#e7eaf0;padding:0 16px;font-size:15px;box-sizing:border-box">'
+      +'<input id="dpCSearchInput" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="width:100%;min-height:46px;border-radius:23px;border:1px solid var(--border);background:var(--bg2);color:var(--text);padding:0 16px;font-size:15px;box-sizing:border-box">'
      +'</div>'
      +'<div id="dpFabMenu" class="dp-hidden">'
+      // v207: Standort-Knöpfe aus dem ⋯-Untermenü hierher geholt – „Mein Standort"
+      // kostete auf dem Handy 3 Tipps, auf dem Tablet 1. Anlegen oben, Ansehen unten.
       +'<button class="dpb" id="dpCPin">➕ Pin setzen</button>'
+      +'<button class="dpb" id="dpCPinHere">📍➕ Pin an meinem Standort</button>'
       +'<button class="dpb" id="dpCList">☰ Pin-Liste</button>'
+      +'<button class="dpb" id="dpCLoc">📍 Mein Standort zeigen</button>'
       +'<button class="dpb" id="dpCLive">📡 Live-Standort</button>'
       +'<button class="dpb" id="dpCMore">⋯ Mehr</button>'
      +'</div>'
@@ -18469,21 +18487,30 @@ window.Dachplan=(function(){
       +'<div class="dpf">Fotos</div><div class="dprow"><button class="dpb primary" id="dpPhotoBtn">📸 Kamera</button><button class="dpb" id="dpGalBtn">🖼️ Galerie</button></div>'
       +'<input type="file" id="dpPhotoInput" accept="image/*" capture="environment" multiple style="display:none">'
       +'<input type="file" id="dpGalInput" accept="image/*" multiple style="display:none"><div class="dpThumbs" id="dpThumbs"></div>'
-      +'<div class="dpf">Koordinaten</div><div id="dpCoord" style="font-size:12px;color:#9aa3b2"></div>'
+      +'<div class="dpf">Koordinaten</div><div id="dpCoord" style="font-size:12px;color:var(--text2)"></div>'
       +'<button class="dpb" id="dpMove" style="width:100%;margin-top:8px" title="Diesen einen Pin beweglich machen – sonst sind Pins fest, damit sie beim Wischen nicht verrutschen">📍 Verschieben</button>' /* v206 */
-      +'<button class="dpb" id="dpGuide" style="width:100%;margin-top:8px;border-color:#2d7ef7;color:#7db4ff">🧭 Dahin führen (Live-Linie)</button>'
+      +'<button class="dpb" id="dpGuide" style="width:100%;margin-top:8px;border-color:#2d7ef7;color:var(--accent2)">🧭 Dahin führen (Live-Linie)</button>'
       +'<button class="dpb" id="dpNav" style="width:100%;margin-top:8px">🗺 Google-Navigation zu diesem Pin</button>'
-      +'<button class="dpb" id="dpDel" style="width:100%;margin-top:10px;color:#e5484d;border-color:#e5484d">🗑 Pin löschen</button>'
+      +'<button class="dpb" id="dpDel" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red)">🗑 Pin löschen</button>'
      +'</div>'
      +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg">'
       +'<div id="dpPhotoCap" style="position:absolute;left:12px;right:12px;bottom:84px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:16px;display:none"></div>'
-      +'<button class="dpb" id="dpPhotoText" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:2;border-color:#2d7ef7;color:#7db4ff">📝 Text</button></div>';
+      +'<button class="dpb" id="dpPhotoText" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:2;border-color:#2d7ef7;color:var(--accent2)">📝 Text</button></div>';
     document.body.appendChild(d);
     E.screen=d;E.mapEl=d.querySelector('#dpMap');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
     E.photo=d.querySelector('#dpPhoto');E.photoImg=d.querySelector('#dpPhotoImg');E.msg=d.querySelector('#dpMsg');E.imapEl=d.querySelector('#dpImap');
     const q=id=>d.querySelector(id);
     q('#dpBack').onclick=close; q('#dpSheetClose').onclick=closeSheetAbbruch; // v206: Schließen bricht ein laufendes Verschieben ab
     q('#dpMove').onclick=_verschiebenStarten; // v206
+    /* v208: Beide Sonnen-Knoepfe haengen an der vorhandenen toggleTheme() der App.
+       Die Klasse theme-toggle-btn genuegt, damit setTheme() ihr Symbol kuenftig
+       mitpflegt – nur beim ersten Aufbau muss es einmal von Hand stimmen, denn da
+       ist setTheme() beim App-Start laengst gelaufen. */
+    d.querySelectorAll('#dpTheme,#dpCTheme').forEach(b=>{
+      b.onclick=()=>{try{toggleTheme();}catch(_){}};
+      const hell=document.body.classList.contains('light');
+      b.textContent=hell?'🌙':'☀️';b.title=hell?'Dunkel-Modus':'Hell-Modus (Sonnenlicht)';
+    });
     q('#dpLoc').onclick=locate;
     q('#dpList').onclick=openList;
     q('#dpDach').onclick=searchDach;q('#dpPinHere').onclick=pinHere;q('#dpLive').onclick=liveToggle;
@@ -18532,8 +18559,9 @@ window.Dachplan=(function(){
     // der ←-Knopf wäre der falsche, der verlässt den ganzen Dachplan). Gilt für Karte UND Bild-Modus.
     const _dpTapClose=()=>{try{q('#dpFabMenu').classList.add('dp-hidden');}catch(_){}try{q('#dpMoreMenu').classList.add('dp-hidden');}catch(_){}};
     // v136: Standort-Einträge im ⋯-Menü rufen die bestehenden Leisten-Handler auf
-    q('#dpCLoc').onclick=()=>q('#dpLoc').click();
-    q('#dpCPinHere').onclick=()=>q('#dpPinHere').click();
+    // v207: Menü zugehen lassen wie bei den übrigen Einträgen des blauen Knopfes
+    q('#dpCLoc').onclick=()=>{q('#dpFabMenu').classList.add('dp-hidden');q('#dpLoc').click();};
+    q('#dpCPinHere').onclick=()=>{q('#dpFabMenu').classList.add('dp-hidden');q('#dpPinHere').click();};
     E.mapEl.addEventListener('click',_dpTapClose,true);
     if(E.imapEl)E.imapEl.addEventListener('click',_dpTapClose,true);
     built=true;
@@ -18542,6 +18570,37 @@ window.Dachplan=(function(){
   function _syncFilterBtn(){
     try{E.screen.querySelector('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';}catch(_){}
   }
+  /* ---- v207: Handy- oder Tablet-Bedienung, auch beim DREHEN ----
+     Bisher entschied das allein open(): wer den Dachplan quer öffnete (über 520
+     Punkte breit) und danach hochkant drehte, behielt die Zehn-Knopf-Leiste des
+     Tablets auf dem Handy – und umgekehrt lag die Handy-Bedienung auf dem Tablet.
+     Der Horcher unten stellt das nach dem Drehen um. ⛔ Entprellt: resize feuert
+     während der Drehung mehrfach, und iOS meldet die neue Breite verzögert. */
+  function _applyCompact(force){
+    if(!E.screen)return;
+    const _compact=window.innerWidth<=520;
+    if(!force&&E._compact===_compact)return;   // Breite unverändert – nichts zu tun
+    E._compact=_compact;
+    E.screen.classList.toggle('dp-compact',_compact);
+    E.screen.querySelector('#dpCTop').classList.toggle('dp-hidden',!_compact);
+    E.screen.querySelector('#dpFab').classList.toggle('dp-hidden',!_compact);
+    E.screen.querySelector('#dpFabMenu').classList.add('dp-hidden');
+    E.screen.querySelector('#dpMoreMenu').classList.add('dp-hidden'); // v207: offenes Menü paßt nach dem Wechsel nicht mehr
+    E.screen.querySelector('#dpCSearchRow').classList.add('dp-hidden');
+    if(_compact){
+      const _adr=((t&&t.adresse)||'').trim();
+      E.screen.querySelector('#dpCAddr').textContent='🏠 '+(_adr||(t&&t.title)||'Objekt');
+    }
+    _updFab();
+    // Leaflet muß nach dem Umbau der Leisten seine Größe neu messen (wie beim Öffnen)
+    setTimeout(()=>{try{if(map)map.invalidateSize();}catch(_){}try{if(imap)imap.invalidateSize();}catch(_){}},120);
+  }
+  function _onResize(){
+    if(!E.screen||E.screen.classList.contains('dp-hidden'))return; // Dachplan zu – nichts tun
+    clearTimeout(E._rzT);E._rzT=setTimeout(()=>_applyCompact(),150);
+  }
+  window.addEventListener('resize',_onResize);
+  window.addEventListener('orientationchange',_onResize);
   // v135: FAB spiegelt den Pin-Modus – orange ➕ solange addMode an ist, sonst blaues ☰
   function _updFab(){
     try{
@@ -18727,19 +18786,9 @@ window.Dachplan=(function(){
     E.screen.querySelector('#dpAdd').textContent='➕ Pin';
     E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');
     closeSheet();pinBtnHide(); // v129
-    // v135: Kompakt-Modus fürs iPhone (schmale Bildschirme) – Vollbild-Karte, schwebende
-    // Bedienung. Tablet/Desktop (>520px) behalten die bewährte Knopfleiste unverändert.
-    const _compact=window.innerWidth<=520;
-    E.screen.classList.toggle('dp-compact',_compact);
-    E.screen.querySelector('#dpCTop').classList.toggle('dp-hidden',!_compact);
-    E.screen.querySelector('#dpFab').classList.toggle('dp-hidden',!_compact);
-    E.screen.querySelector('#dpFabMenu').classList.add('dp-hidden');
-    E.screen.querySelector('#dpCSearchRow').classList.add('dp-hidden');
-    if(_compact){
-      const _adr=((t&&t.adresse)||'').trim();
-      E.screen.querySelector('#dpCAddr').textContent='🏠 '+(_adr||(t&&t.title)||'Objekt');
-    }
-    _updFab();
+    // v135/v207: Handy- oder Tablet-Bedienung – siehe _applyCompact(). Das „true"
+    // erzwingt den vollen Durchlauf, damit die Adresse des neuen Auftrags gesetzt wird.
+    _applyCompact(true);
     E.screen.classList.remove('dp-hidden');
     if(!ensureMap())return;
     setBase(dp.base||'map');
@@ -18836,9 +18885,9 @@ window.Dachplan=(function(){
     if(!guideBox){
       guideBox=document.createElement('div');
       guideBox.id='dpGuideBox';
-      guideBox.style.cssText='position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:1500;background:rgba(13,15,20,.92);border:2px solid #2d7ef7;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;max-width:94%;';
+      guideBox.style.cssText='position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:1500;background:var(--bg2);border:2px solid #2d7ef7;border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;max-width:94%;';
       guideBox.innerHTML='<span id="dpGuideTxt" style="font-size:20px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">…</span>'
-        +'<button class="dpb" id="dpGuideNext" style="display:none;border-color:#30a46c;color:#5fe0a0">▶ nächster Pin</button>'
+        +'<button class="dpb" id="dpGuideNext" style="display:none;border-color:var(--green);color:var(--green)">▶ nächster Pin</button>'
         +'<button class="dpb" id="dpGuideStop">✕</button>';
       E.screen.appendChild(guideBox);
       guideBox.querySelector('#dpGuideStop').onclick=guideStop;
@@ -18884,8 +18933,8 @@ window.Dachplan=(function(){
     const ov=document.createElement('div');
     ov.id='dpFotoTextPopup';
     ov.style.cssText='position:fixed;inset:0;z-index:100060;background:rgba(0,0,0,.75);display:flex;align-items:flex-start;justify-content:center;padding:4vh 14px 14px;';
-    ov.innerHTML='<div style="background:#171a21;border:1px solid #2a2f3a;border-radius:14px;padding:14px;width:100%;max-width:720px;display:flex;flex-direction:column;gap:10px;">'
-      +'<b style="color:#e7eaf0;font-size:16px;">📝 Text zum Foto</b>'
+    ov.innerHTML='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;width:100%;max-width:720px;display:flex;flex-direction:column;gap:10px;">'
+      +'<b style="color:var(--text);font-size:16px;">📝 Text zum Foto</b>'
       +'<textarea id="dpFotoTA" placeholder="Was zeigt dieses Foto? – mit dem Stift direkt hineinschreiben…" style="width:100%;box-sizing:border-box;height:50vh;background:#ffffff;color:#111111;border:none;border-radius:10px;padding:14px 16px;font-size:19px;line-height:1.6;font-family:inherit;resize:vertical;"></textarea>'
       +'<div style="display:flex;gap:8px;">'
         +'<button class="dpb" id="dpFotoTAbbr" style="flex:1">Abbrechen</button>'
@@ -18961,12 +19010,12 @@ window.Dachplan=(function(){
     h+='<div style="display:flex;gap:6px;margin-bottom:10px">'
       +'<button class="dpb" id="dpLiFAlle" style="border-radius:20px'+(filter==='alle'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Alle</button>'
       +'<button class="dpb" id="dpLiFSchad" style="border-radius:20px'+(filter==='schaden'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Nur Schaden</button></div>';
-    if(!arr.length)h+='<div style="color:#9aa3b2;line-height:1.5">'+(all.length?'Keine Schaden-Pins vorhanden.':'Noch keine Pins. „➕ Pin" aktivieren und auf die Karte tippen.')+'</div>';
+    if(!arr.length)h+='<div style="color:var(--text2);line-height:1.5">'+(all.length?'Keine Schaden-Pins vorhanden.':'Noch keine Pins. „➕ Pin" aktivieren und auf die Karte tippen.')+'</div>';
     // v116: Titel → sonst Notiz als Hauptzeile; Notiz zusätzlich als zweite Zeile (Wunsch Frank – Notizen waren in der Liste unsichtbar)
     arr.forEach(p=>{const _e=s=>String(s||'').replace(/</g,'&lt;');
       const note=String(p.note||'').replace(/\s+/g,' ').trim();
       const ti=p.title?_e(p.title):(note?_e(note.length>48?note.slice(0,48)+'…':note):'Pin '+p.nr);
-      const sub=(p.title&&note)?('<span style="display:block;white-space:normal;color:#c6ccd8;font-size:14px;margin:2px 0 3px">'+_e(note.length>120?note.slice(0,120)+'…':note)+'</span>'):'';
+      const sub=(p.title&&note)?('<span style="display:block;white-space:normal;color:var(--text2);font-size:14px;margin:2px 0 3px">'+_e(note.length>120?note.slice(0,120)+'…':note)+'</span>'):'';
       h+='<div class="dpLi" data-id="'+p.id+'"><div class="b" style="background:'+COL[p.status||'rot']+'">'+p.nr+'</div><div class="tx"><b>'+ti+'</b>'+sub+'<span>'+(LBL[p.status]||'')+' · '+((p.fotos||[]).length)+' Foto(s)</span></div></div>';});
     panel.innerHTML=h;panel.classList.remove('dp-hidden');
     panel.querySelector('#dpListClose').onclick=()=>panel.classList.add('dp-hidden');
