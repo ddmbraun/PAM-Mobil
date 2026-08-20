@@ -7495,7 +7495,7 @@ function _bIconTyp(n){
 // Der Riegel stellt die Werte lokal wieder her; beim nächsten normalen Speichern
 // wandern sie automatisch nach Drive zurück. Kann entfallen, sobald der Desktop
 // (geplant b589) die Felder selbst stempelt und erhält.
-const _SCHUTZ_FELDER=['createdAt','skizzen'];
+const _SCHUTZ_FELDER=['createdAt','skizzen','dachplan','wartungsjahr']; // v211: die zwei am 19.08. (Desktop b717) nachgewiesenen Verlustfelder mit abgesichert
 function _schutzLeer(v){return v===undefined||v===null||v===''||(Array.isArray(v)&&!v.length);}
 function _schutzFelderUebernehmen(neuT,altT){
   if(!neuT||!altT)return;
@@ -7715,6 +7715,56 @@ function _mergeListByKey(remoteList,localList,keyFn){
   for(const it of b){const k=keyFn(it||{});if(k&&!seen.has(k)){seen.add(k);out.push(it);}else if(!k){out.push(it);}}
   return out;
 }
+/* v211: Dachplan bei Schreib-Konflikten ZUSAMMENFÜHREN statt eine Seite komplett
+   gewinnen zu lassen. Bis v210 stand `dachplan` auf keiner Merge-Liste: beim Konflikt
+   um den offenen Task ersetzte die lokale Fassung das Feld vollständig – ein
+   veralteter Stand des einen Geräts warf die neuen Pins des anderen still weg
+   (dieselbe Verlustart wie Desktop b717, nur über den Sync-Weg).
+   Regeln wie bei fotos/checkliste: Pins nach Kennung vereinigen; beim selben Pin
+   gewinnen die lokalen Felder, seine Foto-Liste wird vereinigt (kein Foto-Verweis
+   geht verloren). Bewusst in Kauf genommen (Hausregel der übrigen Listen): ein auf
+   dem anderen Gerät gelöschter Pin kann im Konfliktfall wieder auftauchen – lieber
+   ein Wiedergänger als ein Verlust. `nextNr` wird auf das Maximum gehoben, damit
+   nach der Vereinigung keine Pin-Nummer doppelt entsteht. */
+function _dachplanKonfliktMerge(remoteDp,localDp){
+  if(!remoteDp||!localDp)return localDp||remoteDp;
+  const m=Object.assign({},remoteDp,localDp); // Ansicht/Bild/Kalibrierung: lokal gewinnt, Remote füllt Fehlendes
+  /* Foto-Union je Pin: dieselbe Aufnahme erkennt man an `key` ODER `driveId` –
+     ein Nachzügler-Upload ergänzt driveId am selben key, ein Desktop-Foto trägt
+     nur driveId. Beim Zusammenlegen bleiben BEIDE Kennungen erhalten; eine
+     vorhandene darf nie vom Anlege-Zustand {key,driveId:null} überschrieben werden. */
+  const fotoUnion=(rF,lF)=>{
+    const out=[];const same=(a,b)=>!!(a&&b&&((a.key&&b.key&&a.key===b.key)||(a.driveId&&b.driveId&&a.driveId===b.driveId)));
+    for(const f of (Array.isArray(rF)?rF:[]))if(f)out.push(f);
+    for(const f of (Array.isArray(lF)?lF:[])){
+      if(!f)continue;
+      const i=out.findIndex(x=>same(x,f));
+      if(i<0){out.push(f);continue;}
+      const zs=Object.assign({},out[i],f);
+      if(out[i].driveId&&!zs.driveId)zs.driveId=out[i].driveId;
+      if(out[i].key&&!zs.key)zs.key=out[i].key;
+      out[i]=zs;
+    }
+    return out;
+  };
+  const rPins=Array.isArray(remoteDp.pins)?remoteDp.pins:[];
+  const lPins=Array.isArray(localDp.pins)?localDp.pins:[];
+  const out=[];const seen=new Set();
+  for(const rp of rPins){
+    if(!rp||rp.id==null){if(rp)out.push(rp);continue;}
+    seen.add(String(rp.id));
+    const lp=lPins.find(x=>x&&String(x.id)===String(rp.id));
+    if(!lp){out.push(rp);continue;}
+    const mp=Object.assign({},rp,lp);
+    mp.fotos=fotoUnion(rp.fotos,lp.fotos);
+    out.push(mp);
+  }
+  for(const lp of lPins){if(!lp)continue;if(lp.id==null||!seen.has(String(lp.id)))out.push(lp);}
+  m.pins=out;
+  let maxNr=0;for(const p of out){const n=Number(p&&p.nr);if(isFinite(n)&&n>maxNr)maxNr=n;}
+  m.nextNr=Math.max(Number(remoteDp.nextNr)||1,Number(localDp.nextNr)||1,maxNr+1);
+  return m;
+}
 async function saveFile(){
   if(_mobOfflineActive){
     // Boards stammen aus dem Offline-Start (lokales Backup). NICHT nach Drive schreiben,
@@ -7801,6 +7851,9 @@ async function saveFile(){
                     // Fix: checkliste und kontakte mergen statt überschreiben
                     mergedTask.checkliste=_mergeListByKey(rt.checkliste,localTask.checkliste,c=>(c.text||'')); // Fix v76: done-Status nicht im Schlüssel → kein Duplikat bei gleichzeitiger Bearbeitung
                     mergedTask.kontakte=_mergeListByKey(rt.kontakte,localTask.kontakte,k=>((k.rolle||'')+'|'+(k.name||'')+'|'+(k.tel||'')));
+                    // v211: Dachplan – stand auf keiner der Listen, die lokale Fassung
+                    // ersetzte das Feld komplett (siehe _dachplanKonfliktMerge)
+                    {const _dpM=_dachplanKonfliktMerge(rt.dachplan,localTask.dachplan);if(_dpM)mergedTask.dachplan=_dpM;}
                     remoteVisible[bn][idx]=mergedTask;
                     placed=true;break;
                   }
@@ -8996,7 +9049,8 @@ async function _mobRetryPendingUploads(opts){
     for(const task of tasks){
       if(!task)continue;
       const offene=(task.fotos||[]).filter(f=>f&&f.localKey&&!f.driveId).length
-        +(task.pruefberichte||[]).reduce((s,pb)=>s+((pb.fotos||[]).filter(f=>f&&f.localKey&&!f.driveId).length),0);
+        +(task.pruefberichte||[]).reduce((s,pb)=>s+((pb.fotos||[]).filter(f=>f&&f.localKey&&!f.driveId).length),0)
+        +_dachplanOffeneFotos(task).length; // v211: sonst wird ein Task mit NUR offenen Dachplan-Fotos übersprungen
       if(!offene)continue;
       let fid=_extractFolderIdMob(task.gdrive||task.gdriveOrdner||'');
       // v143: Schnellnotiz-Task ohne Ordner (Foto wurde offline aufgenommen, Ordner-Anlage
@@ -9023,6 +9077,9 @@ async function _mobRetryPendingUploads(opts){
         for(const foto of task.fotos||[]){
           if(foto.localKey&&!foto.driveId)pending.push({fo:foto,folderId:tfid,task});
         }
+        // v211: Dachplan-Fotos (Pin-Fotos + Basisbild) – gleicher Ziel-Ordner wie der
+        // Dachplan-Erstupload (Task-Ordner, sonst Standard-Fotoordner = resolveFolder).
+        for(const foto of _dachplanOffeneFotos(task))pending.push({fo:foto,folderId:tfid,task,dp:true});
       }else{
         // v148: nicht mehr stillschweigend überspringen – Frank soll den Grund sehen
         ohneOrdner+=offene;
@@ -9042,8 +9099,13 @@ async function _mobRetryPendingUploads(opts){
   try{
     _fotoPendUpdate();
     toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
-    for(const {fo,folderId,task} of pending){
-      try{await _mobUploadFromKey(fo,folderId,task);b.ok++;} // v189: task mitgeben – siehe _tuDateiNachtragen
+    for(const it of pending){
+      const {fo,folderId,task}=it;
+      try{
+        if(it.dp)await _dpUploadFromKey(fo,folderId); // v211: eigener Weg, siehe dort
+        else await _mobUploadFromKey(fo,folderId,task); // v189: task mitgeben – siehe _tuDateiNachtragen
+        b.ok++;
+      }
       catch(e){
         if(String(e&&e.message)==='BLOB_MISSING'){
           // v148: Bilddaten hier nicht vorhanden → BEVOR wir „liegt auf anderem Gerät"
@@ -9051,7 +9113,8 @@ async function _mobRetryPendingUploads(opts){
           // der Upload lief längst, nur der Task-Eintrag verlor die Datei-Kennung.
           let geheilt=false;
           try{geheilt=await _fotoDriveWiederfinden(fo,folderId);}catch(e2){console.warn('[MobPhoto] Wiederfinden:',e2);}
-          if(geheilt)b.geheilt++;else b.woanders++;
+          if(geheilt){b.geheilt++;if(fo._dpBasis&&fo.driveId)fo._dpBasis.imgDriveId=fo.driveId;} // v211: Basisbild-Kennung an den Dachplan
+          else b.woanders++;
         }else{b.fehler++;console.warn('[MobPhoto] Retry:',e);}
       }
       _fotoPendUpdate();
@@ -9163,6 +9226,25 @@ async function _mobUploadFromKey(fo,folderId,task){
      v188 war die Aufnahme in diesem Fall gar nicht erst gespeichert worden. */
   try{if(fo.tuLeistung&&task&&task.id)_tuDateiNachtragen(task.id,fo);}catch(e){console.warn('[TU] Nachtragen (Nachladen):',e);}
   await _mobPhotoDelete(fo.localKey); // IndexedDB bereinigen
+}
+/* v211: Nachhol-Upload für DACHPLAN-Fotos (Pin-Fotos + Basisbild, Feld `key`).
+   ⛔ Bewusst NICHT über _mobUploadFromKey – das täte zwei Dinge, die hier falsch wären:
+   1. `fo.localUrl=dataUrl` – am Pin-Foto landete das Bild als Base64-Ungetüm beim
+      nächsten Speichern in workboard.json (genau die Falle aus dem v203-Kommentar
+      im Dachplan-Foto-Dialog).
+   2. `_mobPhotoDelete` nach dem Upload – der Dachplan zeigt seine Fotos zuerst aus
+      dem Gerätespeicher (schnell + offline); die Kopie muss liegen bleiben, wie
+      beim Erstupload im Dachplan auch.
+   Der Upload selbst nimmt denselben Baustein wie der Dachplan-Erstupload
+   (_uploadOneFotoToDrive, mit Zeitstempel-Namen und Schlüssel-Erneuerung). */
+async function _dpUploadFromKey(fo,folderId){
+  const dataUrl=await _mobPhotoGet(fo.key);
+  if(!dataUrl)throw new Error('BLOB_MISSING');
+  const blob=_dataUrlToBlob(dataUrl);
+  const file=new File([blob],fo.name||('dachplan_'+fo.key+'.jpg'),{type:blob.type||'image/jpeg'});
+  const meta=await _uploadOneFotoToDrive(file,folderId);
+  fo.driveId=meta.id;
+  if(fo._dpBasis)fo._dpBasis.imgDriveId=meta.id; // Basisbild: Kennung gehört an den Dachplan, nicht ans Ersatz-Objekt
 }
 
 async function _wpMobLadeDriveFotos(bericht,grid){
@@ -16816,12 +16898,27 @@ function _fotoTaskById(id){
   for(const arr of _alleTaskListen()){const f=arr.find(t=>t&&t.id===id);if(f)return f;}
   return null;
 }
-function _fpKey(f){return (f&&(f.localKey||f.driveId||f.id))||'';}
+function _fpKey(f){return (f&&(f.localKey||f.key||f.driveId||f.id))||'';} // v211: `key` = Dachplan-Fotos
+/* v211: Offene Dachplan-Fotos eines Tasks – Pin-Fotos und das Basisbild, die noch
+   keine Drive-Kennung tragen. EINE Logik für Warnleuchte UND Nachhol-Lauf; bis v210
+   kannten beide nur task.fotos/pruefberichte, und die Ansage „Drive-Upload später"
+   im Dachplan führte ins Leere: nichts hat je nachgeladen, nichts hat gewarnt.
+   Das Basisbild bekommt ein Ersatz-Objekt mit Verweis auf den Dachplan (_dpBasis),
+   damit der Nachhol-Lauf die Drive-Kennung an `dachplan.imgDriveId` schreiben kann –
+   das Ersatz-Objekt selbst wird nie am Task gespeichert. */
+function _dachplanOffeneFotos(task){
+  const dp=task&&task.dachplan;if(!dp)return [];
+  const out=[];
+  for(const p of (dp.pins||[]))for(const f of (p.fotos||[]))if(f&&f.key&&!f.driveId)out.push(f);
+  if(dp.imgKey&&!dp.imgDriveId)out.push({key:dp.imgKey,name:'dachplan_basis.jpg',_dpBasis:dp});
+  return out;
+}
 function _fotoPendList(){
   const out=[];
   const scan=tasks=>{for(const task of tasks||[]){if(!task)continue;
     for(const f of task.fotos||[])if(f&&f.localKey&&!f.driveId)out.push({task,fo:f});
-    for(const pb of task.pruefberichte||[])for(const f of pb.fotos||[])if(f&&f.localKey&&!f.driveId)out.push({task,fo:f});}};
+    for(const pb of task.pruefberichte||[])for(const f of pb.fotos||[])if(f&&f.localKey&&!f.driveId)out.push({task,fo:f});
+    for(const f of _dachplanOffeneFotos(task))out.push({task,fo:f});}}; // v211
   try{for(const arr of _alleTaskListen())scan(arr);}catch(e){}
   return out;
 }
@@ -16861,7 +16958,7 @@ function _fotoPendRefreshKeys(){
   }).catch(()=>{_fotoPendKeysBusy=false;});
 }
 function _fotoIstHier(fo){
-  return !_fotoPendLocalKeys||_fotoPendLocalKeys.has(fo.localKey);
+  return !_fotoPendLocalKeys||_fotoPendLocalKeys.has(fo.localKey||fo.key); // v211: Dachplan-Fotos heißen `key`
 }
 function _fotoPendUpdate(){
   try{
@@ -16984,6 +17081,10 @@ async function _fotoPendEntfernen(taskId,key,ev){
   const raus=arr=>{if(!Array.isArray(arr))return arr;const n=arr.length;const r=arr.filter(f=>!(f&&_fpKey(f)===key));if(r.length<n)weg=true;return r;};
   t.fotos=raus(t.fotos);
   for(const pb of t.pruefberichte||[])pb.fotos=raus(pb.fotos);
+  if(t.dachplan){ // v211: auch Dachplan-Einträge haben jetzt diesen Ausweg
+    for(const p of t.dachplan.pins||[])p.fotos=raus(p.fotos);
+    if(t.dachplan.imgKey===key&&!t.dachplan.imgDriveId){t.dachplan.imgKey=null;weg=true;}
+  }
   if(key)_mobPhotoSetMeta(key,{done:1}); // Waisen-Rettung fasst den Schlüssel nicht mehr an
   if(weg){forceSave();toast('✓ Eintrag entfernt','success',2500);}
   if(currentTaskId===taskId){const ct=findTaskById(taskId);if(ct)try{renderDetail(ct);}catch(e){}}
