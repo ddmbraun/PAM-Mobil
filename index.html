@@ -7564,6 +7564,8 @@ function _applyMobileFilter(data){
      dem ersten Mal nichts mehr. */
   try{_tuHerkunftReparieren();}catch(e){console.warn('[TU] Reparatur (Laden):',e);}
   try{_tuVorabNotizWandern();}catch(e){console.warn('[TU] Vorab-Notiz (Laden):',e);}
+  // v214: offener Dachplan nimmt den Auftrag frisch in die Hand (Karteileichen-Falle)
+  try{if(window.Dachplan&&Dachplan.rebind)Dachplan.rebind();}catch(e){console.warn('[Dachplan] rebind (Laden):',e);}
 }
 // ── POLLING: fremde Änderungen (z.B. vom Desktop) übernehmen ──
 let fileLastModified=null;
@@ -7911,6 +7913,9 @@ async function saveFile(){
               try{_tuHerkunftReparieren();}catch(e){console.warn('[TU] Reparatur (Poll):',e);}
               // v199: und genau hier kommt der am Rechner gesetzte Haken an.
               try{_tuVorabNotizWandern();}catch(e){console.warn('[TU] Vorab-Notiz (Poll):',e);}
+              // v214: offener Dachplan neu binden – GENAU hier entstand der Pin-Verlust:
+              // boards hält ab jetzt neue Objekte, der Dachplan hielt die alten.
+              try{if(window.Dachplan&&Dachplan.rebind)Dachplan.rebind();}catch(e){console.warn('[Dachplan] rebind (Konflikt):',e);}
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
@@ -18813,7 +18818,15 @@ window.Dachplan=(function(){
     _lays[_startName].addTo(map);
     markLayer();
     map.on('click',e=>{if(addMode)addPin(e.latlng.lat,e.latlng.lng);else say('Zum Setzen erst „➕ Pin" oben antippen');});
-    map.on('moveend',()=>{if(dp&&dp.base!=='bild'){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();saveViewSoon();}catch(_){}}});
+    /* v214: Mini-Bewegungen NICHT mehr speichern. Jedes Gerät rundet beim Öffnen den
+       Ausschnitt minimal anders (gemessen am 20.08.: 7. Nachkommastelle, ~3 mm) – drei
+       offene Geräte haben sich damit ENDLOS gegenseitig den Ausschnitt überschrieben
+       (alle 10–20 s ein Drive-Schreibvorgang, protokolliert). Erst ab ~1 m Bewegung
+       oder Zoom-Änderung wird gespeichert – „öffnet, wo ich zuletzt war" bleibt. */
+    map.on('moveend',()=>{if(dp&&dp.base!=='bild'){try{
+      const c=map.getCenter(),z=map.getZoom(),alt=dp.center;
+      if(!alt||Math.abs(alt[0]-c.lat)>1e-5||Math.abs(alt[1]-c.lng)>1e-5||dp.zoom!==z){dp.center=[c.lat,c.lng];dp.zoom=z;saveViewSoon();}
+    }catch(_){}}});
     map.on('locationfound',e=>{if(locM)map.removeLayer(locM);if(locC)map.removeLayer(locC);
       locM=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#2d7ef7',fillOpacity:1}).addTo(map);
       locC=L.circle(e.latlng,{radius:e.accuracy,color:'#2d7ef7',weight:1,fillColor:'#2d7ef7',fillOpacity:.12}).addTo(map);});
@@ -19231,7 +19244,10 @@ window.Dachplan=(function(){
     if(typeof L==='undefined'){say('Karte braucht einmal Internet','error');return false;}
     imap=L.map(E.imapEl,{crs:L.CRS.Simple,zoomControl:true,minZoom:-5,maxZoom:6,attributionControl:false,zoomSnap:0.1,zoomDelta:0.25,wheelPxPerZoomLevel:180}); // v104: Bild-Modus noch feiner zoomen (Zehntel-Stufen)
     imap.on('click',e=>{if(calStep>0){onCalibTap(e.latlng);return;}if(!dp.imgKey&&!dp.imgDriveId){say('Erst „📷 Bild" laden');return;}if(addMode)addImgPin(e.latlng);else say('Zum Setzen erst „➕ Pin" antippen');}); // v212: auch ein Drive-Bild (vom PC) zählt als vorhanden
-    imap.on('moveend',()=>{if(dp&&dp.base==='bild'){try{dp.imgC=[imap.getCenter().lat,imap.getCenter().lng];dp.imgZ=imap.getZoom();saveViewSoon();}catch(_){}}});
+    imap.on('moveend',()=>{if(dp&&dp.base==='bild'){try{ // v214: gleiche Mini-Bewegungs-Bremse wie auf der Karte (Einheiten = Bildpunkte)
+      const c=imap.getCenter(),z=imap.getZoom(),alt=dp.imgC;
+      if(!alt||Math.abs(alt[0]-c.lat)>0.5||Math.abs(alt[1]-c.lng)>0.5||dp.imgZ!==z){dp.imgC=[c.lat,c.lng];dp.imgZ=z;saveViewSoon();}
+    }catch(_){}}});
     return true;
   }
   function showBaseImg(url){if(!imap)return;try{if(imgLayer)imap.removeLayer(imgLayer);}catch(_){}imgLayer=L.imageOverlay(url,bnd()).addTo(imap);imap.setMaxBounds(bnd());}
@@ -19377,7 +19393,8 @@ window.Dachplan=(function(){
     pinBtnHide(); // v129
     try{guideStop();}catch(_){} // v116: Führung beim Schließen beenden
     try{liveStop();}catch(_){} // v105: GPS/Kompass nicht im Hintergrund weiterlaufen lassen (Akku)
-    if(map){try{dp.center=[map.getCenter().lat,map.getCenter().lng];dp.zoom=map.getZoom();}catch(e){}}
+    if(map){try{const c=map.getCenter(),z=map.getZoom(),alt=dp.center; // v214: gleiche Bremse wie moveend – sonst schrieb das Schließen das 3-mm-Delta doch
+      if(!alt||Math.abs(alt[0]-c.lat)>1e-5||Math.abs(alt[1]-c.lng)>1e-5||dp.zoom!==z){dp.center=[c.lat,c.lng];dp.zoom=z;}}catch(e){}}
     if(E.screen)E.screen.classList.add('dp-hidden');save();
   }
   // v125 Paket 6: Dachplan direkt auf einem Pin öffnen (Aufruf aus dem 📔-Tagebuch).
@@ -19403,7 +19420,28 @@ window.Dachplan=(function(){
       }catch(e){clearInterval(_focusTimer);}
     },400);
   }
-  return {open,close,openPin};
+  /* v214: Nach jedem Daten-Neuaufbau (Konflikt-Abgleich in saveFile, Poll/Laden über
+     _applyMobileFilter) zeigen `t` und `dp` sonst auf KARTEILEICHEN – boards hält dann
+     lauter NEUE Objekte. Alles, was der offene Dachplan danach ändert (neuer Pin!),
+     landete im toten Objekt und wurde nie gespeichert. Bewiesen am 20.08.: Franks
+     Test-Pin stand in keinem einzigen von 20 protokollierten Drive-Schreibvorgängen,
+     obwohl „Pin da" auf dem Schirm stand. rebind() nimmt den Auftrag frisch in die
+     Hand und zeichnet die Pins nach – die Karte bleibt, wo sie ist, offene Eingaben
+     im Pin-Fenster laufen über cur() ab sofort in das lebende Objekt. */
+  function rebind(){
+    try{
+      if(!E.screen||E.screen.classList.contains('dp-hidden'))return; // Dachplan zu – nichts zu tun
+      const frisch=(typeof currentTask==='function')?currentTask():null;
+      if(!frisch)return;
+      if(t===frisch&&dp===frisch.dachplan)return; // gleiche Objekte – nichts gebrochen
+      if(!frisch.dachplan||frisch.dachplan.mode!=='map')frisch.dachplan={mode:'map',base:'map',center:null,zoom:null,pins:[],nextNr:1};
+      t=frisch;dp=frisch.dachplan;
+      if(!dp.pins)dp.pins=[];if(!dp.nextNr)dp.nextNr=(dp.pins.length+1);if(!dp.base)dp.base='map';
+      if(sel&&!dp.pins.some(p=>p&&p.id===sel)){sel=null;closeSheet();} // gewählter Pin existiert nicht mehr
+      renderPins(); // deckt beide Modi (leitet im Bild-Modus auf renderImgPins)
+    }catch(e){console.warn('[Dachplan] rebind:',e);}
+  }
+  return {open,close,openPin,rebind};
 })();
 </script>
 </body>
