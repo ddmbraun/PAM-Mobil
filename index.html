@@ -18480,6 +18480,19 @@ window.Dachplan=(function(){
   /* v136: Standort-Einträge im ⋯-Menü nur im Kompakt-Modus (Tablet hat sie in der Leiste) */
   +'.dpCOnly{display:none}'
   +'#dpScreen.dp-compact #dpMoreMenu .dpCOnly{display:block}'
+  /* v212: Gegenstück – Menü-Einträge NUR für die Tablet-Ansicht. Am Handy gäbe es
+     Suche (🔍-Knopf oben) und Standort (blauer Knopf) sonst doppelt, und der
+     Schaden-Filter wohnt dort in der Pin-Liste (Chips, v135). */
+  +'#dpScreen.dp-compact #dpMoreMenu .dpTOnly{display:none}'
+  /* v212 „Sonnen-Optik" (Beschwerde Frank: draußen trotz v208 schlecht ablesbar):
+     Im Hell-Modus reines Weiß mit dicker schwarzer Schrift und 2px-Rand statt der
+     grauen App-Flächen; gedrückte Knöpfe satt blau (#0b57d0 – weiß darauf 6,4:1).
+     ⛔ v208-Lektion: Rand und Fläche gehören in EINEN Schritt – hier werden beide
+     zusammen gesetzt. Der rote Zurücksetzen-Knopf behält seine Inline-Farben. */
+  +'body.light #dpScreen .dpb{background:#ffffff;color:#000000;border-width:2px;font-weight:700}'
+  +'body.light #dpScreen .dpb.on,body.light #dpScreen .dpb.primary{background:#0b57d0;border-color:#0b57d0;color:#ffffff}'
+  +'body.light #dpScreen #dpCTop .dpc{background:#ffffff;color:#000000;border:2px solid #000000;font-weight:700}'
+  +'body.light #dpScreen #dpMsg{background:#ffffff;color:#000000;border:2px solid #0b57d0}'
   +'#dpScreen.dp-compact #dpListPanel{top:0;left:auto;width:84%;max-width:380px;border-left:1px solid var(--border);box-shadow:-10px 0 28px rgba(0,0,0,.6);z-index:1500}'
   +'#dpCTop{position:absolute;top:8px;left:8px;right:8px;z-index:1450;display:flex;gap:8px;align-items:center}'
   +'#dpCTop .dpc{min-height:46px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:16px;font-weight:600;cursor:pointer}'
@@ -18514,26 +18527,30 @@ window.Dachplan=(function(){
     d.innerHTML=
      '<div id="dpBar">'
       +'<button class="dpb" id="dpBack">←</button>'
-      +'<input id="dpSearch" placeholder="Adresse suchen…" enterkeyhint="search" autocomplete="off" style="flex:1;min-width:90px;min-height:52px;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--text);padding:0 12px;font-size:16px">'
-      +'<button class="dpb" id="dpDach" title="Karte auf die Auftragsadresse springen">🏠 Dach</button>'
-      // v207: 📍 (zeigt nur an) und 📍➕ (legt sofort einen Pin an) standen nackt und
-      // ohne Beschriftung direkt nebeneinander – auf dem Dach griff man im Vorbeitippen
-      // daneben. 📍➕ steht jetzt bei den Anlege-Knöpfen, 📍 bleibt bei der Navigation.
-      // Beschriften ginge nicht: die Leiste ist voll und bräche um. Ids unverändert.
-      +'<button class="dpb" id="dpLoc" title="Mein Standort">📍</button>'
-      +'<button class="dpb" id="dpLive" title="Live-Standort: Punkt wandert mit, ±m-Anzeige, Blickrichtung">📡 Live</button>'
+      /* v212 (Entscheidung Frank 20.08., „Aufräumen + Pin-Knopf bleibt"): Die Leiste
+         zeigt nur noch die Dach-Kernfunktionen. Das Dauer-Suchfeld ist weg – der
+         🏠-Knopf zeigt stattdessen DAUERHAFT die Auftragsadresse (wie am Handy die
+         Kompakt-Kopfzeile; Befund Frank: „Adresse ist vorausgewählt – sehe ich die
+         noch?"). Freie Suche, 📍 Mein Standort und der Schaden-Filter wohnen jetzt
+         im ⋯-Menü mit ganzen Worten (Klasse dpTOnly: nur in der Tablet-Ansicht –
+         am Handy gibt es Suche/Standort schon in Kopfzeile bzw. blauem Knopf).
+         Ids unverändert, damit alle Handler und der Kompakt-Modus weiterlaufen. */
+      +'<button class="dpb" id="dpDach" title="Karte auf die Auftragsadresse springen" style="flex:1;min-width:150px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🏠</button>'
       +'<button class="dpb" id="dpAdd">➕ Pin</button>'
-      +'<button class="dpb" id="dpPinHere" title="Pin an meinem Standort setzen">📍➕</button>'
-      +'<button class="dpb" id="dpList" title="Pin-Liste">☰</button>'
-      +'<button class="dpb" id="dpFilter">Alle</button>'
-      // v127 (Wunsch Frank, Handy-Aufräumen): Selten-Funktionen ins ⋯-Menü –
-      // Karte↔Bild, Bild laden, Kalibrieren, Zurücksetzen. Ids/Handler unverändert.
+      +'<button class="dpb" id="dpPinHere" title="Pin an meinem Standort setzen">📍➕ Standort-Pin</button>'
+      +'<button class="dpb" id="dpList" title="Pin-Liste">☰ Liste</button>'
+      +'<button class="dpb" id="dpLive" title="Live-Standort: Punkt wandert mit, ±m-Anzeige, Blickrichtung">📡 Live</button>'
       // v208: Hell/Dunkel im Dachplan. Er liegt als Vollbild ueber der App, der
       // uebliche Umschalter in der Kopfzeile ist von hier aus nicht erreichbar –
       // man muesste zum Umschalten jedes Mal heraus und wieder herein.
       +'<button class="dpb theme-toggle-btn" id="dpTheme" title="Hell-Modus (Sonnenlicht)">☀️</button>'
       +'<button class="dpb" id="dpMore" title="Weitere Funktionen">⋯</button>'
       +'<div id="dpMoreMenu" class="dp-hidden">'
+        // v212: die drei aus der Leiste ausgezogenen Funktionen, mit ganzen Worten
+        +'<button class="dpb dpTOnly" id="dpMenuSearch" title="Eine andere Adresse suchen">🔍 Adresse suchen</button>'
+        +'<button class="dpb dpTOnly" id="dpLoc" title="Mein Standort">📍 Mein Standort zeigen</button>'
+        +'<button class="dpb dpTOnly" id="dpFilter">🔴 Nur Schaden-Pins zeigen</button>'
+        +'<div class="dpTOnly" style="height:1px;background:var(--border);margin:4px 0;"></div>'
         // v129 (Wunsch Frank): Ebenen-Auswahl sitzt nicht mehr als Leaflet-Kästchen IM Bild,
         // sondern hier im Menü – die Karte bleibt frei. Namen = Schlüssel aus _lays.
         +'<div style="font-size:12px;color:var(--text2);font-weight:700;padding:2px 4px 0;">Kartenansicht</div>'
@@ -18542,9 +18559,10 @@ window.Dachplan=(function(){
         +'<button class="dpb dpLay" data-lay="Luftbild Google">🟩 Luftbild Google</button>'
         +'<button class="dpb dpLay" data-lay="Karte">🗺 Karte (OpenStreetMap)</button>'
         +'<div style="height:1px;background:var(--border);margin:4px 0;"></div>'
-        // v207: die beiden Standort-Knöpfe sind von hier ins Menü des blauen Knopfes
-        // gewandert (v136 hatte sie hier eine Ebene zu tief abgelegt: 3 Tipps statt 2).
-        +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">🖼️ Zum Bild wechseln</button>'
+        // v212: 📐 statt 🖼️ – das Bild-Zeichen hieß sonst zweierlei (auch „Galerie"
+        // beim Pin-Foto). v207: die beiden Standort-Knöpfe sind von hier ins Menü
+        // des blauen Knopfes gewandert.
+        +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">📐 Zum eigenen Bild wechseln</button>'
         +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild laden</button>'
         +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kalibrieren</button>'
         +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen" style="color:var(--red);border-color:var(--red)">🗑 Zurücksetzen</button>'
@@ -18636,9 +18654,15 @@ window.Dachplan=(function(){
     q('#dpMoreMenu').addEventListener('click',()=>setTimeout(()=>{try{q('#dpMoreMenu').classList.add('dp-hidden');}catch(_){}},60)); // v127: nach Auswahl zuklappen
     q('#dpNoImgLoad').onclick=()=>q('#dpBildInput').click(); // v127: Hinweis-Knöpfe im leeren Bild-Modus
     q('#dpNoImgMap').onclick=()=>setBase('map');
-    q('#dpSearch').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();doSearch(q('#dpSearch').value);}});
+    /* v212: Das Dauer-Suchfeld ist aus der Leiste weg. Der Menü-Eintrag öffnet die
+       vorhandene Suchzeile aus dem Kompakt-Modus (dpCSearchRow) auch auf dem Tablet –
+       ein Suchweg, kein zweiter Code-Pfad. top wird zur Leistenhöhe berechnet, denn
+       die Leiste kann (hochkant) zweizeilig umbrechen. */
+    q('#dpMenuSearch').onclick=()=>{const r=q('#dpCSearchRow');
+      if(r.classList.contains('dp-hidden')){const bar=q('#dpBar');r.style.top=((bar?bar.offsetHeight:58)+8)+'px';r.classList.remove('dp-hidden');setTimeout(()=>{try{q('#dpCSearchInput').focus();}catch(_){}},80);}
+      else r.classList.add('dp-hidden');};
     q('#dpAdd').onclick=()=>{addMode=!addMode;q('#dpAdd').classList.toggle('on',addMode);q('#dpAdd').textContent=addMode?'➕ Pin ✓':'➕ Pin';};
-    q('#dpFilter').onclick=()=>{filter=filter==='alle'?'schaden':'alle';q('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';renderPins();};
+    q('#dpFilter').onclick=()=>{filter=filter==='alle'?'schaden':'alle';_syncFilterBtn();renderPins();}; // v212: Text zentral in _syncFilterBtn
     q('#dpStat').querySelectorAll('button').forEach(b=>b.onclick=()=>{const p=cur();if(!p)return;p.status=b.dataset.s;markStat(p);renderPins();save();});
     q('#dpTitle').oninput=e=>{const p=cur();if(p){p.title=e.target.value;save();}};
     q('#dpNote').oninput=e=>{const p=cur();if(p){p.note=e.target.value;save();}};
@@ -18662,7 +18686,7 @@ window.Dachplan=(function(){
     // damit alle Funktionen exakt gleich arbeiten (kein zweiter Code-Pfad).
     q('#dpCBack').onclick=close;
     q('#dpCAddr').onclick=searchDach;
-    q('#dpCSearch').onclick=()=>{const r=q('#dpCSearchRow');r.classList.toggle('dp-hidden');if(!r.classList.contains('dp-hidden')){try{q('#dpCSearchInput').focus();}catch(_){}}};
+    q('#dpCSearch').onclick=()=>{const r=q('#dpCSearchRow');r.style.top='';/* v212: Tablet-Weg setzt ein eigenes top – hier zurück auf die Kompakt-Position */r.classList.toggle('dp-hidden');if(!r.classList.contains('dp-hidden')){try{q('#dpCSearchInput').focus();}catch(_){}}};
     q('#dpCSearchInput').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();doSearch(q('#dpCSearchInput').value);q('#dpCSearchRow').classList.add('dp-hidden');}});
     q('#dpFab').onclick=()=>{q('#dpFabMenu').classList.toggle('dp-hidden');};
     q('#dpCPin').onclick=()=>{q('#dpAdd').click();_updFab();q('#dpFabMenu').classList.add('dp-hidden');say(addMode?'➕ Pin-Modus AN – auf die Karte tippen':'Pin-Modus aus');};
@@ -18683,7 +18707,8 @@ window.Dachplan=(function(){
   }
   // v135: Filter-Knopf der breiten Leiste mit dem Chip-Zustand der Liste synchron halten
   function _syncFilterBtn(){
-    try{E.screen.querySelector('#dpFilter').textContent=filter==='alle'?'Alle':'Nur Schaden';}catch(_){}
+    // v212: sprechender Menü-Text – der Knopf sagt, was ein Antippen TUN wird
+    try{E.screen.querySelector('#dpFilter').textContent=filter==='alle'?'🔴 Nur Schaden-Pins zeigen':'⚪ Wieder alle Pins zeigen';}catch(_){}
   }
   /* ---- v207: Handy- oder Tablet-Bedienung, auch beim DREHEN ----
      Bisher entschied das allein open(): wer den Dachplan quer öffnete (über 520
@@ -18908,7 +18933,10 @@ window.Dachplan=(function(){
     sel=null;filter='alle';addMode=true;
     if(!built)build();
     addMode=false;
-    E.screen.querySelector('#dpFilter').textContent='Alle';
+    _syncFilterBtn(); // v212: Text zentral (filter steht hier auf 'alle')
+    // v212: Auftragsadresse dauerhaft im 🏠-Knopf (wie die Handy-Kopfzeile) –
+    // vorher stand dort nur „Dach", die Adresse sah man erst nach dem Antippen.
+    try{const _adr=((t&&t.adresse)||'').trim();E.screen.querySelector('#dpDach').textContent='🏠 '+(_adr||(t&&t.title)||'Objekt');}catch(_){}
     E.screen.querySelector('#dpAdd').classList.remove('on');
     E.screen.querySelector('#dpAdd').textContent='➕ Pin';
     E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');
@@ -19101,7 +19129,7 @@ window.Dachplan=(function(){
   // v195: leitet auf die globale _pamGeoQuery um – dieselbe Logik gilt jetzt auch für
   // die Maps- und Navi-Knöpfe. Der Name bleibt, damit searchDach/setBase unverändert bleiben.
   function _geoQuery(a){return _pamGeoQuery(a);}
-  function searchDach(){var a=(t&&t.adresse)?String(t.adresse).trim():'';if(!a){say('Keine Auftragsadresse hinterlegt – Adresse ins Suchfeld tippen','error');return;}var q=_geoQuery(a)||a;try{var s=E.screen.querySelector('#dpSearch');if(s)s.value=q;}catch(_){}doSearch(q+', Deutschland');}
+  function searchDach(){var a=(t&&t.adresse)?String(t.adresse).trim():'';if(!a){say('Keine Auftragsadresse hinterlegt – im ⋯-Menü „🔍 Adresse suchen" nutzen','error');return;}var q=_geoQuery(a)||a;try{var s=E.screen.querySelector('#dpSearch');if(s)s.value=q;}catch(_){}doSearch(q+', Deutschland');} // v212: das Dauer-Suchfeld gibt es nicht mehr, der if(s)-Riegel bleibt für alle Fälle
   function pinHere(){
     if(dp.base==='bild'){say('Standort-Pin nur in der Kartenansicht (🗺️)','error');return;}
     if(!map)return;if(!navigator.geolocation){say('Kein GPS im Browser','error');return;}say('GPS für Pin wird gesucht – bitte still stehen…');
@@ -19162,11 +19190,35 @@ window.Dachplan=(function(){
     if(imap)return true;
     if(typeof L==='undefined'){say('Karte braucht einmal Internet','error');return false;}
     imap=L.map(E.imapEl,{crs:L.CRS.Simple,zoomControl:true,minZoom:-5,maxZoom:6,attributionControl:false,zoomSnap:0.1,zoomDelta:0.25,wheelPxPerZoomLevel:180}); // v104: Bild-Modus noch feiner zoomen (Zehntel-Stufen)
-    imap.on('click',e=>{if(calStep>0){onCalibTap(e.latlng);return;}if(!dp.imgKey){say('Erst „📷 Bild" laden');return;}if(addMode)addImgPin(e.latlng);else say('Zum Setzen erst „➕ Pin" antippen');});
+    imap.on('click',e=>{if(calStep>0){onCalibTap(e.latlng);return;}if(!dp.imgKey&&!dp.imgDriveId){say('Erst „📷 Bild" laden');return;}if(addMode)addImgPin(e.latlng);else say('Zum Setzen erst „➕ Pin" antippen');}); // v212: auch ein Drive-Bild (vom PC) zählt als vorhanden
     imap.on('moveend',()=>{if(dp&&dp.base==='bild'){try{dp.imgC=[imap.getCenter().lat,imap.getCenter().lng];dp.imgZ=imap.getZoom();saveViewSoon();}catch(_){}}});
     return true;
   }
   function showBaseImg(url){if(!imap)return;try{if(imgLayer)imap.removeLayer(imgLayer);}catch(_){}imgLayer=L.imageOverlay(url,bnd()).addTo(imap);imap.setMaxBounds(bnd());}
+  /* v212: Basisbild geräteübergreifend (Befund 3 der Analyse vom 20.08.) – erst der
+     Gerätespeicher (imgKey), sonst aus Drive (imgDriveId, angemeldeter Weg) und dann
+     LOKAL ablegen, damit es beim nächsten Mal offline da ist. Bis v211 las der
+     Bild-Modus NUR imgKey: ein am PC geladenes Bild hieß am Handy „Kein Bild",
+     Pins setzen und Kalibrieren blieben gesperrt. */
+  async function _dpBasisBildLaden(){
+    try{if(dp.imgKey){const u=await _mobPhotoGet(dp.imgKey);if(u)return u;}}catch(_){}
+    if(!dp.imgDriveId)return null;
+    let blobUrl=null;
+    try{blobUrl=await _fetchFotoBlob(dp.imgDriveId);}catch(_){}
+    if(!blobUrl)return null;
+    try{
+      // Blob-Adresse → dataUrl: nur so lässt sich das Bild im Gerätespeicher ablegen
+      const b=await (await fetch(blobUrl)).blob();
+      const durl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(b);});
+      const key='dpbase_'+t.id; // derselbe Schlüssel, den loadBild vergibt
+      await _mobPhotoSave(key,durl);
+      if(dp.imgKey!==key){dp.imgKey=key;save();}
+      // Bildmaße nachtragen, falls sie fehlen (z. B. nach einem PC-Reset-Altfall) –
+      // die Pin-Positionen sind relativ, aber bnd()/Zuschnitt brauchen echte Maße
+      if(!dp.imgW||!dp.imgH){const dim=await new Promise(res=>{const i=new Image();i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight});i.onerror=()=>res(null);i.src=durl;});if(dim&&dim.w){dp.imgW=dim.w;dp.imgH=dim.h;save();}}
+      return durl;
+    }catch(_){return blobUrl;} // Anzeige klappt auch, wenn das Ablegen scheitert
+  }
   async function loadBild(file){
     if(!/^image\//.test(file.type||'')){say('Bitte ein Bild wählen','error');return;}
     say('Bild wird geladen…');
@@ -19190,16 +19242,22 @@ window.Dachplan=(function(){
   function setBase(mode){
     dp.base=mode;const isB=(mode==='bild');
     if(isB)try{liveStop();}catch(_){} // v105: Live-Standort gilt nur im Karten-Modus
-    try{E.screen.querySelector('#dpMode').textContent=isB?'🗺️ Zur Luftbild-Karte wechseln':'🖼️ Zum Bild wechseln';}catch(_){} // v127: sprechende Beschriftung im ⋯-Menü
+    try{E.screen.querySelector('#dpMode').textContent=isB?'🗺️ Zur Luftbild-Karte wechseln':'📐 Zum eigenen Bild wechseln';}catch(_){} // v127: sprechende Beschriftung; v212: 📐 statt 🖼️ (Doppelbelegung mit „Galerie")
     try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';}catch(_){}
     E.mapEl.classList.toggle('dp-hidden',isB);E.imapEl.classList.toggle('dp-hidden',!isB);
     Object.keys(markers).forEach(k=>{try{if(map)map.removeLayer(markers[k]);}catch(_){}try{if(imap)imap.removeLayer(markers[k]);}catch(_){}delete markers[k];});
     if(isB){
       if(!ensureImap())return;
-      try{E.screen.querySelector('#dpNoImg').classList.toggle('dp-hidden',!!dp.imgKey);}catch(_){} // v127: Hinweis statt schwarzer Fläche
+      try{E.screen.querySelector('#dpNoImg').classList.toggle('dp-hidden',!!(dp.imgKey||dp.imgDriveId));}catch(_){} // v127: Hinweis statt schwarzer Fläche; v212: Drive-Bild zählt mit
       setTimeout(()=>{try{imap.invalidateSize();}catch(e){}
-        if(dp.imgKey){_mobPhotoGet(dp.imgKey).then(url=>{if(url){showBaseImg(url);}try{if(dp.imgC&&dp.imgZ!=null)imap.setView(dp.imgC,dp.imgZ);else imap.fitBounds(bnd());}catch(_){}renderImgPins();});}
-        else{say('Kein Bild – oben „📷 Bild" antippen');}
+        if(dp.imgKey||dp.imgDriveId){ // v212: erst Gerät, sonst Drive (siehe _dpBasisBildLaden)
+          if(!dp.imgKey&&dp.imgDriveId)say('Bild wird aus Drive geholt…');
+          _dpBasisBildLaden().then(url=>{
+            if(url){showBaseImg(url);}
+            else{say('Bild nicht ladbar – Google-Anmeldung/Empfang prüfen','error');try{E.screen.querySelector('#dpNoImg').classList.remove('dp-hidden');}catch(_){}}
+            try{if(dp.imgC&&dp.imgZ!=null)imap.setView(dp.imgC,dp.imgZ);else imap.fitBounds(bnd());}catch(_){}renderImgPins();});
+        }
+        else{say('Kein Bild – im ⋯-Menü „📷 Bild laden" antippen');}
       },60);
     }else{
       try{E.screen.querySelector('#dpNoImg').classList.add('dp-hidden');}catch(_){} // v127
@@ -19210,7 +19268,7 @@ window.Dachplan=(function(){
         map.setView(c,z||18);renderPins();if(!dp.center&&!(t.lat&&t.lon)&&t&&t.adresse){doSearch(_geoQuery(t.adresse)+', Deutschland');}},60);
     }
   }
-  function startCalib(){if(!dp.imgKey){say('Erst ein Bild laden');return;}calStep=1;calTmp={};say('Kalibrieren: Punkt A – tippe eine markante Ecke im Bild an');}
+  function startCalib(){if(!dp.imgKey&&!dp.imgDriveId){say('Erst ein Bild laden');return;}calStep=1;calTmp={};say('Kalibrieren: Punkt A – tippe eine markante Ecke im Bild an');} // v212: auch ein Drive-Bild (vom PC) zählt
   function onCalibTap(ll){
     const fr=latLngToFr(ll),which=calStep===1?'A':'B';
     const co=prompt('Punkt '+which+': Koordinaten aus Google Maps eintippen als  lat, lng  (z. B. 51.10820, 10.64610)\n\nLeer lassen + OK = aktuellen GPS-Standort verwenden:');
