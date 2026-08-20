@@ -554,7 +554,11 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .ck-item input[type=text].done-text{text-decoration:line-through;opacity:.5;}
 .ck-item .ck-del{padding:4px 10px;font-size:13px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;flex-shrink:0;}
 /* ── TOAST ── */
-.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg2);color:var(--text);padding:12px 20px;border-radius:10px;border:1px solid var(--border);z-index:100;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+/* v216: Stapelhöhe 100050 statt 100 – Meldungen lagen UNTER Dachplan (99990),
+   Foto-Vollbildern (99999) und der Mal-Ansicht (100010). Ein gescheiterter
+   Upload der bemalten Pin-Fassung meldete sich dadurch komplett lautlos
+   (Befund Frank 20.08.). Meldungen gehören über alles. */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg2);color:var(--text);padding:12px 20px;border-radius:10px;border:1px solid var(--border);z-index:100050;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.4)}
 .toast.success{border-color:var(--green);color:var(--green)}
 .toast.error{border-color:var(--red);color:var(--red)}
 .toast.info{background:#1a73e8;color:#fff;border-color:#1a73e8}
@@ -9268,9 +9272,14 @@ async function _dpUploadFromKey(fo,folderId){
   const dataUrl=await _mobPhotoGet(fo.key);
   if(!dataUrl)throw new Error('BLOB_MISSING');
   const blob=_dataUrlToBlob(dataUrl);
-  const file=new File([blob],fo.name||('dachplan_'+fo.key+'.jpg'),{type:blob.type||'image/jpeg'});
+  /* v216: Zwei Fälle. (a) Original fehlt in Drive → wie gehabt nach fo.driveId.
+     (b) Original ist längst oben, aber die BEMALTE Fassung (v215) nicht – die
+     lokale Kopie unter fo.key IST die bemalte, sie geht als eigene Datei nach
+     fo.editedDriveId (so heilt sich ein gescheiterter Mal-Upload von selbst). */
+  const _edited=!!(fo.driveId&&fo.editedName&&!fo.editedDriveId);
+  const file=new File([blob],_edited?(fo.editedName||'dachplan_pin_bearbeitet.jpg'):(fo.name||('dachplan_'+fo.key+'.jpg')),{type:blob.type||'image/jpeg'});
   const meta=await _uploadOneFotoToDrive(file,folderId);
-  fo.driveId=meta.id;
+  if(_edited)fo.editedDriveId=meta.id;else fo.driveId=meta.id;
   if(fo._dpBasis)fo._dpBasis.imgDriveId=meta.id; // Basisbild: Kennung gehört an den Dachplan, nicht ans Ersatz-Objekt
 }
 
@@ -16986,7 +16995,11 @@ function _fpKey(f){return (f&&(f.localKey||f.key||f.driveId||f.id))||'';} // v21
 function _dachplanOffeneFotos(task){
   const dp=task&&task.dachplan;if(!dp)return [];
   const out=[];
-  for(const p of (dp.pins||[]))for(const f of (p.fotos||[]))if(f&&f.key&&!f.driveId)out.push(f);
+  for(const p of (dp.pins||[]))for(const f of (p.fotos||[])){
+    if(!f||!f.key)continue;
+    if(!f.driveId)out.push(f);
+    else if(f.editedName&&!f.editedDriveId)out.push(f); // v216: bemalte Fassung (v215) wartet noch auf ihren Drive-Upload
+  }
   if(dp.imgKey&&!dp.imgDriveId)out.push({key:dp.imgKey,name:'dachplan_basis.jpg',_dpBasis:dp});
   return out;
 }
@@ -18242,9 +18255,11 @@ async function _uploadEditedPinFoto(t,fo,dataUrl){
     _blobCacheEinfuegen(_fotoBlobCache,meta.id,dataUrl);
     forceSave();
     toast('✏ Bearbeitete Kopie in Drive gespeichert','success');
+    try{_fotoPendUpdate();}catch(e2){} // v216: Warnleuchte ggf. gleich wieder aus
   }catch(e){
     console.warn('[PinFoto-Edit-Upload]',e);
     toast('⚠ Zeichnung lokal gespeichert – Drive-Upload fehlgeschlagen','info');
+    try{_fotoPendUpdate();}catch(e2){} // v216: Warnleuchte SOFORT an – der Nachhol-Lauf holt die bemalte Fassung
   }
 }
 function lbSaveDraw(){
