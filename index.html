@@ -5528,8 +5528,15 @@ async function afterLogin(){
 
 // ── ETag-Konflikt-Dialog ──────────────────────────────────────────────────
 function _showETagConflictDialog(onOverwrite, onDiscard) {
+  /* v218: Stapel 100060 statt 99999 – der Dialog stand sonst UNTER der Mal-Ansicht
+     (100010) und dem Dachplan-Foto-Vollbild (99999) und wartete unsichtbar auf eine
+     Antwort. Und: nie zwei Dialoge stapeln – wiederholte 412er erzeugten sonst
+     unsichtbare Kopien übereinander. */
+  const _alt=document.getElementById('_etagConflictOv');
+  if(_alt)_alt.remove();
   const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;';
+  ov.id='_etagConflictOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100060;display:flex;align-items:center;justify-content:center;';
   const dlg = document.createElement('div');
   dlg.style.cssText = 'background:#fff;color:#222;border-radius:12px;padding:28px 32px;max-width:420px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.4);font-family:Arial,sans-serif;';
   dlg.innerHTML = `
@@ -7818,6 +7825,15 @@ async function saveFile(){
           const fr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&_='+Date.now(),
             {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
           if(fr.ok){
+            /* v218: Datei-Fingerabdruck (ETag) MIT übernehmen. Der Zweig hier lud den
+               fremden Stand und führte sauber zusammen – der anschließende Upload lief
+               aber mit dem ALTEN mobETag weiter und wurde damit GARANTIERT als 412
+               abgelehnt. Der „Schreib-Konflikt"-Dialog dazu stand bis v217 auch noch
+               unsichtbar UNTER der Mal-Ansicht; nach 60 s Warte-Frist übernahm der
+               Poll den fremden Stand und warf die ungespeicherte Arbeit weg
+               (Befund Frank 20.08. abends: neues Pin-Foto samt Zeichnung verschwunden). */
+            const _frETag=fr.headers.get('ETag')||fr.headers.get('etag');
+            if(_frETag)mobETag=_frETag;
             const remote=await fr.json();
             const remoteStatuses=Array.isArray(remote._statuses)?remote._statuses:statuses;
             // Remote-Whitelist auslesen — überschreibt lokale (Desktop ist Quelle der Wahrheit)
