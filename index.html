@@ -251,6 +251,9 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .fab-blitz{bottom:88px;background:var(--bg2);color:var(--accent2);border:2px solid var(--accent);font-size:24px;}
 .fab:active{transform:scale(.95)}
 .empty{text-align:center;color:var(--text2);padding:40px 20px;font-size:14px}
+/* v219: Handy-Haken – gedimmte Karte, wenn Versteckte per 🙈 kurz eingeblendet sind */
+.task-card.mob-aus,.kz.mob-aus{opacity:.55;}
+.mob-aus-fuss{text-align:center;color:var(--text2);padding:12px 16px;margin:6px 10px 14px;border:1px dashed var(--border);border-radius:10px;font-size:13.5px;cursor:pointer;user-select:none;}
 /* ── DETAIL ── */
 .detail-body{flex:1;overflow-y:auto;padding:0 16px 100px;-webkit-overflow-scrolling:touch;--m-scale:1}
 .sect{background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-bottom:10px;overflow:hidden}
@@ -9646,12 +9649,27 @@ function _pamTryOpenPendingTaskMobile(){
     else if(tries>375){ clearInterval(iv); window._pamPendingPolling=false; window._pamPendingTaskId=null; try{localStorage.removeItem('pam_pending_task');}catch(e){} try{ alert('Der verlinkte Task wurde auf dem Handy nicht gefunden.\n\nMögliche Gründe: Board mobil nicht freigegeben, Task archiviert, oder Daten (Google Drive) wurden nicht geladen. Gib das Board in den Mobil-Einstellungen frei, melde dich bei Google Drive an – oder öffne den Link am PC.'); }catch(e){} }
   },800);
 }
+// ── v219: „Am Handy ausblenden" (PC-Kästchen am Objekt, Desktop b726) ─────────────
+// ⛔ REINER ANZEIGE-FILTER. `boards` bleibt vollständig, am Speichern und am Sync
+// ändert sich NICHTS – die v210-Doppelkarten-Falle entstand durch einen DATEN-Filter,
+// deshalb wird hier ausschließlich beim Zeichnen ausgelassen. Das Feld
+// mobilAusblenden schreibt nur der PC; das Handy liest es bloß.
+let _mobAusZeigen=false; // Sitzungs-Schalter: die 🙈-Fußzeile blendet Versteckte kurz ein
+function _mobSichtbar(bn){return (boards[bn]||[]).filter(t=>!(t&&t.mobilAusblenden));}
+// Ohne Suche und ohne 🙈-Schalter bleiben Karten mit Haken draußen. Bei aktiver
+// Suche wird NICHT gefiltert – wer sucht, will finden (Kennzeichen an der Karte).
+function _mobAusFilter(liste,sucheAktiv,zeigen){
+  const versteckt=(liste||[]).filter(t=>t&&t.mobilAusblenden);
+  const raus=(versteckt.length>0&&!sucheAktiv&&!zeigen);
+  return {sichtbar:raus?(liste||[]).filter(t=>!(t&&t.mobilAusblenden)):(liste||[]).slice(),versteckt:versteckt,gefiltert:raus};
+}
+function _mobAusToggle(){_mobAusZeigen=!_mobAusZeigen;renderList();}
 function renderBoardBar(){
   const bar=document.getElementById('boardBar');
   const lbl=document.getElementById('boardLabel');
   const names=Object.keys(boards);
   bar.innerHTML=names.map(n=>{
-    const cnt=(boards[n]||[]).length;
+    const cnt=_mobSichtbar(n).length; // v219: zählt, was die Liste zeigt
     const bIcon=_bIconTyp(n)+' '; // v205: kannte vorher kein 🏠 Objekt
     return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="switchBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
@@ -9666,7 +9684,7 @@ function renderStatusBar(){
   const sec=document.getElementById('statusSection');
   const bar=document.getElementById('statusBar');
   if(!sec||!bar)return;
-  const tasks=boards[currentBoard]||[];
+  const tasks=_mobSichtbar(currentBoard); // v219: Chips zählen, was die Liste zeigt
   // Board-spezifische Spalten nutzen (analog PC), Fallback auf globale statuses
   const boardSts=(_remoteBoardStatuses[currentBoard]&&_remoteBoardStatuses[currentBoard].length)?_remoteBoardStatuses[currentBoard]:statuses;
   if(!boardSts.length){sec.style.display='none';return;}
@@ -9691,7 +9709,7 @@ function _mkUpdate(){
   row.style.display=(_mobView==='heute')?'none':'';
   const btn=document.getElementById('mkBoardBtn');
   if(btn){
-    const cnt=(boards[currentBoard]||[]).length;
+    const cnt=_mobSichtbar(currentBoard).length; // v219: zählt, was die Liste zeigt
     const bIcon=_bIconTyp(currentBoard); // v205: kannte vorher kein 🏠 Objekt
     btn.innerHTML='<span>'+bIcon+'</span><span class="mk-board-txt">'+esc(currentBoard||'Board wählen')+' ('+cnt+')</span><span style="color:var(--text2);flex-shrink:0">▾</span>';
   }
@@ -9704,11 +9722,11 @@ function _mkTogglePanel(){
   const names=Object.keys(boards);
   let h='<div class="mk-panel-lbl">Board</div>';
   h+=names.map(n=>{
-    const cnt=(boards[n]||[]).length;
+    const cnt=_mobSichtbar(n).length; // v219: zählt, was die Liste zeigt
     const bIcon=_bIconTyp(n)+' '; // v205: kannte vorher kein 🏠 Objekt
     return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="_mkPickBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
-  const tasks=boards[currentBoard]||[];
+  const tasks=_mobSichtbar(currentBoard); // v219: Chips zählen, was die Liste zeigt
   const boardSts=(_remoteBoardStatuses[currentBoard]&&_remoteBoardStatuses[currentBoard].length)?_remoteBoardStatuses[currentBoard]:statuses;
   if(boardSts.length){
     const counts={};tasks.forEach(t=>{const s=t.status||'';counts[s]=(counts[s]||0)+1;});
@@ -9756,11 +9774,12 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
   // v150: Erstell-Datum klein am Ende der Zusatzzeile (falls bekannt)
   const _erst=_taskErstelltText(t,true);
   const erstelltHtml=_erst?'<span style="opacity:.75">📅 '+_erst+'</span>':'';
-  const _teile=[info,herkunft,erstelltHtml].filter(Boolean).join(' · ');
+  const _mobAusK=t.mobilAusblenden?'<span>📱🚫 ausgeblendet</span>':''; // v219: Kennzeichen in der Kompaktzeile
+  const _teile=[info,herkunft,erstelltHtml,_mobAusK].filter(Boolean).join(' · ');
   const infoZeile=_teile
     ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+_teile+'</div>'
     :'';
-  return '<div class="kz'+(warn?' kz-rot':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
+  return '<div class="kz'+(warn?' kz-rot':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
     +'<div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
     +infoZeile
     +'</div>';
@@ -9817,9 +9836,17 @@ function renderList(resetScroll){
       });
     }
   }
+  // v219: Handy-Haken vom PC – NUR die Anzeige lässt Karten aus, nie die Daten (v210!).
+  const _ma=_mobAusFilter(filtered,qWords.length>0,_mobAusZeigen);
+  filtered=_ma.sichtbar;
+  const _mobAusFuss=(_ma.versteckt.length&&!qWords.length)
+    ?('<div class="mob-aus-fuss" onclick="_mobAusToggle()">'+(_mobAusZeigen
+      ?'🙈 '+_ma.versteckt.length+' wieder verbergen'
+      :'🙈 '+_ma.versteckt.length+' ausgeblendet – antippen zum Anzeigen')+'</div>')
+    :'';
   if(!filtered.length){
-    const hint=currentStatus?'Keine Tasks in „'+esc(currentStatus)+'"':(rawQ?'Keine Treffer für „'+esc(rawQ)+'"':'Noch keine Tasks in diesem Board.<br>Rechts unten „+" tippen.');
-    list.innerHTML='<div class="empty">'+hint+'</div>';return;
+    const hint=currentStatus?'Keine Tasks in „'+esc(currentStatus)+'"':(rawQ?'Keine Treffer für „'+esc(rawQ)+'"':(_ma.versteckt.length?'Alle Objekte dieses Boards sind am Handy ausgeblendet.':'Noch keine Tasks in diesem Board.<br>Rechts unten „+" tippen.'));
+    list.innerHTML='<div class="empty">'+hint+'</div>'+_mobAusFuss;return;
   }
   const timerState=_loadTimerState();
   const runningTaskId=timerState?timerState.taskId:null;
@@ -9877,7 +9904,7 @@ function renderList(resetScroll){
       :'';
     // v102: oranger Seitenstreifen bei überfälligem Termin/Fälligkeit, sonst blau
     const _cardWarn=!!((t.due&&isOverdue(t.due))||(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date()));
-    return '<div class="task-card'+(_cardWarn?' card-warn':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
+    return '<div class="task-card'+(_cardWarn?' card-warn':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
       +'<div class="task-card-body">'
       +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">'
       +(isNotizBoard
@@ -9890,6 +9917,7 @@ function renderList(resetScroll){
       +'<div class="task-card-meta">'
       +(status?'<span class="badge status">'+esc(status)+'</span>':'')
       +(_mobIsOfflinePinned(t.id)?'<span class="badge" style="background:#0f5132;color:#fff;border:1px solid #1a8a3c;">📴 Offline</span>':'')
+      +(t.mobilAusblenden?'<span class="badge" style="background:#F3EEFB;color:#7A4FB5;border:1px solid #D5C6EE;">📱🚫 ausgeblendet</span>':'') // v219
       +(isRunning?'<span class="task-timer-badge" style="color:var(--text);font-size:12px;font-weight:600;margin-left:auto">⏱ '+formatTimerFor(t.id)+'</span>':'')
       +'</div>'
       +(()=>{ try {
@@ -9938,7 +9966,7 @@ function renderList(resetScroll){
       +_fotoThumbHtml
       +'</div>';
   } catch(_e){ console.error('[renderList]',t&&t.id,_e); return '<div class="task-card" onclick="openDetail(\''+escAttr((t&&t.id)||'')+'\')">⚠ <span style="color:var(--red)">'+esc((t&&t.title)||'(Fehler)')+'</span></div>'; }
-  }).join('');
+  }).join('')+_mobAusFuss; // v219: 🙈-Fußzeile unter der Liste
   if(runningTaskId)_startListTickLoop();else _stopListTickLoop();
   // Foto-Thumbnails asynchron nachladen
   // v117: nicht nur Foto 1 – ist das erste Foto nicht ladbar (kein Drive/localKey, Upload-Leiche,
