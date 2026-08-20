@@ -4603,11 +4603,14 @@ const MOBILE_BACKUP_KEY='ptpm_board_backup_v1';
 
 // ── localStorage-Backup ──
 function _buildMobileSaveObj(){
+  // v215: gleiche Kopffeld-Reihenfolge wie beim Drive-Speichern und wie der Desktop
+  // (buildSaveObject) – und _archivedTasks (PC-Archiv-Ablage) auch im Backup erhalten
   const obj={_statuses:statuses};
+  if(Array.isArray(_remoteArchivedTasks)&&_remoteArchivedTasks.length)obj._archivedTasks=_remoteArchivedTasks.slice();
   if(Object.keys(_remoteBoardStatuses||{}).length)obj._boardStatuses={..._remoteBoardStatuses};
-  if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes};
   if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
   if(Object.keys(mobileStatusFilter||{}).length)obj._mobileStatusFilter={...mobileStatusFilter};
+  if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes};
   if(_remoteBoardOrder.length)obj._boardOrder=_remoteBoardOrder.slice(); // v182
   // v182: gleiche Reihenfolge + Einmischung wie beim Drive-Speichern – vorher fehlten
   // dem Backup die weggefilterten Tasks, und die Töpfe standen nacheinander
@@ -4916,7 +4919,14 @@ function _fileToDataUrl(file){
 const FOTO_MAX_DIM=2560,FOTO_JPEG_QUALITY=0.85,FOTO_COMPRESS_MIN_BYTES=1500000;
 async function _compressFoto(file){
   try{
-    if(!file||!/^image\//.test(file.type||''))return file;
+    // v215: Mediathek-Wähler liefern oft KEINEN Dateityp – dann entscheidet die Endung.
+    // Ohne diese Erweiterung ginge ein großes Galerie-Original unverkleinert in den
+    // Upload (ab ~5 MB scheitert der stille Weg – die b548-Falle). Bei Fehlern greift
+    // ohnehin das catch und das Original wird verwendet.
+    if(!file)return file;
+    const _t=String(file.type||'').toLowerCase();
+    const _bildDemNamenNach=/\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name||'');
+    if(!( /^image\//.test(_t) || (!_t&&_bildDemNamenNach) ))return file;
     if((file.size||0)<FOTO_COMPRESS_MIN_BYTES)return file; // klein genug → unverändert
     const url=URL.createObjectURL(file);
     let img;
@@ -7473,6 +7483,7 @@ async function findOrPickFile(){
 }
 // Splittet rohe Drive-Daten in statuses / sichtbare boards / hiddenBoards / Whitelist
 let _remoteBoardStatuses={}; // wird vom Desktop gesetzt, Mobil schreibt es unverändert zurück
+let _remoteArchivedTasks=[]; // v215: Archiv-Ablage des Desktops – Mobil reicht sie unverändert durch (ließe es das Feld weg, wäre das PC-Archiv nach einem Handy-Speichern leer)
 let _remoteBoardOrder=[];    // v182: Board-Reihenfolge (Desktop-Merkfeld b643) – Mobil reicht sie durch und schreibt danach sortiert
 let boardTypes={}; // 'baustelle' | 'notiz' | 'email' | 'immobilie' pro Board-Name
 // ⛔ v205: Der Kommentar nannte hier bis heute nur „baustelle | notiz" — und genau
@@ -7519,6 +7530,7 @@ function _applyMobileFilter(data){
     for(const t of v){if(t&&t.id)_schutzFelderUebernehmen(t,_schutzAlt.get(t.id));}
   }
   statuses=Array.isArray(data._statuses)?data._statuses:[];
+  _remoteArchivedTasks=Array.isArray(data._archivedTasks)?data._archivedTasks.slice():[]; // v215: durchreichen
   mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
   mobileStatusFilter=(data._mobileStatusFilter&&typeof data._mobileStatusFilter==='object')?{...data._mobileStatusFilter}:{};
   _remoteBoardStatuses=(data._boardStatuses&&typeof data._boardStatuses==='object')?{...data._boardStatuses}:{};
@@ -7919,6 +7931,7 @@ async function saveFile(){
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
+            if(Array.isArray(remote._archivedTasks))_remoteArchivedTasks=remote._archivedTasks.slice(); // v215
             if(Array.isArray(remote._boardOrder))_remoteBoardOrder=remote._boardOrder.slice(); // v182: Reihenfolge-Merkfeld aus Remote übernehmen
             // Board-Typen (Baustelle/Aufgaben) aus Remote übernehmen
             if(remote._boardTypes&&typeof remote._boardTypes==='object'&&Object.keys(remote._boardTypes).length)
@@ -7930,12 +7943,21 @@ async function saveFile(){
         }
       }
     }catch(e){console.warn('[PTP-Mobile] Konflikt-Check:',e);}
-    // Save-Objekt: Whitelist + Desktop-Spalten (_boardStatuses) + _boardTypes erhalten, versteckte Boards durchreichen
+    /* Save-Objekt: Whitelist + Desktop-Spalten (_boardStatuses) + _boardTypes erhalten,
+       versteckte Boards durchreichen.
+       v215: Felder in EXAKT der Desktop-Reihenfolge (buildSaveObject: _statuses,
+       _archivedTasks, _boardStatuses, _mobileBoards, _mobileStatusFilter, _boardTypes,
+       _boardOrder). Vorher schrieb das Handy _boardTypes weiter vorn – INHALTLICH gleich,
+       aber jede Speicherung des jeweils anderen Geräts „änderte" damit die Datei Byte für
+       Byte, und PC/Tablet/Handy kreisten im Poll-Takt umeinander (gemessen 20.08.:
+       identische Stände, nur die Kopf-Reihenfolge wechselte hin und her).
+       _archivedTasks wird DURCHGEREICHT – dort lagert der PC archivierte Karten. */
     const obj={_statuses:statuses};
+    if(Array.isArray(_remoteArchivedTasks)&&_remoteArchivedTasks.length)obj._archivedTasks=_remoteArchivedTasks.slice();
     if(Object.keys(_remoteBoardStatuses||{}).length)obj._boardStatuses={..._remoteBoardStatuses};
-    if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes}; // Board-Typen (baustelle/notiz) nicht verlieren
     if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
     if(Object.keys(mobileStatusFilter||{}).length)obj._mobileStatusFilter={...mobileStatusFilter}; // v182: stand bisher NICHT im Drive-Save – jedes Handy-Speichern fraß den Mobil-Spaltenfilter aus der Datei
+    if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes}; // Board-Typen (baustelle/notiz) nicht verlieren
     if(_remoteBoardOrder.length)obj._boardOrder=_remoteBoardOrder.slice(); // v182: Reihenfolge-Merkfeld (b643) unverändert zurückgeben
     // v182: Boards in der Desktop-Reihenfolge zurückschreiben. Vorher schrieb Mobil erst
     // die versteckten, dann die sichtbaren Töpfe – jedes Handy-Speichern baute damit die
@@ -10295,7 +10317,7 @@ let _fotoDialogFertig=null;
 function _showSchnellFotoPreview(fo, t, opt){
   opt = opt || {};
   const kameraFeld = opt.kameraFeld || 'fotoInputCamera';
-  const kannBearbeiten = opt.bearbeiten !== false;
+  const kannBearbeiten = (opt.bearbeiten !== false) || (typeof opt.bearbeitenFn==='function'); // v215: eigener Weg zählt
   const kannVerwerfen  = opt.verwerfen  !== false;
   // v191: „📷 Weiteres Foto" nur, wenn die Aufnahme von der KAMERA kam. Nach einem
   // Bild aus der Galerie wäre ein Kamera-Angebot verkehrt — dort holt man mehrere
@@ -10414,6 +10436,15 @@ function _showSchnellFotoPreview(fo, t, opt){
   btnEdit.onclick=function(){
     // v191: Wer schreiben oder malen will, behält das Bild – sonst gäbe es nichts zu beschriften.
     const f=aktuell();
+    /* v215: eigener Bearbeiten-Weg (Dachplan-Pin-Fotos) – gleiche Bauart wie
+       `verwerfenFn` (v203): nur der Aufrufer weiß, wo seine Fotos wohnen. Die
+       Vollbild-Ansicht unten kennt nur t.fotos und bliebe für Pin-Fotos stumm. */
+    if(typeof opt.bearbeitenFn==='function'){
+      f._entscheidung='behalten';
+      schliessen();
+      try{opt.bearbeitenFn(f);}catch(e){console.warn('[Foto-Dialog] Bearbeiten:',e);}
+      return;
+    }
     const i=liveIndex(f);
     schliessen();
     if(i>=0){
@@ -15441,7 +15472,7 @@ function _mtbPinFotoStreifen(p){
   fs.forEach((fo,i)=>{
     s+='<div onclick="_mtbPinFotoOpen(\''+esc(String(p.id||''))+'\','+i+')" style="position:relative;width:78px;height:78px;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);cursor:pointer;flex-shrink:0;">'
       +'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;opacity:.35;">📷</span>'
-      +'<img data-pinfoto="1" data-pkey="'+escAttr(fo.key||'')+'" data-pdrive="'+escAttr(fo.driveId||'')+'" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">'
+      +'<img data-pinfoto="1" data-pkey="'+escAttr(fo.key||'')+'" data-pdrive="'+escAttr(fo.editedDriveId||fo.driveId||'')+'" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">'
       +(fo.caption?'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:9px;line-height:1.3;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(fo.caption)+'</span>':'')
       +'</div>';
   });
@@ -15479,15 +15510,19 @@ function _mtbPinFotoOpen(pinId,idx){
   ov.innerHTML='<span style="position:absolute;top:12px;right:18px;font-size:32px;color:#fff;cursor:pointer;" id="mtbPinFotoX">✕</span>'
     +'<img id="mtbPinFotoImg" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">'
     +'<div style="position:absolute;left:12px;top:14px;color:#fff;background:rgba(0,0,0,.5);border-radius:8px;padding:6px 10px;font-size:13px;">Pin '+esc(String(p.nr||'?'))+' · Foto '+(idx+1)+'/'+(p.fotos||[]).length+'</div>'
-    +(fo.caption?'<div style="position:absolute;left:12px;right:12px;bottom:18px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:15px;">'+esc(fo.caption)+'</div>':'');
+    // v215: ✏️ Malen auch von hier (Tagebuch + Foto-Sektion nutzen diese Großansicht)
+    +'<button id="mtbPinFotoMal" style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:2;min-height:46px;padding:0 18px;border-radius:10px;border:1px solid #2d7ef7;background:rgba(0,0,0,.55);color:#7db4ff;font-size:15px;font-weight:700;cursor:pointer;">✏️ Malen</button>'
+    +(fo.caption?'<div style="position:absolute;left:12px;right:12px;bottom:76px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:15px;">'+esc(fo.caption)+'</div>':'');
   ov.onclick=ev=>{if(ev.target===ov||ev.target.id==='mtbPinFotoX')ov.remove();};
+  ov.querySelector('#mtbPinFotoMal').onclick=ev=>{ev.stopPropagation();ov.remove();if(typeof openPinFotoZumMalen==='function')openPinFotoZumMalen(t.id,pinId,idx);}; // v215
   document.body.appendChild(ov);
   const img=ov.querySelector('#mtbPinFotoImg');
   (async()=>{
     let src='';
+    const _id=fo.editedDriveId||fo.driveId; // v215: bearbeitete Fassung hat Vorrang
     try{if(fo.key)src=await _mobPhotoGet(fo.key)||'';}catch(_){}
-    if(!src&&fo.driveId){try{src=await _fetchFotoBlob(fo.driveId)||'';}catch(_){}}
-    if(!src&&fo.driveId)src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w1600';
+    if(!src&&_id){try{src=await _fetchFotoBlob(_id)||'';}catch(_){}}
+    if(!src&&_id)src='https://drive.google.com/thumbnail?id='+_id+'&sz=w1600';
     if(src)img.src=src;
   })();
 }
@@ -17601,6 +17636,8 @@ function lbWeiteresFoto(){
 function closeLightbox(){
   const lb=document.getElementById('lightbox');if(!lb)return;
   lb.classList.remove('open');
+  lb.style.zIndex=''; // v215: Pin-Foto-Einsatz hebt die Lightbox über den Dachplan – hier zurück
+  _lbPinFoto=null;    // v215: Pin-Bezug gilt nur für diese eine Ansicht
   lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
   document.removeEventListener('keydown',_lbOnKey);
   _lbFotoIdx=-1;_lbFotoKey='';
@@ -17629,6 +17666,7 @@ function _lzApply(){
 function _lbResetZoom(){_lz={s:1,tx:0,ty:0};const img=document.getElementById('lbImg');if(img){img.style.transform='';img.style.transformOrigin='';}}
 // v99: Blättern durch die Task-Fotos (Pfeile, Wischgeste, Pfeiltasten) – mit Umlauf wie am Desktop
 function _lbNavFoto(dir){
+  if(_lbPinFoto)return; // v215: Pin-Foto-Ansicht – die Pfeile gehören zu t.fotos, hier wäre Blättern falsch
   if(_lbFotoIdx<0)return;
   const t=currentTask();if(!t||!t.fotos||t.fotos.length<2)return;
   const c=document.getElementById('drawCanvas');
@@ -18160,6 +18198,55 @@ function _lbDrawArrow(ctx,x0,y0,x1,y1,sz){
   ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1-headLen*Math.cos(angle-Math.PI/6),y1-headLen*Math.sin(angle-Math.PI/6));ctx.moveTo(x1,y1);ctx.lineTo(x1-headLen*Math.cos(angle+Math.PI/6),y1-headLen*Math.sin(angle+Math.PI/6));ctx.stroke();
 }
 let _lbDrawSaving=false;
+/* ══ v215: MALEN/TEXT für DACHPLAN-PIN-FOTOS – dieselbe Lightbox, derselbe Stift ══
+   Pin-Fotos wohnen in dachplan.pins[].fotos ({key,driveId}), nicht in t.fotos –
+   deshalb kannte der Speicher-Schritt sie nicht. `_lbPinFoto` merkt den Bezug;
+   lbSaveDraw speichert dann dorthin: lokale Fassung ersetzt (Original bleibt als
+   driveId in Drive), bearbeitete Kopie geht als EIGENE Drive-Datei in
+   fo.editedDriveId – exakt das v109-Muster der normalen Fotos. */
+let _lbPinFoto=null; // {taskId,pinId,idx} solange die Lightbox ein Pin-Foto zeigt
+function _lbPinFotoObj(){
+  if(!_lbPinFoto)return null;
+  try{
+    const t=findTaskById(_lbPinFoto.taskId);
+    const p=t&&((t.dachplan&&t.dachplan.pins)||[]).find(x=>x&&String(x.id)===String(_lbPinFoto.pinId));
+    return (p&&(p.fotos||[])[_lbPinFoto.idx])||null;
+  }catch(e){return null;}
+}
+async function openPinFotoZumMalen(taskId,pinId,idx){
+  const t=findTaskById(taskId);
+  const p=t&&((t.dachplan&&t.dachplan.pins)||[]).find(x=>x&&String(x.id)===String(pinId));
+  const fo=p&&(p.fotos||[])[idx];
+  if(!fo){toast('Foto nicht gefunden','error');return;}
+  let src='';
+  try{if(fo.key)src=await _mobPhotoGet(fo.key)||'';}catch(e){}
+  if(!src&&(fo.editedDriveId||fo.driveId)){try{src=await _fetchFotoBlob(fo.editedDriveId||fo.driveId)||'';}catch(e){}}
+  if(!src){toast('Foto noch nicht verfügbar','info');return;}
+  _lbPinFoto={taskId:taskId,pinId:pinId,idx:idx};
+  // Der Dachplan liegt auf 99990, sein Foto-Vollbild auf 99999 – die Lightbox (9999)
+  // muss für diesen Einsatz darüber; closeLightbox stellt es zurück.
+  try{const lb=document.getElementById('lightbox');if(lb)lb.style.zIndex='100010';}catch(e){}
+  openLightbox(src,'🗺 Pin '+esc(String((p&&p.nr)||'?'))+' · Foto '+(idx+1),'',{caption:fo.caption||''});
+  lbStartDraw(); // wer hierher kommt, will malen – Stift sofort bereit
+}
+async function _uploadEditedPinFoto(t,fo,dataUrl){
+  try{
+    const folderId=extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)
+      ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
+    if(!folderId){toast('Zeichnung nur lokal – kein Foto-Ordner im Task','info');return;}
+    if(!(await ensureToken())){toast('Zeichnung nur lokal – nicht angemeldet/offline','info');return;}
+    const blob=await (await fetch(dataUrl)).blob();
+    const file=new File([blob],'dachplan_pin_bearbeitet.jpg',{type:'image/jpeg'});
+    const meta=await _uploadOneFotoToDrive(file,folderId);
+    fo.editedDriveId=meta.id;
+    _blobCacheEinfuegen(_fotoBlobCache,meta.id,dataUrl);
+    forceSave();
+    toast('✏ Bearbeitete Kopie in Drive gespeichert','success');
+  }catch(e){
+    console.warn('[PinFoto-Edit-Upload]',e);
+    toast('⚠ Zeichnung lokal gespeichert – Drive-Upload fehlgeschlagen','info');
+  }
+}
 function lbSaveDraw(){
   if(_lbDrawSaving)return;_lbDrawSaving=true;
   const canvas=document.getElementById('drawCanvas'),img=document.getElementById('lbImg');
@@ -18168,6 +18255,16 @@ function lbSaveDraw(){
   const octx=out.getContext('2d');octx.drawImage(img,0,0,out.width,out.height);octx.drawImage(canvas,0,0,out.width,out.height);
   const dataUrl=out.toDataURL('image/jpeg',0.92);
   if(_lbFotoIdx>=0){const t=currentTask();if(t&&t.fotos&&t.fotos[_lbFotoIdx]){const f=t.fotos[_lbFotoIdx];f.localUrl=dataUrl;f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');if(f.localKey)_mobPhotoSave(f.localKey,dataUrl).catch(()=>{});scheduleSave();toast('Zeichnung gespeichert','success');_uploadEditedFoto(t,f,dataUrl);if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);}}
+  else if(_lbPinFoto){ // v215: Pin-Foto – siehe Kommentar oben
+    const fo=_lbPinFotoObj(),t=findTaskById(_lbPinFoto.taskId);
+    if(fo&&t){
+      if(!fo.key)fo.key='dpph_'+Date.now()+'_ed'; // PC-Foto ohne Geräte-Kopie → jetzt bekommt es eine (die bearbeitete)
+      _mobPhotoSave(fo.key,dataUrl).catch(()=>{});
+      fo.editedName='dachplan_pin_bearbeitet.jpg';
+      scheduleSave();toast('Zeichnung gespeichert','success');
+      _uploadEditedPinFoto(t,fo,dataUrl);
+    }
+  }
   lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
 }
 // v109: Bemalte Kopie zusätzlich als EIGENE Datei zu Drive hochladen (wie Desktop, Original bleibt).
@@ -18666,7 +18763,11 @@ window.Dachplan=(function(){
      +'</div>'
      +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg">'
       +'<div id="dpPhotoCap" style="position:absolute;left:12px;right:12px;bottom:84px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:16px;display:none"></div>'
-      +'<button class="dpb" id="dpPhotoText" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:2;border-color:#2d7ef7;color:var(--accent2)">📝 Text</button></div>';
+      // v215: ✏️ Malen neben 📝 Text – öffnet die App-Lightbox mit dem Stift, gespeichert wird am Pin-Foto
+      +'<div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:2;display:flex;gap:8px">'
+      +'<button class="dpb" id="dpPhotoText" style="border-color:#2d7ef7;color:var(--accent2)">📝 Text</button>'
+      +'<button class="dpb" id="dpPhotoMal" style="border-color:#2d7ef7;color:var(--accent2)">✏️ Malen</button>'
+      +'</div></div>';
     document.body.appendChild(d);
     E.screen=d;E.mapEl=d.querySelector('#dpMap');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
     E.photo=d.querySelector('#dpPhoto');E.photoImg=d.querySelector('#dpPhotoImg');E.msg=d.querySelector('#dpMsg');E.imapEl=d.querySelector('#dpImap');
@@ -18723,6 +18824,15 @@ window.Dachplan=(function(){
     q('#dpPhotoX').onclick=()=>E.photo.classList.add('dp-hidden');
     q('#dpGuide').onclick=()=>{const p=cur();if(p)guideStart(p.id);}; // v116
     q('#dpPhotoText').onclick=()=>{if(window._dpPhotoFo)dpFotoText(window._dpPhotoFo);}; // v116
+    // v215: ✏️ Malen – Vollbild zu, dann die App-Lightbox mit dem Stift auf DIESEM Pin-Foto
+    q('#dpPhotoMal').onclick=()=>{
+      const p=cur(),fo=window._dpPhotoFo;
+      if(!p||!fo)return;
+      const i=(p.fotos||[]).indexOf(fo);
+      if(i<0){say('Foto nicht mehr am Pin','error');return;}
+      E.photo.classList.add('dp-hidden');
+      if(typeof openPinFotoZumMalen==='function')openPinFotoZumMalen(t.id,p.id,i);
+    };
     E.photo.onclick=ev=>{if(ev.target===E.photo)E.photo.classList.add('dp-hidden');};
     // v135: Kompakt-Bedienung (iPhone) – die neuen Knöpfe rufen die BESTEHENDEN Handler auf,
     // damit alle Funktionen exakt gleich arbeiten (kein zweiter Code-Pfad).
@@ -18893,9 +19003,16 @@ window.Dachplan=(function(){
     // v213: Die Übernahme kann beim ERSTEN Foto einige Sekunden dauern (Ortsbestimmung
     // fürs GPS-lose Kamerabild, bis 8 s) – ohne Meldung sah das nach „nichts passiert" aus.
     say('📸 Foto wird übernommen…');
-    const neu=[];
+    const neu=[];let _fremd=0;
     for(const f of files){
-      if(!/^image\//.test(f.type||''))continue;
+      /* v215 (Befund Frank: „Galerie tut nichts"): Mediathek-Wähler liefern oft
+         KEINEN Dateityp (type='') – der alte Filter `!/^image\//` warf solche
+         Bilder WORTLOS weg; die Kamera setzt den Typ immer, darum fiel es nur
+         beim Galerie-Weg auf. Der normale Foto-Weg des Auftrags filtert gar
+         nicht nach Typ. Jetzt: nur EINDEUTIG Fremdes (video/, application/ …)
+         überspringen – und nie mehr stumm. */
+      const _typ=String(f.type||'').toLowerCase();
+      if(_typ&&!/^image\//.test(_typ)){_fremd++;continue;}
       const key='dpph_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
       let small=f;try{small=(await _fotoUebernahme(f)).file;}catch(_){} // v174: + GPS-Auffüllung wie überall
       let durl='';
@@ -18904,7 +19021,8 @@ window.Dachplan=(function(){
       p.fotos.push(fo);
       neu.push({file:small,fo:fo,durl:durl});
     }
-    if(!neu.length)return;
+    if(_fremd)say(_fremd+' Datei'+(_fremd!==1?'en':'')+' übersprungen – kein Bild (z. B. Video)','error');
+    if(!neu.length){if(!_fremd&&files&&files.length)say('Keine Bilder übernommen – bitte noch einmal wählen','error');return;}
     drawThumbs(p);save();
     /* ⛔ Der Dialog bekommt EIGENE Anzeige-Objekte, nicht die Pin-Einträge selbst. Grund:
        er zeigt das Bild aus `localUrl` — hinge die Bilddatei am Pin-Eintrag, landete sie
@@ -18916,7 +19034,14 @@ window.Dachplan=(function(){
     let ent=Promise.resolve();
     try{
       ent=_showSchnellFotoPreview(anzeige,null,{
-        bearbeiten:false, // die Vollbild-Ansicht kennt nur t.fotos, nicht die Pin-Fotos
+        /* v215: „✏️ Text / Malen" jetzt auch hier (Wunsch Frank 20.08.). Bis v214 stand
+           `bearbeiten:false` – die Vollbild-Ansicht kannte nur t.fotos. Der eigene Weg
+           öffnet dieselbe Lightbox samt Stift, gespeichert wird am PIN-Foto. */
+        bearbeitenFn:function(a){
+          const fo=a&&a._ziel;if(!fo)return;
+          const i=p.fotos.indexOf(fo);
+          if(i>=0&&typeof openPinFotoZumMalen==='function')openPinFotoZumMalen(t.id,p.id,i);
+        },
         /* ⛔ v209: Hier stand `weiteres:false` mit der Begründung „der Dachplan hat kein
            festes Kamerafeld zum Anklicken". Gemessen am 19.08.: das stimmt nicht — die
            Begründung gilt für den Wartungsprotokoll-Weg (`_wpMobFotoAufnehmen` baut sein
@@ -18957,9 +19082,10 @@ window.Dachplan=(function(){
     // vom anderen Gerät blieben leer. Jetzt dazwischen der angemeldete Abruf.
     _mobPhotoGet(fo.key).then(src=>{
       if(src){img.src=src;return;}
-      if(!fo.driveId)return;
-      _mobFetchThumb(fo.driveId).then(u=>{img.src=u||('https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w400');})
-        .catch(()=>{img.src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w400';});
+      const _id=fo.editedDriveId||fo.driveId; // v215: bearbeitete Fassung hat Vorrang (wie bei t.fotos)
+      if(!_id)return;
+      _mobFetchThumb(_id).then(u=>{img.src=u||('https://drive.google.com/thumbnail?id='+_id+'&sz=w400');})
+        .catch(()=>{img.src='https://drive.google.com/thumbnail?id='+_id+'&sz=w400';});
     });
     img.onclick=()=>showPhoto(fo);const del=document.createElement('b');del.textContent='×';
     del.onclick=ev=>{ev.stopPropagation();p.fotos.splice(i,1);try{_mobPhotoDelete(fo.key);}catch(_){}drawThumbs(p);save();};
@@ -18971,9 +19097,10 @@ window.Dachplan=(function(){
     // v154 FIX: wie bei drawThumbs – erst Gerätespeicher, dann ANGEMELDET das Vollbild
     // aus Drive (_fetchFotoBlob), erst zuletzt die öffentliche Adresse als Notnagel.
     _mobPhotoGet(fo.key).then(async src=>{
-      if(!src&&fo.driveId){
-        try{src=await _fetchFotoBlob(fo.driveId)||'';}catch(_){}
-        if(!src)src='https://drive.google.com/thumbnail?id='+fo.driveId+'&sz=w1600';
+      const _id=fo.editedDriveId||fo.driveId; // v215: bearbeitete Fassung hat Vorrang
+      if(!src&&_id){
+        try{src=await _fetchFotoBlob(_id)||'';}catch(_){}
+        if(!src)src='https://drive.google.com/thumbnail?id='+_id+'&sz=w1600';
       }
       if(src){E.photoImg.src=src;E.photo.classList.remove('dp-hidden');}
     });}
