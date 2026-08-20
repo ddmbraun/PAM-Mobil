@@ -18248,17 +18248,21 @@ async function _uploadEditedPinFoto(t,fo,dataUrl){
       ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
     if(!folderId){toast('Zeichnung nur lokal – kein Foto-Ordner im Task','info');return;}
     if(!(await ensureToken())){toast('Zeichnung nur lokal – nicht angemeldet/offline','info');return;}
-    const blob=await (await fetch(dataUrl)).blob();
+    /* v217: `_dataUrlToBlob` statt `fetch(dataUrl)` – der Direktweg scheiterte bei
+       Frank reproduzierbar, der Nachhol-Lauf (_dpUploadFromKey) lief mit sonst
+       identischen Bausteinen durch; der einzige Unterschied war dieses fetch. */
+    const blob=_dataUrlToBlob(dataUrl);
     const file=new File([blob],'dachplan_pin_bearbeitet.jpg',{type:'image/jpeg'});
     const meta=await _uploadOneFotoToDrive(file,folderId);
     fo.editedDriveId=meta.id;
-    _blobCacheEinfuegen(_fotoBlobCache,meta.id,dataUrl);
-    forceSave();
+    forceSave(); // v217: SOFORT sichern – alles Weitere ist Kür und darf die Kennung nicht mehr kosten
+    try{_blobCacheEinfuegen(_fotoBlobCache,meta.id,dataUrl);}catch(e2){}
     toast('✏ Bearbeitete Kopie in Drive gespeichert','success');
     try{_fotoPendUpdate();}catch(e2){} // v216: Warnleuchte ggf. gleich wieder aus
   }catch(e){
     console.warn('[PinFoto-Edit-Upload]',e);
-    toast('⚠ Zeichnung lokal gespeichert – Drive-Upload fehlgeschlagen','info');
+    // v217: Ursache benennen – „fehlgeschlagen" ohne Grund hilft niemandem weiter
+    toast('⚠ Zeichnung lokal gespeichert – Upload-Fehler: '+((e&&e.message)||e)+' – die Leuchte holt sie nach','info',6000);
     try{_fotoPendUpdate();}catch(e2){} // v216: Warnleuchte SOFORT an – der Nachhol-Lauf holt die bemalte Fassung
   }
 }
