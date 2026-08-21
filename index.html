@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v220';
+const MOB_VERSION='v221';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -18817,6 +18817,7 @@ window.Dachplan=(function(){
         // des blauen Knopfes gewandert.
         +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">📐 Zum eigenen Bild wechseln</button>'
         +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild laden</button>'
+        +'<button class="dpb" id="dpBildFotos" title="Ein bereits gespeichertes Auftrags-Foto als Hintergrund übernehmen" style="display:none">🖼 Basisbild aus Auftrags-Fotos</button>' // v221 (Wunsch Frank)
         +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kalibrieren</button>'
         +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen" style="color:var(--red);border-color:var(--red)">🗑 Zurücksetzen</button>'
       +'</div>'
@@ -18827,6 +18828,7 @@ window.Dachplan=(function(){
      +'<div id="dpNoImg" class="dp-hidden">' // v127: dauerhafter Hinweis statt schwarzer Fläche im Bild-Modus ohne Bild
       +'<div>Kein eigenes Bild geladen.</div>'
       +'<button class="dpb" id="dpNoImgLoad" style="border-color:var(--accent2);color:var(--accent2)">📷 Bild laden</button>'
+      +'<button class="dpb" id="dpNoImgFotos">🖼 Aus Auftrags-Fotos wählen</button>' // v221 (Wunsch Frank)
       +'<button class="dpb" id="dpNoImgMap">🗺️ Zur Luftbild-Karte wechseln</button>'
      +'</div>'
      +'<div id="dpListPanel" class="dp-hidden"></div>'
@@ -18902,6 +18904,7 @@ window.Dachplan=(function(){
     q('#dpDach').onclick=searchDach;q('#dpPinHere').onclick=pinHere;q('#dpLive').onclick=liveToggle;
     q('#dpMode').onclick=()=>setBase(dp.base==='bild'?'map':'bild');
     q('#dpBild').onclick=()=>q('#dpBildInput').click();
+    q('#dpBildFotos').onclick=basisAusFotos; // v221: Auftrags-Foto als Hintergrund
     q('#dpBildInput').onchange=e=>{if(e.target.files[0])loadBild(e.target.files[0]);e.target.value='';};
     q('#dpCalib').onclick=startCalib;
     q('#dpReset').onclick=resetPlan;
@@ -18910,6 +18913,7 @@ window.Dachplan=(function(){
     q('#dpPinBtn').onclick=()=>{const p=cur();pinBtnHide();if(p)openSheet(p);}; // v129: Pin-Fenster auf Wunsch
     q('#dpMoreMenu').addEventListener('click',()=>setTimeout(()=>{try{q('#dpMoreMenu').classList.add('dp-hidden');}catch(_){}},60)); // v127: nach Auswahl zuklappen
     q('#dpNoImgLoad').onclick=()=>q('#dpBildInput').click(); // v127: Hinweis-Knöpfe im leeren Bild-Modus
+    q('#dpNoImgFotos').onclick=basisAusFotos; // v221
     q('#dpNoImgMap').onclick=()=>setBase('map');
     /* v212: Das Dauer-Suchfeld ist aus der Leiste weg. Der Menü-Eintrag öffnet die
        vorhandene Suchzeile aus dem Kompakt-Modus (dpCSearchRow) auch auf dem Tablet –
@@ -19527,6 +19531,56 @@ window.Dachplan=(function(){
     const folderId=resolveFolder();
     if(folderId){try{if(typeof ensureToken==='function')await ensureToken();const f=await dataUrlToFile(sc.url,'dachplan_basis.jpg');const meta=await _uploadOneFotoToDrive(f,folderId);dp.imgDriveId=meta.id;save();}catch(e){say('Bild lokal gesichert – Drive-Upload später');}}
   }
+  /* v221 (Wunsch Frank): Ein bereits gespeichertes Auftrags-Foto (Bereich „Fotos")
+     als Basisbild übernehmen. „📷 Bild laden" bietet nur Kamera/Galerie/Dateien des
+     GERÄTS an – die App-eigenen Fotos liegen im internen Speicher bzw. in Drive und
+     tauchen dort nicht auf. Dieser Weg zeigt die Auftrags-Fotos als Kacheln, holt
+     das gewählte in voller Größe (erst Gerätespeicher, sonst Drive; bemalte Fassung
+     hat Vorrang wie überall seit v215) und reicht es an loadBild durch — Verkleinern
+     (5-MB-Falle b548), Ablegen, Drive-Upload und Anzeige laufen über den EINEN
+     bestehenden Weg. NUR LESEN: die Foto-Liste des Auftrags wird nicht verändert.
+     Stapel 100000 = Ebene der Foto-Abfrage (v213), über dem Dachplan (99990). */
+  async function basisAusFotos(){
+    const liste=(t.fotos||[]).filter(f=>f&&(f.localKey||f.driveId)&&!/\.pdf$/i.test(f.name||''));
+    if(!liste.length){say('Am Auftrag sind noch keine Fotos gespeichert','error');return;}
+    const alt=document.getElementById('dpFotoWahl');if(alt)alt.remove();
+    const ov=document.createElement('div');
+    ov.id='dpFotoWahl';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:100000;display:flex;flex-direction:column;padding:12px;';
+    ov.innerHTML='<div style="color:#fff;font-weight:700;font-size:15px;margin:2px 4px 10px;">Foto als Plan-Hintergrund wählen'
+      +'<button id="dpFwZu" style="float:right;background:none;border:1px solid #999;color:#fff;border-radius:8px;padding:4px 14px;font-size:14px;">Abbrechen</button></div>'
+      +'<div id="dpFwGrid" style="flex:1;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;align-content:start;"></div>';
+    document.body.appendChild(ov);
+    ov.querySelector('#dpFwZu').onclick=()=>ov.remove();
+    const grid=ov.querySelector('#dpFwGrid');
+    for(const fo of liste){
+      const z=document.createElement('div');
+      z.style.cssText='background:#222;border:1px solid #555;border-radius:10px;overflow:hidden;aspect-ratio:1;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+      z.innerHTML='<span style="color:#999;font-size:11px;">lädt…</span>';
+      grid.appendChild(z);
+      (async()=>{ // Kachel-Vorschau: erst Gerätespeicher, sonst Drive-Vorschaubild
+        let u=null;
+        try{if(fo.localKey)u=await _mobPhotoGet(fo.localKey);}catch(_){}
+        if(!u&&fo.driveId){try{u=await _mobFetchThumb(fo.editedDriveId||fo.driveId);}catch(_){}}
+        if(u){z.innerHTML='';const im=document.createElement('img');im.src=u;im.style.cssText='width:100%;height:100%;object-fit:cover;';z.appendChild(im);}
+        else z.innerHTML='<span style="color:#999;font-size:11px;padding:4px;text-align:center;overflow:hidden;">'+((fo.name||'Foto').replace(/</g,'&lt;'))+'</span>';
+      })();
+      z.onclick=async()=>{
+        say('Foto wird übernommen…');
+        try{
+          let blob=null;
+          try{const du=fo.localKey?await _mobPhotoGet(fo.localKey):null;if(du)blob=_dataUrlToBlob(du);}catch(_){}
+          if(!blob&&fo.driveId){ // volle Fassung aus Drive holen (nicht die kleine Vorschau)
+            const bu=await _fetchFotoBlob(fo.editedDriveId||fo.driveId);
+            if(bu)blob=await (await fetch(bu)).blob();
+          }
+          if(!blob){say('Foto liegt nur in Drive – dafür ist Empfang nötig','error');return;}
+          ov.remove();
+          await loadBild(new File([blob],fo.name||'basis.jpg',{type:blob.type||'image/jpeg'}));
+        }catch(e){say('Übernehmen fehlgeschlagen: '+((e&&e.message)||e),'error');}
+      };
+    }
+  }
   function renderImgPins(){if(!imap)return;
     Object.keys(markers).forEach(k=>{try{imap.removeLayer(markers[k]);}catch(_){}try{if(map)map.removeLayer(markers[k]);}catch(_){}delete markers[k];});
     (dp.pins||[]).forEach(p=>{if(p.nx==null)return;if(filter==='schaden'&&p.status!=='rot')return;
@@ -19540,7 +19594,7 @@ window.Dachplan=(function(){
     dp.base=mode;const isB=(mode==='bild');
     if(isB)try{liveStop();}catch(_){} // v105: Live-Standort gilt nur im Karten-Modus
     try{E.screen.querySelector('#dpMode').textContent=isB?'🗺️ Zur Luftbild-Karte wechseln':'📐 Zum eigenen Bild wechseln';}catch(_){} // v127: sprechende Beschriftung; v212: 📐 statt 🖼️ (Doppelbelegung mit „Galerie")
-    try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';}catch(_){}
+    try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpBildFotos').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';}catch(_){} // v221: Fotos-Weg nur im Bild-Modus, wie 📷
     E.mapEl.classList.toggle('dp-hidden',isB);E.imapEl.classList.toggle('dp-hidden',!isB);
     Object.keys(markers).forEach(k=>{try{if(map)map.removeLayer(markers[k]);}catch(_){}try{if(imap)imap.removeLayer(markers[k]);}catch(_){}delete markers[k];});
     if(isB){
