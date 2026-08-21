@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v227';
+const MOB_VERSION='v228';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -19037,7 +19037,9 @@ window.Dachplan=(function(){
   +'#dpCSearchRow{position:absolute;top:62px;left:8px;right:8px;z-index:1450}'
   +'.dpMk{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}'
   /* v226: Pin mit Teilbereich – dickerer blauer Rand (Aktiv-Blau wie in der Leiste). */
-  +'.dpMk.dpMkTp{border:3px solid #2d7ef7;box-shadow:0 0 0 1px rgba(255,255,255,.9),0 1px 4px rgba(0,0,0,.5)}'
+  +'.dpMk.dpMkTp{border-radius:4px;transform:none;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35),0 1px 4px rgba(0,0,0,.5)}'
+  /* Ohne Drehung braucht die Zahl auch keine Gegendrehung mehr. */
+  +'.dpMk.dpMkTp span{transform:none}'
   +'.dpMk span{transform:rotate(45deg);color:#fff;font-weight:800;font-size:12px}'
   +'#dpListPanel{position:absolute;top:58px;left:0;right:0;bottom:0;background:var(--bg);z-index:1300;overflow:auto;padding:12px}'
   +'.dpLi{display:flex;align-items:center;gap:10px;padding:11px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;background:var(--bg3);cursor:pointer}'
@@ -19099,18 +19101,23 @@ window.Dachplan=(function(){
         // beim Pin-Foto). v207: die beiden Standort-Knöpfe sind von hier ins Menü
         // des blauen Knopfes gewandert.
         +'<button class="dpb" id="dpMode" title="Zwischen Luftbild-Karte und eigenem Bild umschalten">📐 Zum eigenen Bild wechseln</button>'
-        +'<button class="dpb" id="dpBild" title="Eigenes Bild laden" style="display:none">📷 Bild laden</button>'
+        +'<button class="dpb" id="dpKam" title="Den Teilbereich jetzt fotografieren" style="display:none;border-color:var(--accent2);color:var(--accent2)">📷 Foto aufnehmen</button>' /* v228 */
+        +'<button class="dpb" id="dpBild" title="Ein vorhandenes Bild aus den Dateien waehlen" style="display:none">🖼 Datei wählen</button>' /* v228: hiess „📷 Bild laden", oeffnete aber die Galerie */
         +'<button class="dpb" id="dpBildFotos" title="Ein bereits gespeichertes Auftrags-Foto als Hintergrund übernehmen" style="display:none">🖼 Basisbild aus Auftrags-Fotos</button>' // v221 (Wunsch Frank)
         +'<button class="dpb" id="dpCalib" title="Kalibrieren (2 Punkte)" style="display:none">🎯 Kalibrieren</button>'
         +'<button class="dpb" id="dpReset" title="Dachplan zurücksetzen" style="color:var(--red);border-color:var(--red)">🗑 Zurücksetzen</button>'
       +'</div>'
       +'<input type="file" id="dpBildInput" accept="image/*" style="display:none">'
+      /* v228 (Befund Frank 21.08.): eigenes Feld MIT capture - nur so oeffnet das Handy
+         die Kamera statt der Galerie. Gleiche Bauart wie dpPhotoInput bei den Pin-Fotos. */
+      +'<input type="file" id="dpKamInput" accept="image/*" capture="environment" style="display:none">'
      +'</div>'
      +'<div id="dpMap"></div>'
      +'<div id="dpImap" class="dp-hidden"></div>'
      +'<div id="dpNoImg" class="dp-hidden">' // v127: dauerhafter Hinweis statt schwarzer Fläche im Bild-Modus ohne Bild
       +'<div>Kein eigenes Bild geladen.</div>'
-      +'<button class="dpb" id="dpNoImgLoad" style="border-color:var(--accent2);color:var(--accent2)">📷 Bild laden</button>'
+      +'<button class="dpb" id="dpNoImgKam" style="border-color:var(--accent2);color:var(--accent2)">📷 Foto aufnehmen</button>' /* v228: der Normalfall im Teilbereich */
+      +'<button class="dpb" id="dpNoImgLoad">🖼 Datei wählen</button>'
       +'<button class="dpb" id="dpNoImgFotos">🖼 Aus Auftrags-Fotos wählen</button>' // v221 (Wunsch Frank)
       +'<button class="dpb" id="dpNoImgMap">🗺️ Zur Luftbild-Karte wechseln</button>'
      +'</div>'
@@ -19202,6 +19209,11 @@ window.Dachplan=(function(){
     q('#dpDach').onclick=searchDach;q('#dpPinHere').onclick=pinHere;q('#dpLive').onclick=liveToggle;
     q('#dpMode').onclick=()=>setBase(dp.base==='bild'?'map':'bild');
     q('#dpBild').onclick=()=>q('#dpBildInput').click();
+    q('#dpKam').onclick=()=>q('#dpKamInput').click(); // v228
+    q('#dpNoImgKam').onclick=()=>q('#dpKamInput').click(); // v228
+    /* Beide Wege muenden in denselben loadBild - Verkleinern (5-MB-Falle b548), Ablegen
+       unterm Ebenen-Schluessel und Drive-Upload laufen genau einmal. */
+    q('#dpKamInput').onchange=e=>{if(e.target.files[0])loadBild(e.target.files[0]);e.target.value='';};
     q('#dpBildFotos').onclick=basisAusFotos; // v221: Auftrags-Foto als Hintergrund
     q('#dpBildInput').onchange=e=>{if(e.target.files[0])loadBild(e.target.files[0]);e.target.value='';};
     q('#dpCalib').onclick=startCalib;
@@ -19383,7 +19395,9 @@ window.Dachplan=(function(){
      an – erst beim Antippen oder in der ☰-Liste. Bei 2000 m² und mehreren Teilbereichen
      ist das zu wenig. Deshalb ein dickerer blauer Rand statt des dünnen weißen: kein
      zusätzliches Zeichen, keine größere Fläche, aber auf einen Blick zu sehen. */
-  function pinIcon(color,nr,tp){return L.divIcon({className:'',html:'<div class="dpMk'+(tp?' dpMkTp':'')+'" style="background:'+color+'"><span>'+nr+'</span></div>',iconSize:[26,26],iconAnchor:[13,25],popupAnchor:[0,-22]});}
+  /* v228: Der Tropfen zeigt mit der Spitze auf seinen Punkt (Anker unten), das Quadrat
+     mit seiner Mitte - sonst saesse der Teilbereich-Pin 12 px zu tief. */
+  function pinIcon(color,nr,tp){return L.divIcon({className:'',html:'<div class="dpMk'+(tp?' dpMkTp':'')+'" style="background:'+color+'"><span>'+nr+'</span></div>',iconSize:[26,26],iconAnchor:tp?[13,13]:[13,25],popupAnchor:[0,-22]});}
   function cur(){return dp&&sel?dp.pins.find(p=>p.id===sel):null;}
   /* ══════ v224: TEILPLAN AM PIN (Wunsch Frank 21.08.) ══════
      Bei 2000 m² Dachfläche ist das Luftbild zu grob. Frank setzt einen Pin auf den
@@ -19446,7 +19460,7 @@ window.Dachplan=(function(){
     closeSheet();try{E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');}catch(_){}
     hideBaseImg(); // v226: erst abräumen – das Bild der neuen Ebene kommt asynchron nach
     _tpBarSync();setBase('bild',true);save(); // v225: stumm – das ist keine Ansichts-Wahl des Nutzers
-    if(!dp.imgKey&&!dp.imgDriveId)say('Teilbereich – jetzt „📷 Bild laden" (Kamera) oder „🖼 Aus Auftrags-Fotos"');
+    if(!dp.imgKey&&!dp.imgDriveId)say('Teilbereich – jetzt „📷 Foto aufnehmen" oder „🖼 Aus Auftrags-Fotos"');
   }
   function tpZurueck(){
     if(!_tpStack)return;
@@ -19972,7 +19986,7 @@ window.Dachplan=(function(){
     if(folderId){try{if(typeof ensureToken==='function')await ensureToken();const f=await dataUrlToFile(sc.url,'dachplan_basis.jpg');const meta=await _uploadOneFotoToDrive(f,folderId);dp.imgDriveId=meta.id;save();}catch(e){say('Bild lokal gesichert – Drive-Upload später');}}
   }
   /* v221 (Wunsch Frank): Ein bereits gespeichertes Auftrags-Foto (Bereich „Fotos")
-     als Basisbild übernehmen. „📷 Bild laden" bietet nur Kamera/Galerie/Dateien des
+     als Basisbild übernehmen. „🖼 Datei wählen" (v221: „📷 Bild laden") bietet nur die Dateien des
      GERÄTS an – die App-eigenen Fotos liegen im internen Speicher bzw. in Drive und
      tauchen dort nicht auf. Dieser Weg zeigt die Auftrags-Fotos als Kacheln, holt
      das gewählte in voller Größe (erst Gerätespeicher, sonst Drive; bemalte Fassung
@@ -20049,7 +20063,8 @@ window.Dachplan=(function(){
     const isB=(mode==='bild');
     if(isB)try{liveStop();}catch(_){} // v105: Live-Standort gilt nur im Karten-Modus
     try{E.screen.querySelector('#dpMode').textContent=isB?'🗺️ Zur Luftbild-Karte wechseln':'📐 Zum eigenen Bild wechseln';}catch(_){} // v127: sprechende Beschriftung; v212: 📐 statt 🖼️ (Doppelbelegung mit „Galerie")
-    try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpBildFotos').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';}catch(_){} // v221: Fotos-Weg nur im Bild-Modus, wie 📷
+    try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpBildFotos').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';
+      E.screen.querySelector('#dpKam').style.display=isB?'':'none';}catch(_){} // v221: Fotos-Weg nur im Bild-Modus, wie 📷; v228: Kamera genauso
     E.mapEl.classList.toggle('dp-hidden',isB);E.imapEl.classList.toggle('dp-hidden',!isB);
     Object.keys(markers).forEach(k=>{try{if(map)map.removeLayer(markers[k]);}catch(_){}try{if(imap)imap.removeLayer(markers[k]);}catch(_){}delete markers[k];});
     if(isB){
@@ -20063,7 +20078,7 @@ window.Dachplan=(function(){
             else{hideBaseImg();say('Bild nicht ladbar – Google-Anmeldung/Empfang prüfen','error');try{E.screen.querySelector('#dpNoImg').classList.remove('dp-hidden');}catch(_){}} // v226: sonst bliebe das Bild der vorigen Ebene stehen
             try{if(dp.imgC&&dp.imgZ!=null)imap.setView(dp.imgC,dp.imgZ);else imap.fitBounds(bnd());}catch(_){}renderImgPins();});
         }
-        else{hideBaseImg();say('Kein Bild – im ⋯-Menü „📷 Bild laden" antippen');} // v226: leere Ebene zeigt auch WIRKLICH nichts
+        else{hideBaseImg();say('Kein Bild – „📷 Foto aufnehmen" oder „🖼 Datei wählen" antippen');} // v226: leere Ebene zeigt auch WIRKLICH nichts
       },60);
     }else{
       try{E.screen.querySelector('#dpNoImg').classList.add('dp-hidden');}catch(_){} // v127
