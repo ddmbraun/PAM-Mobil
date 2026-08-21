@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v223';
+const MOB_VERSION='v224';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -7804,6 +7804,12 @@ function _dachplanKonfliktMerge(remoteDp,localDp){
     if(!lp){out.push(rp);continue;}
     const mp=Object.assign({},rp,lp);
     mp.fotos=fotoUnion(rp.fotos,lp.fotos);
+    /* v224: `plan` ist ein vollwertiger Dachplan am Pin. Ohne diese Zeile gälte für
+       ihn die Object.assign-Regel „lokal gewinnt komplett" – ein veralteter Stand des
+       einen Geräts würfe die Teilplan-Pins des anderen still weg. Exakt die Verlustart
+       aus v210/v211 und Desktop b717, nur eine Ebene tiefer. Dieselbe Funktion
+       rekursiv – sie fängt oben ab, wenn nur eine Seite einen Plan hat. */
+    if(rp.plan||lp.plan){const _pm=_dachplanKonfliktMerge(rp.plan,lp.plan);if(_pm)mp.plan=_pm;}
     out.push(mp);
   }
   for(const lp of lPins){if(!lp)continue;if(lp.id==null||!seen.has(String(lp.id)))out.push(lp);}
@@ -17150,12 +17156,23 @@ function _fpKey(f){return (f&&(f.localKey||f.key||f.driveId||f.id))||'';} // v21
 function _dachplanOffeneFotos(task){
   const dp=task&&task.dachplan;if(!dp)return [];
   const out=[];
-  for(const p of (dp.pins||[]))for(const f of (p.fotos||[])){
-    if(!f||!f.key)continue;
-    if(!f.driveId)out.push(f);
-    else if(f.editedName&&!f.editedDriveId)out.push(f); // v216: bemalte Fassung (v215) wartet noch auf ihren Drive-Upload
-  }
-  if(dp.imgKey&&!dp.imgDriveId)out.push({key:dp.imgKey,name:'dachplan_basis.jpg',_dpBasis:dp});
+  /* v224: Ein Pin kann einen TEILPLAN tragen (p.plan) – mit eigenem Basisbild und
+     eigenen Pins samt Fotos. Die müssen genauso nachgeholt werden, sonst bleiben sie
+     für immer auf dem Gerät und der PC bekäme sie nie zu sehen. Dieselbe Regel je
+     Ebene, deshalb als Schleife über die Ebene statt zweimal geschrieben. */
+  const ebene=e=>{
+    if(!e)return;
+    for(const p of (e.pins||[])){
+      for(const f of (p.fotos||[])){
+        if(!f||!f.key)continue;
+        if(!f.driveId)out.push(f);
+        else if(f.editedName&&!f.editedDriveId)out.push(f); // v216: bemalte Fassung (v215) wartet noch auf ihren Drive-Upload
+      }
+      if(p.plan)ebene(p.plan);
+    }
+    if(e.imgKey&&!e.imgDriveId)out.push({key:e.imgKey,name:'dachplan_basis.jpg',_dpBasis:e});
+  };
+  ebene(dp);
   return out;
 }
 function _fotoPendList(){
@@ -19118,6 +19135,13 @@ window.Dachplan=(function(){
       +'<button class="dpb" id="dpCMore">⋯ Mehr</button>'
      +'</div>'
      +'<button id="dpFab" class="dp-hidden">☰</button>'
+     /* v224: sagt dauerhaft, in welchem Teilbereich man steht – ein Teilplan sähe
+        sonst aus wie der Hauptplan. top wird beim Anzeigen aus der Leistenhöhe
+        gerechnet (die Leiste bricht hochkant zweizeilig um, wie bei dpCSearchRow). */
+     +'<div id="dpTpBar" class="dp-hidden" style="position:absolute;left:8px;right:8px;top:66px;z-index:1150;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid #2d7ef7;border-radius:10px;padding:8px 10px;box-shadow:0 2px 10px rgba(0,0,0,.35)">'
+      +'<span id="dpTpTxt" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:700;color:var(--accent2)"></span>'
+      +'<button class="dpb" id="dpTpBack" style="flex-shrink:0">↩ Hauptplan</button>'
+     +'</div>'
      +'<div id="dpMsg" class="dp-hidden"></div>'
      +'<div id="dpSheet">'
       +'<div style="display:flex;justify-content:space-between;align-items:center"><b id="dpSheetTitle">Pin</b><button class="dpb" id="dpSheetClose">Schließen</button></div>'
@@ -19134,6 +19158,7 @@ window.Dachplan=(function(){
       +'<button class="dpb" id="dpMove" style="width:100%;margin-top:8px" title="Diesen einen Pin beweglich machen – sonst sind Pins fest, damit sie beim Wischen nicht verrutschen">📍 Verschieben</button>' /* v206 */
       +'<button class="dpb" id="dpGuide" style="width:100%;margin-top:8px;border-color:#2d7ef7;color:var(--accent2)">🧭 Dahin führen (Live-Linie)</button>'
       +'<button class="dpb" id="dpNav" style="width:100%;margin-top:8px">🗺 Google-Navigation zu diesem Pin</button>'
+      +'<button class="dpb" id="dpTeil" style="width:100%;margin-top:8px;border-color:#2d7ef7;color:var(--accent2)" title="Diesen Teilbereich fotografieren und das Foto selbst als Plan benutzen">🔍 Teilbereich als Plan</button>' /* v224 */
       +'<button class="dpb" id="dpDel" style="width:100%;margin-top:10px;color:var(--red);border-color:var(--red)">🗑 Pin löschen</button>'
      +'</div>'
      +'<div id="dpPhoto" class="dp-hidden"><span class="x" id="dpPhotoX">✕</span><img id="dpPhotoImg">'
@@ -19149,7 +19174,12 @@ window.Dachplan=(function(){
     E.screen=d;E.mapEl=d.querySelector('#dpMap');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
     E.photo=d.querySelector('#dpPhoto');E.photoImg=d.querySelector('#dpPhotoImg');E.msg=d.querySelector('#dpMsg');E.imapEl=d.querySelector('#dpImap');
     const q=id=>d.querySelector(id);
-    q('#dpBack').onclick=close; q('#dpSheetClose').onclick=closeSheetAbbruch; // v206: Schließen bricht ein laufendes Verschieben ab
+    /* v224: Der Pfeil geht eine Ebene hoch – aus dem Teilplan zum Hauptplan,
+       vom Hauptplan aus dem Dachplan heraus. Ein Weg, wie man ihn erwartet. */
+    q('#dpBack').onclick=()=>{if(_tpOffen())tpZurueck();else close();};
+    q('#dpTpBack').onclick=tpZurueck; // v224
+    q('#dpTeil').onclick=()=>{const p=cur();if(p)tpOeffnen(p.id);}; // v224
+    q('#dpSheetClose').onclick=closeSheetAbbruch; // v206: Schließen bricht ein laufendes Verschieben ab
     q('#dpMove').onclick=_verschiebenStarten; // v206
     /* v208: Beide Sonnen-Knoepfe haengen an der vorhandenen toggleTheme() der App.
        Die Klasse theme-toggle-btn genuegt, damit setTheme() ihr Symbol kuenftig
@@ -19197,8 +19227,15 @@ window.Dachplan=(function(){
     q('#dpGalBtn').onclick=()=>q('#dpGalInput').click();
     q('#dpGalInput').onchange=e=>{addPhotos([...e.target.files],false);e.target.value='';};
     q('#dpNav').onclick=()=>{const p=cur();if(!p)return;let lat=p.lat,lng=p.lng;if((lat==null||lng==null)&&p.nx!=null){const w=calFrToLatLng(p.nx,p.ny);if(w){lat=w.lat;lng=w.lng;}}if(lat!=null&&lng!=null)window.open('https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng,'_blank');else say('Navigation im Bild-Modus braucht die Kalibrierung');};
-    q('#dpDel').onclick=()=>{const p=cur();if(!p)return;if(!confirm('Pin '+p.nr+' löschen?'))return;
+    q('#dpDel').onclick=()=>{const p=cur();if(!p)return;
+      /* v224: Am Pin kann ein ganzer Teilplan hängen (Foto + eigene Pins + deren
+         Fotos). Der wäre mit einem Fingertipp weg – deshalb wird er benannt. */
+      const _tn=_tpPinsZahl(p);
+      const _warn=_tpHatPlan(p)?('\n\n⚠ An diesem Pin hängt ein Teilplan mit '+_tn+' Pin'+(_tn!==1?'s':'')+' und deren Fotos.\nEr wird mitgelöscht.'):'';
+      if(!confirm('Pin '+_tpNr(p)+' löschen?'+_warn))return;
       (p.fotos||[]).forEach(fo=>{try{_mobPhotoDelete(fo.key);}catch(_){}});
+      try{for(const sp of ((p.plan&&p.plan.pins)||[]))for(const fo of (sp.fotos||[]))_mobPhotoDelete(fo.key);
+        if(p.plan&&p.plan.imgKey)_mobPhotoDelete(p.plan.imgKey);}catch(_){} // v224: Gerätespeicher des Teilplans mit aufräumen
       dp.pins=dp.pins.filter(x=>x.id!==p.id);sel=null;closeSheet();renderPins();save();};
     q('#dpPhotoX').onclick=()=>E.photo.classList.add('dp-hidden');
     q('#dpGuide').onclick=()=>{const p=cur();if(p)guideStart(p.id);}; // v116
@@ -19337,11 +19374,83 @@ window.Dachplan=(function(){
 
   function pinIcon(color,nr){return L.divIcon({className:'',html:'<div class="dpMk" style="background:'+color+'"><span>'+nr+'</span></div>',iconSize:[26,26],iconAnchor:[13,25],popupAnchor:[0,-22]});}
   function cur(){return dp&&sel?dp.pins.find(p=>p.id===sel):null;}
+  /* ══════ v224: TEILPLAN AM PIN (Wunsch Frank 21.08.) ══════
+     Bei 2000 m² Dachfläche ist das Luftbild zu grob. Frank setzt einen Pin auf den
+     Teilbereich, fotografiert ihn aus der Entfernung und benutzt DIESES Foto wieder
+     als Plan – mit eigenen Pins, an denen die Detailfotos hängen. Drei Zoomstufen:
+     Luftbild → Teilbereichsfoto → Detailfotos.
+     Bauart: `p.plan` ist ein vollwertiger Dachplan in klein. Beim Öffnen wird `dp`
+     schlicht darauf umgehängt – dadurch arbeiten renderImgPins, addImgPin, openSheet,
+     openList, loadBild, basisAusFotos, setBase und bnd() unverändert weiter.
+     KEIN zweiter Code-Pfad. `_tpStack` merkt den Hauptplan für den Rückweg. */
+  let _tpStack=null; // {dp,pinId,base,sel} solange ein Teilplan offen ist
+  function _tpOffen(){return !!_tpStack;}
+  function _tpElternPin(){
+    if(!_tpStack)return null;
+    try{return (_tpStack.dp.pins||[]).find(p=>p&&String(p.id)===String(_tpStack.pinId))||null;}catch(_){return null;}
+  }
+  /* Gliederungsnummer: Hauptplan „2", Teilplan „2.1". Der Pin-Kreis auf der Karte
+     behält die reine Zahl (26 px – „2.1" ist dort unleserlich); Listen, Pin-Fenster
+     und Lösch-Rückfrage tragen die volle Nummer, denn dort fehlt der Zusammenhang. */
+  function _tpNr(p){
+    const e=_tpElternPin();
+    const eigen=(p&&p.nr!=null)?String(p.nr):'?';
+    return e?(((e.nr!=null)?e.nr:'?')+'.'+eigen):eigen;
+  }
+  /* ⛔ Der Basisbild-Schlüssel MUSS den Teilplan unterscheiden. Sonst legt der
+     Teilplan sein Foto unter demselben Schlüssel ab wie der Hauptplan und
+     überschreibt dessen Luftbild/Dachplan im Gerätespeicher. */
+  function _dpBasisKey(){return 'dpbase_'+t.id+(_tpStack?('_tp'+_tpStack.pinId):'');}
+  function _tpPinsZahl(p){try{return ((p&&p.plan&&p.plan.pins)||[]).length;}catch(_){return 0;}}
+  function _tpHatPlan(p){return !!(p&&p.plan&&(p.plan.imgKey||p.plan.imgDriveId||_tpPinsZahl(p)));}
+  function tpOeffnen(pinId){
+    if(_tpStack){say('Teilpläne lassen sich nicht ineinander schachteln','error');return;}
+    const p=(dp.pins||[]).find(x=>x&&String(x.id)===String(pinId));
+    if(!p){say('Pin nicht gefunden','error');return;}
+    if(!p.plan)p.plan={pins:[],nextNr:1,base:'bild'};
+    if(!Array.isArray(p.plan.pins))p.plan.pins=[];
+    if(!p.plan.nextNr)p.plan.nextNr=(p.plan.pins.length+1);
+    _tpStack={dp:dp,pinId:p.id,base:dp.base,sel:sel};
+    dp=p.plan;sel=null;
+    closeSheet();try{E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');}catch(_){}
+    _tpBarSync();setBase('bild');save();
+    if(!dp.imgKey&&!dp.imgDriveId)say('Teilbereich – jetzt „📷 Bild laden" (Kamera) oder „🖼 Aus Auftrags-Fotos"');
+  }
+  function tpZurueck(){
+    if(!_tpStack)return;
+    const st=_tpStack;
+    dp=st.dp;sel=st.sel||null;_tpStack=null;
+    closeSheet();try{E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');}catch(_){}
+    _tpBarSync();setBase(st.base||'map');save();
+  }
+  /* Die Kopfzeile sagt dauerhaft, in welchem Bereich man steht – sonst sieht ein
+     Teilplan aus wie der Hauptplan. Der Umschalter Karte/Bild verschwindet dort:
+     ein Teilbereichsfoto hat keine Luftbild-Ansicht. */
+  function _tpBarSync(){
+    try{
+      const bar=E.screen.querySelector('#dpTpBar');
+      const md=E.screen.querySelector('#dpMode');
+      if(md)md.style.display=_tpStack?'none':'';
+      if(!bar)return;
+      if(!_tpStack){bar.classList.add('dp-hidden');return;}
+      try{const b=E.screen.querySelector('#dpBar');bar.style.top=((b?b.offsetHeight:58)+8)+'px';}catch(_){}
+      const e=_tpElternPin();
+      const txt=(e&&(e.title||e.note))?String(e.title||e.note).replace(/\s+/g,' ').trim():'';
+      const el=bar.querySelector('#dpTpTxt');
+      if(el)el.textContent='🔍 Bereich '+((e&&e.nr!=null)?e.nr:'?')+(txt?(' · '+(txt.length>32?txt.slice(0,32)+'…':txt)):'');
+      bar.classList.remove('dp-hidden');
+    }catch(_){}
+  }
   function renderPins(){
     if(dp&&dp.base==='bild')return renderImgPins();
     if(!map)return;
     Object.keys(markers).forEach(k=>{map.removeLayer(markers[k]);delete markers[k];});
     (dp.pins||[]).forEach(p=>{
+      /* v224: Bild-Pins tragen nur nx/ny, kein GPS. L.marker([undefined,undefined])
+         wirft „Invalid LatLng object" und bricht die ganze Schleife ab – ab diesem
+         Pin erschien KEINER mehr. Der Desktop überspringt sie seit b718, das Handy
+         nicht. Mit Teilplänen ist die Mischung beider Sorten der Normalfall. */
+      if(p.lat==null)return;
       if(filter==='schaden'&&p.status!=='rot')return;
       // v206 (= Desktop b718): Pins sind FEST. Vorher war jeder Pin dauerhaft ziehbar –
       // beim Wischen über die Karte verschob man ihn, und dragend speicherte die neue
@@ -19378,9 +19487,18 @@ window.Dachplan=(function(){
   function markStat(p){E.sheet.querySelectorAll('#dpStat button').forEach(b=>b.classList.toggle('sel',b.dataset.s===p.status));}
   function setCoord(p){E.sheet.querySelector('#dpCoord').textContent=(p.lat!=null&&p.lng!=null)?(Number(p.lat).toFixed(6)+', '+Number(p.lng).toFixed(6)):('Bild-Position '+Math.round((p.nx||0)*100)+'% / '+Math.round((p.ny||0)*100)+'%');}
   function openSheet(p){
-    E.sheet.querySelector('#dpSheetTitle').textContent='Pin '+p.nr+' · '+(LBL[p.status]||'');
+    E.sheet.querySelector('#dpSheetTitle').textContent='Pin '+_tpNr(p)+' · '+(LBL[p.status]||''); // v224: Gliederungsnummer
     E.sheet.querySelector('#dpTitle').value=p.title||'';
     E.sheet.querySelector('#dpNote').value=p.note||'';
+    /* v224: Im Teilplan selbst gibt es den Knopf nicht – Teilpläne werden bewusst
+       NICHT geschachtelt (eine Ebene; alles andere wäre genau die Unübersichtlichkeit,
+       die Frank vermeiden wollte). Sonst sagt die Beschriftung, ob schon etwas
+       dahinterliegt und wie viel. */
+    try{const tb=E.sheet.querySelector('#dpTeil');if(tb){
+      if(_tpOffen())tb.style.display='none';
+      else{tb.style.display='';const n=_tpPinsZahl(p);
+        tb.textContent=_tpHatPlan(p)?('🔍 Teilplan öffnen'+(n?(' ('+n+' Pin'+(n!==1?'s':'')+')'):'')):'🔍 Teilbereich als Plan';}
+    }}catch(_){}
     setCoord(p);markStat(p);drawThumbs(p);pinBtnHide();E.sheet.classList.add('show');} // v129: Knopf weg, sobald das Fenster offen ist
   function closeSheet(){E.sheet.classList.remove('show');}
 
@@ -19501,6 +19619,7 @@ window.Dachplan=(function(){
     if(!t){say('Keine Task geöffnet','error');return;}
     if(!t.dachplan||t.dachplan.mode!=='map')t.dachplan={mode:'map',base:'map',center:null,zoom:null,pins:[],nextNr:1};
     dp=t.dachplan;if(!dp.pins)dp.pins=[];if(!dp.nextNr)dp.nextNr=(dp.pins.length+1);if(!dp.base)dp.base='map';
+    _tpStack=null; // v224: ein Auftrag wird IMMER im Hauptplan geöffnet, nie in einem alten Teilplan
     sel=null;filter='alle';addMode=true;
     if(!built)build();
     addMode=false;
@@ -19511,6 +19630,7 @@ window.Dachplan=(function(){
     E.screen.querySelector('#dpAdd').classList.remove('on');
     E.screen.querySelector('#dpAdd').textContent='➕ Pin';
     E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');
+    _tpBarSync(); // v224: Kopfzeile weg, Karten-Umschalter wieder da
     closeSheet();pinBtnHide(); // v129
     // v135/v207: Handy- oder Tablet-Bedienung – siehe _applyCompact(). Das „true"
     // erzwingt den vollen Durchlauf, damit die Adresse des neuen Auftrags gesetzt wird.
@@ -19732,7 +19852,8 @@ window.Dachplan=(function(){
     // Zeilen – gleiche Variable wie der dpFilter-Knopf der breiten Leiste (renderPins teilt sie).
     const all=(dp.pins||[]).slice().sort((a,b)=>a.nr-b.nr);
     const arr=filter==='schaden'?all.filter(p=>(p.status||'rot')==='rot'):all;
-    let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Pins ('+arr.length+(filter==='schaden'?' von '+all.length:'')+')</b><button class="dpb" id="dpListClose" style="background:#2b4fc4;border-color:#2b4fc4;color:#fff">✕ Schließen</button></div>';
+    const _kopf=_tpOffen()?('🔍 Bereich '+(((_tpElternPin()||{}).nr!=null)?_tpElternPin().nr:'?')+' · Pins '):'Pins '; // v224
+    let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>'+_kopf+'('+arr.length+(filter==='schaden'?' von '+all.length:'')+')</b><button class="dpb" id="dpListClose" style="background:#2b4fc4;border-color:#2b4fc4;color:#fff">✕ Schließen</button></div>';
     h+='<div style="display:flex;gap:6px;margin-bottom:10px">'
       +'<button class="dpb" id="dpLiFAlle" style="border-radius:20px'+(filter==='alle'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Alle</button>'
       +'<button class="dpb" id="dpLiFSchad" style="border-radius:20px'+(filter==='schaden'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Nur Schaden</button></div>';
@@ -19740,9 +19861,13 @@ window.Dachplan=(function(){
     // v116: Titel → sonst Notiz als Hauptzeile; Notiz zusätzlich als zweite Zeile (Wunsch Frank – Notizen waren in der Liste unsichtbar)
     arr.forEach(p=>{const _e=s=>String(s||'').replace(/</g,'&lt;');
       const note=String(p.note||'').replace(/\s+/g,' ').trim();
-      const ti=p.title?_e(p.title):(note?_e(note.length>48?note.slice(0,48)+'…':note):'Pin '+p.nr);
+      const ti=p.title?_e(p.title):(note?_e(note.length>48?note.slice(0,48)+'…':note):'Pin '+_tpNr(p)); // v224: Gliederungsnummer
       const sub=(p.title&&note)?('<span style="display:block;white-space:normal;color:var(--text2);font-size:14px;margin:2px 0 3px">'+_e(note.length>120?note.slice(0,120)+'…':note)+'</span>'):'';
-      h+='<div class="dpLi" data-id="'+p.id+'"><div class="b" style="background:'+COL[p.status||'rot']+'">'+p.nr+'</div><div class="tx"><b>'+ti+'</b>'+sub+'<span>'+(LBL[p.status]||'')+' · '+((p.fotos||[]).length)+' Foto(s)</span></div></div>';});
+      /* v224: Wer einen Teilplan trägt, sagt es hier – sonst sieht man der Liste
+         nicht an, dass hinter Pin 2 noch eine ganze Ebene steckt. Genau die
+         Übersicht, die Frank sich gewünscht hat. Der Kreis behält die reine Zahl. */
+      const _tm=_tpHatPlan(p)?(' · 🔍 Teilplan ('+_tpPinsZahl(p)+')'):'';
+      h+='<div class="dpLi" data-id="'+p.id+'"><div class="b" style="background:'+COL[p.status||'rot']+'">'+p.nr+'</div><div class="tx"><b>'+ti+'</b>'+sub+'<span>'+(LBL[p.status]||'')+' · '+((p.fotos||[]).length)+' Foto(s)'+_tm+'</span></div></div>';});
     panel.innerHTML=h;panel.classList.remove('dp-hidden');
     panel.querySelector('#dpListClose').onclick=()=>panel.classList.add('dp-hidden');
     // v135: Filter-Chips – Zustand mit dem Leisten-Knopf synchron halten
@@ -19784,7 +19909,7 @@ window.Dachplan=(function(){
       // Blob-Adresse → dataUrl: nur so lässt sich das Bild im Gerätespeicher ablegen
       const b=await (await fetch(blobUrl)).blob();
       const durl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(b);});
-      const key='dpbase_'+t.id; // derselbe Schlüssel, den loadBild vergibt
+      const key=_dpBasisKey(); // derselbe Schlüssel, den loadBild vergibt (v224: je Ebene)
       await _mobPhotoSave(key,durl);
       if(dp.imgKey!==key){dp.imgKey=key;save();}
       // Bildmaße nachtragen, falls sie fehlen (z. B. nach einem PC-Reset-Altfall) –
@@ -19797,7 +19922,7 @@ window.Dachplan=(function(){
     if(!/^image\//.test(file.type||'')){say('Bitte ein Bild wählen','error');return;}
     say('Bild wird geladen…');
     const sc=await scaleImg(file,2600,0.85);
-    const key='dpbase_'+t.id;try{await _mobPhotoSave(key,sc.url);}catch(_){}
+    const key=_dpBasisKey();try{await _mobPhotoSave(key,sc.url);}catch(_){} // v224: eigener Schlüssel je Teilplan
     dp.imgKey=key;dp.imgW=sc.w;dp.imgH=sc.h;
     try{E.screen.querySelector('#dpNoImg').classList.add('dp-hidden');}catch(_){} // v127
     showBaseImg(sc.url);try{imap.fitBounds(bnd());}catch(_){}renderImgPins();save();say('Basisbild gesetzt');
@@ -19864,6 +19989,10 @@ window.Dachplan=(function(){
   }
   function addImgPin(ll){const fr=latLngToFr(ll);const p={id:'dp'+Date.now(),nr:dp.nextNr++,nx:Math.min(1,Math.max(0,fr.nx)),ny:Math.min(1,Math.max(0,fr.ny)),status:'rot',title:'',note:'',fotos:[]};dp.pins.push(p);sel=p.id;renderImgPins();openSheet(p);save();}
   function setBase(mode){
+    /* v224: Ein Teilbereichsfoto hat keine Luftbild-Ansicht. Der Umschalter ist dort
+       ausgeblendet (_tpBarSync) – dieser Riegel fängt auch die zweite Tür ab:
+       „🗺 Zur Luftbild-Karte" im Leerbild-Hinweis (#dpNoImgMap). */
+    if(_tpStack&&mode!=='bild')mode='bild';
     dp.base=mode;const isB=(mode==='bild');
     if(isB)try{liveStop();}catch(_){} // v105: Live-Standort gilt nur im Karten-Modus
     try{E.screen.querySelector('#dpMode').textContent=isB?'🗺️ Zur Luftbild-Karte wechseln':'📐 Zum eigenen Bild wechseln';}catch(_){} // v127: sprechende Beschriftung; v212: 📐 statt 🖼️ (Doppelbelegung mit „Galerie")
@@ -19957,6 +20086,8 @@ window.Dachplan=(function(){
     closeSheet();setBase('map');save();say('Dachplan zurückgesetzt');
   }
   function close(){
+    _tpStack=null; // v224: sonst hängt beim nächsten Öffnen noch der alte Teilplan-Zustand
+    try{_tpBarSync();}catch(_){}
     _verschiebePin=null; // v206: sonst wäre der Pin beim nächsten Öffnen noch beweglich
     pinBtnHide(); // v129
     try{guideStop();}catch(_){} // v116: Führung beim Schließen beenden
@@ -20001,6 +20132,23 @@ window.Dachplan=(function(){
       if(!E.screen||E.screen.classList.contains('dp-hidden'))return; // Dachplan zu – nichts zu tun
       const frisch=(typeof currentTask==='function')?currentTask():null;
       if(!frisch)return;
+      /* v224: Ist ein Teilplan offen, zeigt `dp` NICHT auf frisch.dachplan, sondern
+         auf p.plan. Die alte Gleichheitsprüfung hätte hier immer „ungleich" gesagt
+         und den Nutzer beim nächsten Laden stumm aus seinem Teilplan geworfen.
+         Deshalb: Elternpin im FRISCHEN Task wiederfinden und dort neu ansetzen. */
+      if(_tpStack){
+        const fdp=frisch.dachplan;
+        const fp=fdp&&(fdp.pins||[]).find(p=>p&&String(p.id)===String(_tpStack.pinId));
+        if(!fp||!fp.plan){tpZurueck();}          // Teilplan gibt es nicht mehr – sauber zurück
+        else{
+          if(t===frisch&&dp===fp.plan)return;    // gleiche Objekte – nichts gebrochen
+          t=frisch;_tpStack.dp=fdp;dp=fp.plan;
+          if(!Array.isArray(dp.pins))dp.pins=[];
+          if(!dp.nextNr)dp.nextNr=(dp.pins.length+1);
+          if(sel&&!dp.pins.some(p=>p&&p.id===sel)){sel=null;closeSheet();}
+          _tpBarSync();renderPins();return;
+        }
+      }
       if(t===frisch&&dp===frisch.dachplan)return; // gleiche Objekte – nichts gebrochen
       if(!frisch.dachplan||frisch.dachplan.mode!=='map')frisch.dachplan={mode:'map',base:'map',center:null,zoom:null,pins:[],nextNr:1};
       t=frisch;dp=frisch.dachplan;
