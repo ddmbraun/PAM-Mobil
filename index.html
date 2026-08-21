@@ -4603,6 +4603,18 @@ const HANDOFF_CODE_KEY='pam_mob_handoff_code'; // v119: Einmal-Code fürs Server
 const GDRIVE_SCOPE='https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly'; // Sync mit Desktop
 const TOKEN_KEY='ptp_gdrive_token_v1';  // Synchronisiert mit PC-Version
 let mobETag = null;  // ETag für Optimistic Locking
+/* v220: Schreib-Kennzeichen (Geisterschreiber-Lehre 21.08.). Jeder Speichervorgang
+   stempelt, WER zuletzt geschrieben hat – App, Version, Gerätemodell, Uhrzeit.
+   Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
+   MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
+   die Prüf-Suite vergleicht beide. */
+const MOB_VERSION='v220';
+function _lastWriterInfo(){
+  const ua=navigator.userAgent||'';
+  const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
+  const geraet=sm?sm[0]:(/iPad/.test(ua)?'iPad':(/iPhone/.test(ua)?'iPhone':'unbekannt'));
+  return {app:'Mobil',version:MOB_VERSION,geraet:geraet,zeit:new Date().toISOString()};
+}
 const FILE_KEY='ptpm_file';
 const WORKSPACE_FOLDER_KEY='workspace_folder_id';  // Gleicher Key wie PC-Version
 const LEGACY_TOKEN_KEY='ptpm_token';  // Alter Mobile-Token-Key (für Migration)
@@ -4619,6 +4631,7 @@ function _buildMobileSaveObj(){
   if(Object.keys(mobileStatusFilter||{}).length)obj._mobileStatusFilter={...mobileStatusFilter};
   if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes};
   if(_remoteBoardOrder.length)obj._boardOrder=_remoteBoardOrder.slice(); // v182
+  obj._lastWriter=_lastWriterInfo(); // v220: Schreib-Kennzeichen – Position wie beim Drive-Speichern (Reihenfolge-Regel v215)
   // v182: gleiche Reihenfolge + Einmischung wie beim Drive-Speichern – vorher fehlten
   // dem Backup die weggefilterten Tasks, und die Töpfe standen nacheinander
   const _alleB={};
@@ -7667,6 +7680,12 @@ async function pollForChanges(){
     const r=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&_='+Date.now(),
       {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
     if(!r.ok)return;
+    /* v220 (Loch D): Fingerabdruck der übernommenen Fassung MITNEHMEN. Vorher behielt
+       das Gerät nach jeder Poll-Übernahme seinen alten – und das nächste eigene
+       Speichern lief damit GARANTIERT in den 412-Schreibkonflikt (der Dauerkreisel,
+       der sich bis v217 als unsichtbarer Dialog-Stapel äußerte). */
+    const _pollETag=r.headers.get('ETag')||r.headers.get('etag');
+    if(_pollETag)mobETag=_pollETag;
     const data=await r.json();
     _applyMobileFilter(data);
     if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
@@ -7828,15 +7847,15 @@ async function saveFile(){
           const fr=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&_='+Date.now(),
             {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
           if(fr.ok){
-            /* v218: Datei-Fingerabdruck (ETag) MIT übernehmen. Der Zweig hier lud den
-               fremden Stand und führte sauber zusammen – der anschließende Upload lief
-               aber mit dem ALTEN mobETag weiter und wurde damit GARANTIERT als 412
-               abgelehnt. Der „Schreib-Konflikt"-Dialog dazu stand bis v217 auch noch
-               unsichtbar UNTER der Mal-Ansicht; nach 60 s Warte-Frist übernahm der
-               Poll den fremden Stand und warf die ungespeicherte Arbeit weg
-               (Befund Frank 20.08. abends: neues Pin-Foto samt Zeichnung verschwunden). */
+            /* v218: Datei-Fingerabdruck (ETag) MIT übernehmen – sonst lief der Upload
+               nach sauberem Zusammenführen GARANTIERT in ein 412.
+               v220 (Loch A der Geisterschreiber-Analyse 21.08.): hier nur noch MERKEN.
+               Übernommen wird der Fingerabdruck erst NACH vollständig gelungenem
+               Zusammenführen (unten am Ende dieses Zweigs) – v218 übernahm ihn schon
+               hier, und jede danach geworfene (im Catch verschluckte) Störung lud den
+               ALTEN lokalen Stand mit GÜLTIGEM Fingerabdruck hoch: der stille
+               Überschreiber, der am 20.08. frische Pin-Fotos auslöschte. */
             const _frETag=fr.headers.get('ETag')||fr.headers.get('etag');
-            if(_frETag)mobETag=_frETag;
             const remote=await fr.json();
             const remoteStatuses=Array.isArray(remote._statuses)?remote._statuses:statuses;
             // Remote-Whitelist auslesen — überschreibt lokale (Desktop ist Quelle der Wahrheit)
@@ -7962,10 +7981,24 @@ async function saveFile(){
             // Spaltenfilter aus Remote übernehmen (Desktop ist Quelle der Wahrheit)
             if(remote._mobileStatusFilter&&typeof remote._mobileStatusFilter==='object')
               mobileStatusFilter={...remote._mobileStatusFilter};
+            if(_frETag)mobETag=_frETag; // v220 (Loch A): ERST JETZT – das Zusammenführen ist vollständig durch
           }
+          else throw new Error('Fremd-Stand nicht ladbar: HTTP '+fr.status); // v220 (Loch B): nie ungeprüft weiterschreiben
         }
       }
-    }catch(e){console.warn('[PTP-Mobile] Konflikt-Check:',e);}
+      else throw new Error('Konflikt-Abfrage fehlgeschlagen: HTTP '+mr.status); // v220 (Loch B)
+    }catch(e){
+      /* v220 (Loch B): Ein gestörter Konflikt-Check darf NICHT mehr stillschweigend in
+         einen rohen Upload münden – genau so überrollte der „Geisterschreiber" am 20.08.
+         fremde Pin-Fotos mit seinem alten Stand. Jetzt wie am PC (gdriveSaveData):
+         Save ABBRECHEN, dirty bleibt, lokal sichern, neuer Versuch in 15 s. */
+      console.warn('[PTP-Mobile] Konflikt-Check gestört – Save abgebrochen, Retry in 15 s:',e);
+      _saveMobileBackup();
+      setSaveInd('error','⚠ Abgleich gestört – neuer Versuch…');
+      clearTimeout(saveTimer);
+      saveTimer=setTimeout(()=>{saveFile();},15000);
+      return;
+    }
     /* Save-Objekt: Whitelist + Desktop-Spalten (_boardStatuses) + _boardTypes erhalten,
        versteckte Boards durchreichen.
        v215: Felder in EXAKT der Desktop-Reihenfolge (buildSaveObject: _statuses,
@@ -7982,6 +8015,7 @@ async function saveFile(){
     if(Object.keys(mobileStatusFilter||{}).length)obj._mobileStatusFilter={...mobileStatusFilter}; // v182: stand bisher NICHT im Drive-Save – jedes Handy-Speichern fraß den Mobil-Spaltenfilter aus der Datei
     if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes}; // Board-Typen (baustelle/notiz) nicht verlieren
     if(_remoteBoardOrder.length)obj._boardOrder=_remoteBoardOrder.slice(); // v182: Reihenfolge-Merkfeld (b643) unverändert zurückgeben
+    obj._lastWriter=_lastWriterInfo(); // v220: Schreib-Kennzeichen (Geisterschreiber-Lehre) – Desktop b729 stempelt genauso
     // v182: Boards in der Desktop-Reihenfolge zurückschreiben. Vorher schrieb Mobil erst
     // die versteckten, dann die sichtbaren Töpfe – jedes Handy-Speichern baute damit die
     // Datei-Reihenfolge um, und am Desktop „sprangen" die Boards nach dem nächsten Laden.
@@ -8029,8 +8063,25 @@ async function saveFile(){
       const ok=(await _renewTokenViaCloud())||(await silentRefresh());
       if(ok){
         // Einmaliger direkter Retry nach Token-Erneuerung
+        /* v220 (Loch C): auch der Notfall-Weg prüft den Fingerabdruck (If-Match).
+           Vorher schrieb er BEDINGUNGSLOS – hatte zwischen Token-Ablauf und Erneuerung
+           ein anderes Gerät gespeichert, wurde dessen Stand kommentarlos überrollt. */
+        const _r2Headers={Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'};
+        if(mobETag)_r2Headers['If-Match']=mobETag;
         const r2=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media&fields=modifiedTime',
-          {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:content});
+          {method:'PATCH',headers:_r2Headers,body:content});
+        if(r2.status===412){
+          _showETagConflictDialog(
+            async()=>{mobETag=null;clearTimeout(saveTimer);await saveFile();},
+            async()=>{
+              dirty=false;_dirtyTs=0;clearTimeout(saveTimer);
+              await loadFile();
+              if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
+              else renderList();
+            }
+          );
+          return {ok:false,status:412};
+        }
         if(!r2.ok)throw new Error('HTTP '+r2.status+' (nach Token-Refresh)');
         // Fix: neuen ETag übernehmen – sonst läuft der nächste Save mit altem ETag in ein 412
         const _retryETag=r2.headers.get('ETag')||r2.headers.get('etag');
