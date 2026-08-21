@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v226';
+const MOB_VERSION='v227';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -19402,6 +19402,15 @@ window.Dachplan=(function(){
      erreichbar (der Leerbild-Hinweis führt ja gerade zum Bildladen). */
   function _baseSinnvoll(e){
     if(!e)return 'map';
+    /* 🔴 v227 (Befund Frank 21.08.: „ich kann kein eigenes Bild mehr aufnehmen"):
+       Eine BEWUSSTE Wahl (baseTs) gilt IMMER – auch „Bild" ohne Bild. Genau dorthin
+       führt nämlich der Weg zum Bildladen: erst in den Bild-Modus wechseln, dann im
+       Leerbild-Hinweis „📷 Bild laden" antippen. Ohne diese Ausnahme zog die Regel
+       unten den Nutzer beim nächsten Sync zurück auf die Karte, bevor er tippen
+       konnte – das Laden eines eigenen Bildes war damit unmöglich geworden.
+       Die Regel bleibt für den ALTBESTAND (ohne baseTs) erhalten: dort ist „Bild"
+       ohne Bild eine leere Fläche, auf der vorhandene Karten-Pins unsichtbar sind. */
+    if(e.baseTs)return e.base||'map';
     if(e.base==='bild'&&!e.imgKey&&!e.imgDriveId)return 'map';
     return e.base||'map';
   }
