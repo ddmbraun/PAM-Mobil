@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v222';
+const MOB_VERSION='v223';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -15672,11 +15672,13 @@ function _mtbPinFotoOpen(pinId,idx){
     +'<div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);z-index:2;display:flex;gap:8px;">'
     +'<button id="mtbPinFotoMal" style="min-height:46px;padding:0 18px;border-radius:10px;border:1px solid #2d7ef7;background:rgba(0,0,0,.55);color:#7db4ff;font-size:15px;font-weight:700;cursor:pointer;">✏️ Malen</button>'
     +'<button id="mtbPinFotoTeilen" style="min-height:46px;padding:0 18px;border-radius:10px;border:1px solid #2d7ef7;background:rgba(0,0,0,.55);color:#7db4ff;font-size:15px;font-weight:700;cursor:pointer;">📤 Teilen</button>'
+    +'<button id="mtbPinFotoInfo" style="min-height:46px;padding:0 14px;border-radius:10px;border:1px solid #2d7ef7;background:rgba(0,0,0,.55);color:#7db4ff;font-size:15px;font-weight:700;cursor:pointer;">ℹ</button>' // v223
     +'</div>'
     +(fo.caption?'<div style="position:absolute;left:12px;right:12px;bottom:76px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:8px 10px;font-size:15px;">'+esc(fo.caption)+'</div>':'');
   ov.onclick=ev=>{if(ev.target===ov||ev.target.id==='mtbPinFotoX')ov.remove();};
   ov.querySelector('#mtbPinFotoMal').onclick=ev=>{ev.stopPropagation();ov.remove();if(typeof openPinFotoZumMalen==='function')openPinFotoZumMalen(t.id,pinId,idx);}; // v215
   ov.querySelector('#mtbPinFotoTeilen').onclick=ev=>{ev.stopPropagation();ov.remove();_shrPinFotoTeilen(pinId,idx);}; // v222
+  ov.querySelector('#mtbPinFotoInfo').onclick=ev=>{ev.stopPropagation();_mobFotoInfo(fo);}; // v223: Popup liegt darüber (100040), Ansicht bleibt offen
   document.body.appendChild(ov);
   const img=ov.querySelector('#mtbPinFotoImg');
   (async()=>{
@@ -17621,6 +17623,192 @@ async function _forwardGeocodeMob(q){
   }catch(e){console.warn('[Geocode vorwärts Nominatim]',e);}
   return null;
 }
+/* ══ v223: ℹ am Foto – ansehen und Aufnahmeort korrigieren, wie am PC (b478/b513/b716) ══
+   Zeigt Datum/Kamera/Auflösung/Aufnahmeort (Adresse + Karten-Link) und kann den Ort
+   ins Foto SCHREIBEN – drei Wege: 📡 aktueller Standort (Mobil-Trumpf), 🏠 Auftrags-
+   adresse, freie Eingabe. Bausteine sind alle vorhanden: piexif (v184 fest eingebaut),
+   _readGpsFromDataUrl, _reverseGeocode, _forwardGeocodeMob, _driveResumableUpdate.
+   ⛔ Bemalte Fotos: die lokale Kopie IST die bemalte Fassung (v216) – der Ort wird
+   dann NUR ins Drive-Original geschrieben, die bemalte Kopie bleibt unangetastet.
+   Stapel: Popup 100040, Korrektur-Dialog 100045 (über Pin-Vollbild 99999, Mal-Ansicht
+   100010 und Teilen 100020; unter Toast 100050 – siehe Stapel-Karte). */
+let _mobInfoFo=null,_mobGpsPending=null;
+function _gpsToRational(dec){
+  const d=Math.abs(dec),dd=Math.floor(d),m=(d-dd)*60,mm=Math.floor(m),ss=Math.round((m-mm)*60*10000);
+  return [[dd,1],[mm,1],[ss,10000]];
+}
+/* Wohin schreibt die Korrektur? Als eigene kleine Funktion, damit die Prüf-Suite sie
+   mit allen Fällen ausführen kann. */
+function _mobGpsPlan(fo){
+  const bemalt=!!(fo&&fo.editedName);
+  if(fo&&fo.driveId)return{quelle:'drive',zielDrive:true,lokalAktualisieren:!bemalt&&!!(fo.localKey||fo.key)};
+  return{quelle:'lokal',zielDrive:false,lokalAktualisieren:!!(fo&&(fo.localKey||fo.key))};
+}
+async function _mobFotoInfo(fo){
+  if(!fo){toast('Foto nicht gefunden','error');return;}
+  _mobInfoFo=fo;_mobGpsPending=null;
+  const alt=document.getElementById('mobExifPopup');if(alt)alt.remove();
+  if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+  // Bild-Kopf: erst die lokale Vollkopie, sonst die ersten 128 KB aus Drive (wie am PC)
+  let headUrl=null;
+  try{const k=fo.localKey||fo.key;if(k)headUrl=await _mobPhotoGet(k);}catch(_){}
+  const _id=fo.driveId||fo.editedDriveId;
+  if(!headUrl&&_id&&typeof gdriveToken!=='undefined'&&gdriveToken){
+    try{
+      const r=await _fetchTimeout('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(_id)+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken,Range:'bytes=0-131071'}},10000);
+      if(r.ok){const buf=await r.arrayBuffer();const by=new Uint8Array(buf);let bin='';for(let j=0;j<by.length;j++)bin+=String.fromCharCode(by[j]);headUrl='data:image/jpeg;base64,'+btoa(bin);}
+    }catch(_){}
+  }
+  let date='',make='',model='',pw='',ph='',gps=null;
+  if(headUrl&&window.piexif){
+    try{
+      const ex=piexif.load(headUrl);
+      const z=ex['0th']||{},ei=ex['Exif']||{};
+      date=ei[piexif.ExifIFD.DateTimeOriginal]||z[piexif.ImageIFD.DateTime]||'';
+      make=z[piexif.ImageIFD.Make]||'';model=z[piexif.ImageIFD.Model]||'';
+      pw=ei[piexif.ExifIFD.PixelXDimension]||'';ph=ei[piexif.ExifIFD.PixelYDimension]||'';
+    }catch(_){}
+    gps=_readGpsFromDataUrl(headUrl);
+  }
+  const zeile=(k,v)=>v?('<tr><td style="color:#aaa;padding-right:10px;white-space:nowrap;vertical-align:top">'+k+'</td><td>'+v+'</td></tr>'):'';
+  const ortZelle=gps?'<span style="color:#aaa">wird ermittelt…</span>':'<span style="color:#aaa">nicht im Foto gespeichert</span>';
+  const p=document.createElement('div');
+  p.id='mobExifPopup';
+  p.style.cssText='position:fixed;inset:0;z-index:100040;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;';
+  p.innerHTML='<div style="background:#1d1f24;color:#eee;border:1px solid #444;border-radius:12px;padding:16px 18px;max-width:420px;width:100%;font-size:14px;" onclick="event.stopPropagation()">'
+    +'<div style="font-weight:700;margin-bottom:8px;">ℹ Foto-Angaben</div>'
+    +'<table style="border-collapse:collapse;line-height:1.8;font-size:13px;">'
+    +zeile('📅 Datum',date?esc(date):(fo.ts?esc(new Date(fo.ts).toLocaleString('de-DE')):''))
+    +zeile('📷 Kamera',esc((make+' '+model).trim()))
+    +zeile('🔲 Auflösung',(pw&&ph)?(pw+' × '+ph):'')
+    +'<tr><td style="color:#aaa;padding-right:10px;white-space:nowrap;vertical-align:top">📍 Aufnahmeort</td><td id="mobExifOrt">'+ortZelle+'</td></tr>'
+    +'</table>'
+    +'<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">'
+    +'<button onclick="_mobGpsDialog()" style="min-height:44px;padding:0 14px;border-radius:9px;border:1px solid #2d7ef7;background:transparent;color:#7db4ff;font-size:13px;font-weight:700;cursor:pointer;">📍 korrigieren</button>'
+    +'<button onclick="document.getElementById(\'mobExifPopup\').remove()" style="min-height:44px;padding:0 14px;border-radius:9px;border:1px solid #666;background:transparent;color:#ccc;font-size:13px;cursor:pointer;">✕</button>'
+    +'</div></div>';
+  p.onclick=()=>p.remove();
+  document.body.appendChild(p);
+  if(gps){
+    const mapsU='https://maps.google.com/?q='+gps.lat.toFixed(6)+','+gps.lon.toFixed(6);
+    _reverseGeocode(gps.lat,gps.lon).then(addr=>{
+      const el=document.getElementById('mobExifOrt');if(!el)return;
+      el.innerHTML='<a href="'+mapsU+'" target="_blank" style="color:#7db4ff">'+esc(addr||(gps.lat.toFixed(6)+', '+gps.lon.toFixed(6)))+' 🗺</a>';
+    }).catch(()=>{});
+  }
+}
+function lbFotoInfo(){ // ℹ in der Großansicht – normales Foto ODER Pin-Foto (v215-Einsatz)
+  if(_lbPinFoto){const fo=_lbPinFotoObj();if(fo)_mobFotoInfo(fo);return;}
+  if(_lbFotoIdx>=0){const t=currentTask();const f=t&&t.fotos&&t.fotos[_lbFotoIdx];if(f)_mobFotoInfo(f);}
+}
+function _mobGpsZeigen(pos,label){
+  _mobGpsPending=pos;
+  const el=document.getElementById('mobGpsResult');
+  if(el)el.innerHTML=pos?('✓ '+esc(label||(pos.lat.toFixed(6)+', '+pos.lon.toFixed(6))))
+    :'<span style="color:#e5484d">Kein Treffer – bitte anders eingeben</span>';
+  const b=document.getElementById('mobGpsSaveBtn');
+  if(b){b.disabled=!pos;b.style.opacity=pos?'1':'.45';}
+}
+function _mobGpsVomStandort(){
+  const el=document.getElementById('mobGpsResult');
+  if(el)el.textContent='📡 Standort wird bestimmt…';
+  if(!navigator.geolocation){_mobGpsZeigen(null);return;}
+  navigator.geolocation.getCurrentPosition(
+    p=>{const pos={lat:p.coords.latitude,lon:p.coords.longitude};
+        _reverseGeocode(pos.lat,pos.lon).then(a=>_mobGpsZeigen(pos,a)).catch(()=>_mobGpsZeigen(pos));},
+    ()=>{_mobGpsZeigen(null);},
+    {enableHighAccuracy:true,timeout:12000,maximumAge:30000}
+  );
+}
+function _mobGpsVonAdresse(){
+  const t=currentTask();
+  if(t&&t.lat&&t.lon){const pos={lat:Number(t.lat),lon:Number(t.lon)};
+    _reverseGeocode(pos.lat,pos.lon).then(a=>_mobGpsZeigen(pos,(a||'')+' (Auftrags-Standort)')).catch(()=>_mobGpsZeigen(pos));return;}
+  const adr=(t&&(t.adresse||''))||'';
+  if(!adr){_mobGpsZeigen(null);return;}
+  const el=document.getElementById('mobGpsResult');
+  if(el)el.textContent='🔍 '+adr+' wird gesucht…';
+  _forwardGeocodeMob(adr).then(f=>_mobGpsZeigen(f?{lat:f.lat,lon:f.lon}:null,f&&f.label)).catch(()=>_mobGpsZeigen(null));
+}
+function _mobGpsPruefen(){
+  const q=String((document.getElementById('mobGpsInput')||{}).value||'').trim();
+  if(!q){_mobGpsZeigen(null);return;}
+  const m=q.match(/^\s*(-?\d+[.,]\d+)\s*[,;]\s*(-?\d+[.,]\d+)\s*$/); // Koordinaten direkt
+  if(m){const pos={lat:parseFloat(m[1].replace(',','.')),lon:parseFloat(m[2].replace(',','.'))};
+    if(isFinite(pos.lat)&&isFinite(pos.lon)){_mobGpsZeigen(pos,pos.lat.toFixed(6)+', '+pos.lon.toFixed(6));return;}}
+  const el=document.getElementById('mobGpsResult');
+  if(el)el.textContent='🔍 wird gesucht…';
+  _forwardGeocodeMob(q).then(f=>_mobGpsZeigen(f?{lat:f.lat,lon:f.lon}:null,f&&f.label)).catch(()=>_mobGpsZeigen(null));
+}
+function _mobGpsDialog(){
+  const fo=_mobInfoFo;
+  if(!fo)return;
+  if(!(fo.driveId||fo.editedDriveId||fo.localKey||fo.key)){toast('Foto hat noch keine Datei','error');return;}
+  _mobGpsPending=null;
+  const alt=document.getElementById('mobGpsOv');if(alt)alt.remove();
+  const ov=document.createElement('div');
+  ov.id='mobGpsOv';
+  ov.style.cssText='position:fixed;inset:0;z-index:100045;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML='<div style="background:#1d1f24;color:#eee;border:1px solid #444;border-radius:12px;padding:16px 18px;max-width:440px;width:100%;font-size:14px;" onclick="event.stopPropagation()">'
+    +'<div style="font-weight:700;margin-bottom:10px;">📍 Aufnahmeort im Foto korrigieren</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px;">'
+    +'<button onclick="_mobGpsVomStandort()" style="flex:1;min-height:46px;border-radius:9px;border:1px solid #2d7ef7;background:transparent;color:#7db4ff;font-size:13px;font-weight:700;cursor:pointer;">📡 Mein Standort</button>'
+    +'<button onclick="_mobGpsVonAdresse()" style="flex:1;min-height:46px;border-radius:9px;border:1px solid #2d7ef7;background:transparent;color:#7db4ff;font-size:13px;font-weight:700;cursor:pointer;">🏠 Auftragsadresse</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<input id="mobGpsInput" type="text" placeholder="Adresse oder Koordinaten (51.108, 10.653)…" style="flex:1;min-height:44px;padding:0 10px;border-radius:9px;border:1px solid #555;background:#111;color:#eee;font-size:14px;box-sizing:border-box;">'
+    +'<button onclick="_mobGpsPruefen()" style="min-height:44px;padding:0 12px;border-radius:9px;border:1px solid #2d7ef7;background:transparent;color:#7db4ff;font-size:13px;font-weight:700;cursor:pointer;">🔍</button>'
+    +'</div>'
+    +'<div id="mobGpsResult" style="font-size:13px;color:#bbb;margin:10px 0;min-height:18px;"></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;">'
+    +'<button onclick="document.getElementById(\'mobGpsOv\').remove()" style="min-height:44px;padding:0 14px;border-radius:9px;border:1px solid #666;background:transparent;color:#ccc;font-size:13px;cursor:pointer;">Abbrechen</button>'
+    +'<button id="mobGpsSaveBtn" onclick="_mobGpsSave()" disabled style="min-height:44px;padding:0 16px;border-radius:9px;border:none;background:#27ae60;color:#fff;font-size:13px;font-weight:700;opacity:.45;cursor:pointer;">💾 In Foto speichern</button>'
+    +'</div></div>';
+  ov.addEventListener('click',()=>ov.remove());
+  document.body.appendChild(ov);
+  const inp=document.getElementById('mobGpsInput');
+  if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter')_mobGpsPruefen();});
+}
+async function _mobGpsSave(){
+  const fo=_mobInfoFo,pos=_mobGpsPending;
+  if(!fo||!pos)return;
+  toast('📍 Ort wird ins Foto geschrieben…','info',3000);
+  try{
+    if(!window.piexif)await new Promise(r=>_loadPiexif(r));
+    const plan=_mobGpsPlan(fo);
+    // Volle Fassung besorgen: beim Drive-Ziel IMMER das Original aus Drive (die lokale
+    // Kopie kann die bemalte Fassung sein, v216) – sonst die lokale Kopie.
+    let durl=null;
+    if(plan.quelle==='drive'){
+      const bu=await _fetchFotoBlob(fo.driveId);
+      if(bu){const b=await (await fetch(bu)).blob();
+        durl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(b);});}
+    }else{
+      const k=fo.localKey||fo.key;
+      if(k){try{durl=await _mobPhotoGet(k);}catch(_){}}
+    }
+    if(!durl){toast('Keine Bilddaten für dieses Foto verfügbar','error');return;}
+    let ex;try{ex=piexif.load(durl);}catch(_){ex={'0th':{},'Exif':{},'GPS':{},'1st':{},'thumbnail':null};}
+    ex['GPS']=ex['GPS']||{};
+    ex['GPS'][piexif.GPSIFD.GPSLatitudeRef]=pos.lat>=0?'N':'S';
+    ex['GPS'][piexif.GPSIFD.GPSLatitude]=_gpsToRational(pos.lat);
+    ex['GPS'][piexif.GPSIFD.GPSLongitudeRef]=pos.lon>=0?'E':'W';
+    ex['GPS'][piexif.GPSIFD.GPSLongitude]=_gpsToRational(pos.lon);
+    const neu=piexif.insert(piexif.dump(ex),durl);
+    if(plan.lokalAktualisieren){const k=fo.localKey||fo.key;try{await _mobPhotoSave(k,neu);}catch(_){}}
+    if(plan.zielDrive){
+      if(!(await ensureToken())){toast('Nicht angemeldet – Ort konnte nicht nach Drive geschrieben werden','error',5000);return;}
+      const blob=_dataUrlToBlob(neu);
+      const buf=await blob.arrayBuffer();
+      const r=await _driveResumableUpdate(gdriveToken,fo.driveId,new Uint8Array(buf),'image/jpeg',null);
+      if(!r.ok){toast('Drive-Update fehlgeschlagen (HTTP '+r.status+')','error',5000);return;}
+      _fotoBlobCache.delete(fo.driveId); // nächste Ansicht holt die korrigierte Fassung
+    }
+    const o1=document.getElementById('mobGpsOv');if(o1)o1.remove();
+    const o2=document.getElementById('mobExifPopup');if(o2)o2.remove();
+    toast('✓ Aufnahmeort im Foto gespeichert','success');
+  }catch(e){toast('Korrigieren fehlgeschlagen: '+((e&&e.message)||e),'error',5000);}
+}
 </script>
 
 <script>
@@ -17714,6 +17902,8 @@ if (navigator.storage && navigator.storage.persist) {
   </div>
   <button class="lb-open" id="lbOpenOrig" onclick="event.stopPropagation();lbOpenOriginal()" style="display:none">📂 Original öffnen</button>
   <button class="lb-open" id="lbShareBtn" onclick="event.stopPropagation();lbShareFoto()" style="display:none;right:auto;left:12px;">📤 Teilen</button>
+  <button class="lb-open" id="lbInfoBtn" onclick="event.stopPropagation();lbFotoInfo()" style="display:none;right:auto;left:122px;">ℹ</button><!-- v223 -->
+
 </div>
 <script>
 let _lbCurrentUrl='';
@@ -17762,6 +17952,7 @@ function openLightbox(src,name,externalUrl,opts){
     _lbShowCaption(opts.caption||'',opts.herkunft||''); // v193: Herkunft zusätzlich, nicht statt
     bar.classList.add('open');bar.classList.remove('editing');
     if(shareBtn)shareBtn.style.display='';
+    {const _ib=document.getElementById('lbInfoBtn');if(_ib)_ib.style.display='';} // v223
     // v99: Blätterpfeile nur bei mehr als einem Task-Foto
     const _t=currentTask(),_multi=!!(_t&&_t.fotos&&_t.fotos.length>1);
     if(_navP)_navP.style.display=_multi?'':'none';
@@ -17770,6 +17961,7 @@ function openLightbox(src,name,externalUrl,opts){
     _lbFotoIdx=-1;_lbFotoKey='';
     bar.classList.remove('open','editing');
     if(shareBtn)shareBtn.style.display=_lbPinFoto?'':'none'; // v222: auch im Pin-Einsatz teilen können
+    {const _ib=document.getElementById('lbInfoBtn');if(_ib)_ib.style.display=_lbPinFoto?'':'none';} // v223
     if(_navP)_navP.style.display='none';
     if(_navN)_navN.style.display='none';
   }
@@ -18951,6 +19143,7 @@ window.Dachplan=(function(){
       +'<button class="dpb" id="dpPhotoText" style="border-color:#2d7ef7;color:var(--accent2)">📝 Text</button>'
       +'<button class="dpb" id="dpPhotoMal" style="border-color:#2d7ef7;color:var(--accent2)">✏️ Malen</button>'
       +'<button class="dpb" id="dpPhotoTeilen" style="border-color:#2d7ef7;color:var(--accent2)">📤 Teilen</button>' // v222
+      +'<button class="dpb" id="dpPhotoInfo" style="border-color:#2d7ef7;color:var(--accent2)">ℹ Ort</button>' // v223
       +'</div></div>';
     document.body.appendChild(d);
     E.screen=d;E.mapEl=d.querySelector('#dpMap');E.sheet=d.querySelector('#dpSheet');E.thumbs=d.querySelector('#dpThumbs');
@@ -19011,6 +19204,10 @@ window.Dachplan=(function(){
     q('#dpGuide').onclick=()=>{const p=cur();if(p)guideStart(p.id);}; // v116
     q('#dpPhotoText').onclick=()=>{if(window._dpPhotoFo)dpFotoText(window._dpPhotoFo);}; // v116
     // v215: ✏️ Malen – Vollbild zu, dann die App-Lightbox mit dem Stift auf DIESEM Pin-Foto
+    q('#dpPhotoInfo').onclick=()=>{ // v223: ℹ – Popup (100040) liegt über dem Vollbild, Ansicht bleibt offen
+      const fo=window._dpPhotoFo;
+      if(fo)_mobFotoInfo(fo);
+    };
     q('#dpPhotoTeilen').onclick=()=>{ // v222: dieses Pin-Foto übers normale Teilen-Fenster
       const p=cur(),fo=window._dpPhotoFo;
       if(!p||!fo)return;
