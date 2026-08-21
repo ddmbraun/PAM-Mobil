@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v224';
+const MOB_VERSION='v225';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -7776,6 +7776,11 @@ function _mergeListByKey(remoteList,localList,keyFn){
 function _dachplanKonfliktMerge(remoteDp,localDp){
   if(!remoteDp||!localDp)return localDp||remoteDp;
   const m=Object.assign({},remoteDp,localDp); // Ansicht/Bild/Kalibrierung: lokal gewinnt, Remote füllt Fehlendes
+  /* v225: Ausnahme für die ANSICHT. Sie gilt geräteübergreifend (Wunsch Frank), also
+     gewinnt hier nicht „lokal", sondern die JÜNGERE Wahl – sonst käme die am anderen
+     Gerät getroffene Umschaltung nie an. */
+  {const _rt=remoteDp.baseTs||'',_lt=localDp.baseTs||'';
+   if(_rt>_lt){m.base=remoteDp.base;m.baseTs=_rt;}}
   /* Foto-Union je Pin: dieselbe Aufnahme erkennt man an `key` ODER `driveId` –
      ein Nachzügler-Upload ergänzt driveId am selben key, ein Desktop-Foto trägt
      nur driveId. Beim Zusammenlegen bleiben BEIDE Kennungen erhalten; eine
@@ -19383,6 +19388,17 @@ window.Dachplan=(function(){
      schlicht darauf umgehängt – dadurch arbeiten renderImgPins, addImgPin, openSheet,
      openList, loadBild, basisAusFotos, setBase und bnd() unverändert weiter.
      KEIN zweiter Code-Pfad. `_tpStack` merkt den Hauptplan für den Rückweg. */
+  /* v225 (Befund Frank 21.08. abends): Ein Dachplan konnte auf „eigenes Bild" stehen,
+     OHNE dass ein Bild da ist. Man sah dann eine leere Fläche – und die vorhandenen
+     Karten-Pins blieben unsichtbar, weil renderPins im Bild-Modus auf renderImgPins
+     umleitet und die nur nx/ny-Pins zeichnet. Betraf einen echten Auftrag mit 8 Pins.
+     Beim Öffnen und Nachladen wird das gerade gezogen; MANUELL bleibt der Bild-Modus
+     erreichbar (der Leerbild-Hinweis führt ja gerade zum Bildladen). */
+  function _baseSinnvoll(e){
+    if(!e)return 'map';
+    if(e.base==='bild'&&!e.imgKey&&!e.imgDriveId)return 'map';
+    return e.base||'map';
+  }
   let _tpStack=null; // {dp,pinId,base,sel} solange ein Teilplan offen ist
   function _tpOffen(){return !!_tpStack;}
   function _tpElternPin(){
@@ -19413,7 +19429,7 @@ window.Dachplan=(function(){
     _tpStack={dp:dp,pinId:p.id,base:dp.base,sel:sel};
     dp=p.plan;sel=null;
     closeSheet();try{E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');}catch(_){}
-    _tpBarSync();setBase('bild');save();
+    _tpBarSync();setBase('bild',true);save(); // v225: stumm – das ist keine Ansichts-Wahl des Nutzers
     if(!dp.imgKey&&!dp.imgDriveId)say('Teilbereich – jetzt „📷 Bild laden" (Kamera) oder „🖼 Aus Auftrags-Fotos"');
   }
   function tpZurueck(){
@@ -19421,7 +19437,7 @@ window.Dachplan=(function(){
     const st=_tpStack;
     dp=st.dp;sel=st.sel||null;_tpStack=null;
     closeSheet();try{E.screen.querySelector('#dpListPanel').classList.add('dp-hidden');}catch(_){}
-    _tpBarSync();setBase(st.base||'map');save();
+    _tpBarSync();setBase(_baseSinnvoll(dp),true);save(); // v225: stumm, und ohne Bild zurück auf die Karte
   }
   /* Die Kopfzeile sagt dauerhaft, in welchem Bereich man steht – sonst sieht ein
      Teilplan aus wie der Hauptplan. Der Umschalter Karte/Bild verschwindet dort:
@@ -19637,7 +19653,7 @@ window.Dachplan=(function(){
     _applyCompact(true);
     E.screen.classList.remove('dp-hidden');
     if(!ensureMap())return;
-    setBase(dp.base||'map');
+    setBase(_baseSinnvoll(dp),true); // v225: „Bild" ohne Bild wäre eine leere Fläche; stumm = keine Nutzer-Wahl
     // v135: nach dem Umschalten der Leisten die Kartengröße nachziehen (Leaflet)
     setTimeout(()=>{try{if(map)map.invalidateSize();}catch(_){}try{if(imap)imap.invalidateSize();}catch(_){}},120);
   }
@@ -19988,12 +20004,23 @@ window.Dachplan=(function(){
       m.addTo(imap);markers[p.id]=m;});
   }
   function addImgPin(ll){const fr=latLngToFr(ll);const p={id:'dp'+Date.now(),nr:dp.nextNr++,nx:Math.min(1,Math.max(0,fr.nx)),ny:Math.min(1,Math.max(0,fr.ny)),status:'rot',title:'',note:'',fotos:[]};dp.pins.push(p);sel=p.id;renderImgPins();openSheet(p);save();}
-  function setBase(mode){
+  function setBase(mode,stumm){
     /* v224: Ein Teilbereichsfoto hat keine Luftbild-Ansicht. Der Umschalter ist dort
        ausgeblendet (_tpBarSync) – dieser Riegel fängt auch die zweite Tür ab:
        „🗺 Zur Luftbild-Karte" im Leerbild-Hinweis (#dpNoImgMap). */
     if(_tpStack&&mode!=='bild')mode='bild';
-    dp.base=mode;const isB=(mode==='bild');
+    /* v225 (Wunsch Frank: „auf allen Geräten dieselbe Karte"): Wer umschaltet, trifft
+       eine Entscheidung – die muss auf die anderen Geräte. Bis v224 lebte sie NUR im
+       Arbeitsspeicher: der nächste Sync holte den gespeicherten Stand zurück, und die
+       gerade gewählte Ansicht war weg (genau Franks Befund „Pins kurz da, dann weg").
+       `baseTs` entscheidet bei zwei offenen Geräten, wessen Wahl die jüngere ist.
+       ⛔ NUR eine echte Änderung schreibt, und `stumm` unterdrückt das Schreiben für
+       automatische Umschaltungen (Öffnen, Nachladen, Teilplan) – sonst entstünde das
+       Ping-Pong aus v214, bei dem sich offene Geräte im Kreis überschreiben. */
+    const _wechsel=(dp.base!==mode);
+    dp.base=mode;
+    if(_wechsel&&!stumm&&!_tpStack){try{dp.baseTs=new Date().toISOString();save();}catch(_){}}
+    const isB=(mode==='bild');
     if(isB)try{liveStop();}catch(_){} // v105: Live-Standort gilt nur im Karten-Modus
     try{E.screen.querySelector('#dpMode').textContent=isB?'🗺️ Zur Luftbild-Karte wechseln':'📐 Zum eigenen Bild wechseln';}catch(_){} // v127: sprechende Beschriftung; v212: 📐 statt 🖼️ (Doppelbelegung mit „Galerie")
     try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpBildFotos').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';}catch(_){} // v221: Fotos-Weg nur im Bild-Modus, wie 📷
@@ -20150,11 +20177,23 @@ window.Dachplan=(function(){
         }
       }
       if(t===frisch&&dp===frisch.dachplan)return; // gleiche Objekte – nichts gebrochen
+      /* v225: merken, was GERADE auf dem Schirm ist – gleich zeigt dp auf das frische
+         Objekt, und dessen `base` ist der gespeicherte, nicht der gewählte Stand. */
+      const _altBase=(dp&&dp.base)||'map', _altTs=(dp&&dp.baseTs)||'';
       if(!frisch.dachplan||frisch.dachplan.mode!=='map')frisch.dachplan={mode:'map',base:'map',center:null,zoom:null,pins:[],nextNr:1};
       t=frisch;dp=frisch.dachplan;
       if(!dp.pins)dp.pins=[];if(!dp.nextNr)dp.nextNr=(dp.pins.length+1);if(!dp.base)dp.base='map';
+      /* v225 (Franks Befund): Es gewinnt die ZULETZT GETROFFENE Wahl, nicht das zuletzt
+         eingetroffene Datenpaket. Vorher warf jeder Sync die gerade am Gerät gewählte
+         Ansicht zurück – und mit ihr verschwanden die Karten-Pins still, weil
+         renderPins im Bild-Modus auf renderImgPins umleitet. */
+      if(_altTs&&_altTs>(dp.baseTs||'')){dp.base=_altBase;dp.baseTs=_altTs;}
       if(sel&&!dp.pins.some(p=>p&&p.id===sel)){sel=null;closeSheet();} // gewählter Pin existiert nicht mehr
-      renderPins(); // deckt beide Modi (leitet im Bild-Modus auf renderImgPins)
+      /* Hat sich die Ansicht geändert, muss WIRKLICH umgeschaltet werden – renderPins
+         allein zeichnet nur neu und ließe die falsche Fläche stehen. */
+      const _soll=_baseSinnvoll(dp);
+      if(_soll!==_altBase)setBase(_soll,true); // stumm: kommt vom Nachladen, nicht vom Nutzer
+      else renderPins(); // deckt beide Modi (leitet im Bild-Modus auf renderImgPins)
     }catch(e){console.warn('[Dachplan] rebind:',e);}
   }
   return {open,close,openPin,rebind};
