@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v229';
+const MOB_VERSION='v230';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -19417,7 +19417,7 @@ window.Dachplan=(function(){
        oder Zoom-Änderung wird gespeichert – „öffnet, wo ich zuletzt war" bleibt. */
     map.on('moveend',()=>{if(dp&&dp.base!=='bild'){try{
       const c=map.getCenter(),z=map.getZoom(),alt=dp.center;
-      if(!alt||Math.abs(alt[0]-c.lat)>1e-5||Math.abs(alt[1]-c.lng)>1e-5||dp.zoom!==z){dp.center=[c.lat,c.lng];dp.zoom=z;saveViewSoon();}
+      if(z>=DP_ARBEITS_ZOOM&&(!alt||Math.abs(alt[0]-c.lat)>1e-5||Math.abs(alt[1]-c.lng)>1e-5||dp.zoom!==z)){dp.center=[c.lat,c.lng];dp.zoom=z;saveViewSoon();}
     }catch(_){}}});
     map.on('locationfound',e=>{if(locM)map.removeLayer(locM);if(locC)map.removeLayer(locC);
       locM=L.circleMarker(e.latlng,{radius:8,color:'#fff',weight:3,fillColor:'#2d7ef7',fillOpacity:1}).addTo(map);
@@ -19432,6 +19432,20 @@ window.Dachplan=(function(){
      zusätzliches Zeichen, keine größere Fläche, aber auf einen Blick zu sehen. */
   /* v228: Der Tropfen zeigt mit der Spitze auf seinen Punkt (Anker unten), das Quadrat
      mit seiner Mitte - sonst saesse der Teilbereich-Pin 12 px zu tief. */
+  /* ══ v230 (Befund Frank 22.08.): Was ist ein ECHTER Arbeits-Ausschnitt? ══
+     Der Dachplan merkt sich, wo man zuletzt war – richtig so, man arbeitet ja weiter.
+     Gespeichert wurde aber auch der Notfall-Wert „ganz Deutschland“ (Zoom 6), den die
+     App zeigt, wenn sie nichts kennt. Ab dann galt „Ausschnitt vorhanden“, die
+     Adress-Suche lief nie wieder, und der Auftrag öffnete dauerhaft auf der
+     Deutschland-Übersicht. In der Live-Datei bei DREI Aufträgen nachgewiesen.
+     ⛔ Ab Zoom 12 abwärts sieht man keine einzelnen Gebäude mehr – daran arbeitet
+     niemand an einem Dach weiter. Ein solcher Stand zählt deshalb weder als gemerkt
+     noch wird er gespeichert; der vorige bleibt erhalten. */
+  const DP_ARBEITS_ZOOM=12;
+  function _dpArbeitsAusschnitt(e){
+    if(!e||!e.center)return false;
+    return (e.zoom==null)||(Number(e.zoom)>=DP_ARBEITS_ZOOM);
+  }
   function pinIcon(color,nr,tp){return L.divIcon({className:'',html:'<div class="dpMk'+(tp?' dpMkTp':'')+'" style="background:'+color+'"><span>'+nr+'</span></div>',iconSize:[26,26],iconAnchor:tp?[13,13]:[13,25],popupAnchor:[0,-22]});}
   function cur(){return dp&&sel?dp.pins.find(p=>p.id===sel):null;}
   /* ══════ v224: TEILPLAN AM PIN (Wunsch Frank 21.08.) ══════
@@ -20118,7 +20132,7 @@ window.Dachplan=(function(){
     }else{
       try{E.screen.querySelector('#dpNoImg').classList.add('dp-hidden');}catch(_){} // v127
       setTimeout(()=>{try{map.invalidateSize();}catch(e){}
-        let c=dp.center,z=dp.zoom;
+        let c=_dpArbeitsAusschnitt(dp)?dp.center:null,z=dp.zoom; // v230: eine Uebersichts-Karte zaehlt nicht als gemerkter Stand
         if(!c&&t.lat&&t.lon){c=[+t.lat,+t.lon];z=19;}
         if(!c){c=[51.1657,10.4515];z=6;}
         map.setView(c,z||18);renderPins();if(!dp.center&&!(t.lat&&t.lon)&&t&&t.adresse){doSearch(_geoQuery(t.adresse)+', Deutschland');}},60);
@@ -20196,7 +20210,7 @@ window.Dachplan=(function(){
     try{guideStop();}catch(_){} // v116: Führung beim Schließen beenden
     try{liveStop();}catch(_){} // v105: GPS/Kompass nicht im Hintergrund weiterlaufen lassen (Akku)
     if(map){try{const c=map.getCenter(),z=map.getZoom(),alt=dp.center; // v214: gleiche Bremse wie moveend – sonst schrieb das Schließen das 3-mm-Delta doch
-      if(!alt||Math.abs(alt[0]-c.lat)>1e-5||Math.abs(alt[1]-c.lng)>1e-5||dp.zoom!==z){dp.center=[c.lat,c.lng];dp.zoom=z;}}catch(e){}}
+      if(z>=DP_ARBEITS_ZOOM&&(!alt||Math.abs(alt[0]-c.lat)>1e-5||Math.abs(alt[1]-c.lng)>1e-5||dp.zoom!==z)){dp.center=[c.lat,c.lng];dp.zoom=z;}}catch(e){}}
     if(E.screen)E.screen.classList.add('dp-hidden');save();
   }
   // v125 Paket 6: Dachplan direkt auf einem Pin öffnen (Aufruf aus dem 📔-Tagebuch).
