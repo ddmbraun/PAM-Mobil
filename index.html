@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v228';
+const MOB_VERSION='v229';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -13260,19 +13260,48 @@ function _fotoHerkunft(f){
    Großansicht (_mtbPinFotoOpen) – eine Logik, keine zweite Kopie. Der 📍-Knopf
    springt zum Pin in den Dachplan. */
 function _dpFotoAnzahl(t){return ((t&&t.dachplan&&t.dachplan.pins)||[]).reduce((s,p)=>s+(((p&&p.fotos)||[]).length),0);}
+/* ══ v229 (Etappe 2): ALLE Dachplan-Pins beider Ebenen, mit Gliederungsnummer ══
+   Die Listen des Auftrags (Foto-Sektion, Bautagebuch, Teilen-Fenster) lasen bisher
+   `t.dachplan.pins` – also nur die oberste Ebene. Die Pins in einem Teilbereich
+   (v224, `p.plan.pins`) tauchten dort nirgends auf, obwohl genau an ihnen die
+   Detailfotos hängen.
+   ⛔ EINE Quelle für alle drei Listen, nicht drei eigene Schleifen – sonst laufen sie
+   beim nächsten Umbau auseinander. `nr` ist die Gliederungsnummer („2" bzw. „2.1"),
+   `eltern` der Pin des Hauptplans (null auf der obersten Ebene). */
+function _dpAllePins(t){
+  const out=[];
+  for(const p of ((t&&t.dachplan&&t.dachplan.pins)||[])){
+    if(!p)continue;
+    const hn=String(p.nr!=null?p.nr:'?');
+    out.push({p:p,nr:hn,eltern:null});
+    for(const sp of ((p.plan&&p.plan.pins)||[])){
+      if(!sp)continue;
+      out.push({p:sp,nr:hn+'.'+String(sp.nr!=null?sp.nr:'?'),eltern:p});
+    }
+  }
+  return out;
+}
+/* v229: Fuer Stellen, die nur die Pin-Kennung haben (Teilen-Raster). Ein Durchlauf
+   ueber wenige Pins – guenstiger als die Kennung ueberall durchzureichen. */
+function _dpNrVon(t,pinId){
+  try{const x=_dpAllePins(t).find(y=>y.p&&String(y.p.id)===String(pinId));return x?x.nr:'?';}catch(_){return '?';}
+}
 function _dpFotoSektionMob(t){
   const COL={rot:'#e5484d',gelb:'#f5a623',gruen:'#30a46c'};
   const LBL={rot:'Schaden',gelb:'Prüfen',gruen:'OK'};
-  const pins=((t&&t.dachplan&&t.dachplan.pins)||[]).filter(p=>p&&(p.fotos||[]).length);
-  if(!pins.length)return '';
+  /* v229: beide Ebenen (siehe _dpAllePins). Der Teilbereich steht dabei im Text, damit
+     man in einer langen Liste sieht, wohin ein Foto gehört. */
+  const eintraege=_dpAllePins(t).filter(x=>x.p&&(x.p.fotos||[]).length);
+  if(!eintraege.length)return '';
   let h='';
-  for(const p of pins){
+  for(const _e of eintraege){
+    const p=_e.p;
     const col=COL[p.status||'rot']||COL.rot;
     const titel=String(p.title||'').trim();
     const notiz=String(p.note||'').replace(/\s+/g,' ').trim();
     h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin:12px 0 6px;background:var(--bg3);border:1px solid var(--border);border-left:4px solid '+col+';border-radius:0 8px 8px 0;">'
-      +'<span style="width:24px;height:24px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+esc(String(p.nr||'?'))+'</span>'
-      +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--m-scale,1));color:var(--text);">🗺 Dachplan-Pin · '+(LBL[p.status]||'')+(titel?' — '+esc(titel):(notiz?' — '+esc(notiz.length>40?notiz.slice(0,40)+'…':notiz):''))+' <span style="color:var(--text2);font-size:11px;">('+(p.fotos||[]).length+' Foto'+((p.fotos||[]).length!==1?'s':'')+')</span></span>'
+      +'<span style="width:24px;height:24px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+esc(_e.nr)+'</span>' /* v229: Gliederungsnummer */
+      +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--m-scale,1));color:var(--text);">'+(_e.eltern?('🔍 Bereich '+esc(String(_e.eltern.nr!=null?_e.eltern.nr:'?'))+' · Pin '+esc(_e.nr)):('🗺 Dachplan-Pin '+esc(_e.nr)))+' · '+(LBL[p.status]||'')+(titel?' — '+esc(titel):(notiz?' — '+esc(notiz.length>40?notiz.slice(0,40)+'…':notiz):''))+' <span style="color:var(--text2);font-size:11px;">('+(p.fotos||[]).length+' Foto'+((p.fotos||[]).length!==1?'s':'')+')</span></span>'
       +'<span onclick="_shrPinTeilen(\''+esc(String(p.id||''))+'\')" title="Alle Fotos dieses Pins teilen" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;cursor:pointer;">📤</span>' // v222
       +'<span onclick="Dachplan.openPin(\''+esc(String(p.id||''))+'\')" title="Im Dachplan zeigen" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;cursor:pointer;">📍</span>'
       +'</div>'
@@ -15107,9 +15136,12 @@ function _shrClose(){const o=document.getElementById('shrOverlay');if(o)o.remove
    t.fotos (Verdopplungsfalle v210/v211). _shrListe bleibt die EINE flache Quelle;
    die Gruppen liefern nur die Überschriften fürs Raster. */
 function _shrPinGruppen(t){
-  return ((t&&t.dachplan&&t.dachplan.pins)||[])
-    .filter(p=>p&&(p.fotos||[]).length)
-    .map(p=>({pin:p,fotos:(p.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.key||f.driveId||f.localKey))}))
+  /* v229: beide Ebenen (siehe _dpAllePins) – sonst fehlen beim Teilen genau die
+     Detailfotos aus den Teilbereichen. `nr` wandert mit, damit die Trennzeile im
+     Raster die Gliederungsnummer zeigen kann. */
+  return _dpAllePins(t)
+    .filter(x=>x.p&&(x.p.fotos||[]).length)
+    .map(x=>({pin:x.p,nr:x.nr,eltern:x.eltern,fotos:(x.p.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.key||f.driveId||f.localKey))}))
     .filter(g=>g.fotos.length);
 }
 function _shrPinKopf(p){ // Trennzeile im Teilen-Raster – gleiche Optik wie die Foto-Sektion
@@ -15119,8 +15151,9 @@ function _shrPinKopf(p){ // Trennzeile im Teilen-Raster – gleiche Optik wie di
   const titel=String(p.title||'').trim();
   const d=document.createElement('div');
   d.style.cssText='grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:6px 8px;margin-top:6px;border-left:4px solid '+col+';background:rgba(255,255,255,.07);border-radius:0 8px 8px 0;color:#eee;font-size:13px;';
-  d.innerHTML='<span style="width:22px;height:22px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;">'+esc(String(p.nr||'?'))+'</span>'
-    +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🗺 Pin '+esc(String(p.nr||'?'))+' · '+(LBL[p.status]||'')+(titel?' — '+esc(titel):'')+'</span>';
+  const _nr=_dpNrVon(currentTask(),p.id); // v229: Gliederungsnummer, auch aus einem Teilbereich
+  d.innerHTML='<span style="width:22px;height:22px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;">'+esc(_nr)+'</span>'
+    +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🗺 Pin '+esc(_nr)+' · '+(LBL[p.status]||'')+(titel?' — '+esc(titel):'')+'</span>';
   return d;
 }
 function _shrVorschau(f,img){ // v222: Pin-Fotos heißen `key` – erst Gerätekopie, sonst normale Kette
@@ -15646,7 +15679,7 @@ function _mtbPinFotoStreifen(p){
   });
   return s+'</div>';
 }
-function _mtbPinZeile(p){
+function _mtbPinZeile(p,nr){ // v229: nr = Gliederungsnummer („2" bzw. „2.1")
   const col=({rot:'#e5484d',gelb:'#f5a623',gruen:'#30a46c'})[p.status||'rot']||'#e5484d';
   const lbl=({rot:'Schaden',gelb:'Prüfen',gruen:'OK'})[p.status||'rot']||'';
   const txt=String(p.title||p.note||'').trim();
@@ -15655,8 +15688,8 @@ function _mtbPinZeile(p){
   const auf=_mtbPinOpen.has(String(p.id||''));
   const tap=fn?('_mtbTogglePinFotos(\''+pid+'\')'):('Dachplan.openPin(\''+pid+'\')');
   let s='<div onclick="'+tap+'" style="display:flex;align-items:center;gap:8px;padding:9px 10px;margin:4px 0;background:var(--bg3);border:1px solid var(--border);border-left:4px solid '+col+';border-radius:0 8px 8px 0;cursor:pointer;">'
-    +'<span style="width:24px;height:24px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+esc(String(p.nr||'?'))+'</span>'
-    +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--m-scale,1));color:var(--text);">🏠 Dachplan-Pin · '+lbl+(txt?' — '+esc(txt):'')+'</span>'
+    +'<span style="width:24px;height:24px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+esc(String(nr||p.nr||'?'))+'</span>' /* v229 */
+    +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--m-scale,1));color:var(--text);">🏠 Dachplan-Pin '+esc(String(nr||p.nr||'?'))+' · '+lbl+(txt?' — '+esc(txt):'')+'</span>'
     +(fn?'<span style="font-size:11px;color:var(--text2);flex-shrink:0;">📷 '+fn+'</span>':'')
     +'<span onclick="event.stopPropagation();Dachplan.openPin(\''+pid+'\')" title="Im Dachplan zeigen" style="flex-shrink:0;padding:4px 8px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;">📍</span>'
     +'<span style="color:var(--text2);flex-shrink:0;">'+(fn?(auf?'▾':'›'):'›')+'</span>'
@@ -15726,7 +15759,9 @@ function renderTagebuchTab(t){
   let notizen=(t.notizVerlauf||[]).map((n,i)=>({n,i,d:_mtbParseTs(n.ts)}));
   if(!showSys)notizen=notizen.filter(x=>!_mtbIsSys(x.n.text));
   const fotos=(t.fotos||[]).map((f,i)=>({f,i,d:f?_mtbParseTs(f.ts):null})).filter(x=>x.f);
-  const pins=(_mtbFilter==='alle'&&t.dachplan&&t.dachplan.pins?t.dachplan.pins:[]).map((p,i)=>({p,i,d:_mtbParseTs(p.ts)})); // v125: nur im „Alles"-Filter
+  /* v125: nur im „Alles"-Filter. v229: beide Ebenen – die Pins eines Teilbereichs
+     gehören genauso in den Tagesblock, an ihnen hängen ja die Detailfotos. */
+  const pins=(_mtbFilter==='alle'?_dpAllePins(t):[]).map((x,i)=>({p:x.p,nr:x.nr,eltern:x.eltern,i,d:_mtbParseTs(x.p.ts)}));
   const chip=(lbl,f)=>{const on=_mtbFilter===f;return '<button onclick="_mtbSetFilter(\''+f+'\')" style="flex:1;padding:9px 4px;border-radius:8px;border:1px solid '+(on?'var(--accent)':'var(--border)')+';background:'+(on?'var(--accent)':'transparent')+';color:'+(on?'#fff':'var(--text2)')+';font-size:13px;font-weight:700;cursor:pointer;">'+lbl+'</button>';};
   let html='<div style="display:flex;gap:6px;margin-bottom:12px;align-items:stretch;">'
     +chip('Alles','alle')+chip('Notizen','notiz')+chip('Fotos','foto')
@@ -15787,7 +15822,7 @@ function renderTagebuchTab(t){
     });
     if(g.pin&&g.pin.length){ // v125: Dachplan-Pins am Ende des Tagesblocks
       g.pin.sort(asc);
-      g.pin.forEach(x=>{html+=_mtbPinZeile(x.p);});
+      g.pin.forEach(x=>{html+=_mtbPinZeile(x.p,x.nr);}); // v229
     }
   });
   // Schnell-Aktionen unten (Baustellen-Bedienung)
@@ -20171,19 +20206,37 @@ window.Dachplan=(function(){
   let _focusTimer=null;
   function openPin(pinId){
     open();
+    /* v229 (Etappe 2): Seit die Listen beide Ebenen zeigen, kann der angetippte Pin in
+       einem TEILBEREICH liegen. Dann erst dorthin wechseln – sonst sucht die Schleife
+       unten in der falschen Ebene und der Sprung läuft ins Leere.
+       `open()` ist zwar async, setzt `t`/`dp` aber noch im synchronen Teil – der
+       Elternpin lässt sich hier also schon finden. */
+    try{
+      const _h=(t&&t.dachplan)||null;
+      if(_h&&!((_h.pins||[]).some(x=>x&&String(x.id)===String(pinId)))){
+        const _el=(_h.pins||[]).find(x=>x&&((x.plan&&x.plan.pins)||[]).some(sp=>sp&&String(sp.id)===String(pinId)));
+        if(_el&&!_tpOffen())tpOeffnen(_el.id);
+      }
+    }catch(_){}
     let tries=0;
     clearInterval(_focusTimer);
     _focusTimer=setInterval(()=>{
       tries++;
       try{
         const p=dp&&(dp.pins||[]).find(x=>x.id===pinId);
-        if(p&&map&&p.lat&&markers[p.id]){
+        if(p&&markers[p.id]){
           clearInterval(_focusTimer);
-          map.setView([p.lat,p.lng],Math.max(map.getZoom()||19,20));
+          /* v229: auf ein Bild springt man über imap und nx/ny, auf die Luftbild-Karte
+             über map und lat/lng. Vorher konnte openPin nur das Zweite – dadurch fanden
+             auch Bild-Pins des Hauptplans nie ihr Ziel. */
+          try{
+            if(dp.base==='bild'&&imap&&p.nx!=null)imap.setView(frToLatLng(p.nx,p.ny),Math.max(imap.getZoom()||0,1));
+            else if(map&&p.lat!=null)map.setView([p.lat,p.lng],Math.max(map.getZoom()||19,20));
+          }catch(_){}
           sel=p.id;pinBtnShow(p);
           return;
         }
-        if(tries>12){clearInterval(_focusTimer);if(p){sel=p.id;pinBtnShow(p);say('Pin '+p.nr+' – Menü oben rechts');}}
+        if(tries>12){clearInterval(_focusTimer);if(p){sel=p.id;pinBtnShow(p);say('Pin '+_tpNr(p)+' – Menü oben rechts');}}
       }catch(e){clearInterval(_focusTimer);}
     },400);
   }
