@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v233';
+const MOB_VERSION='v234';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -8960,7 +8960,21 @@ function _wpMobOpenFoto(bericht,startIdx){
     ov.remove();
     if(typeof openWpFotoZumMalen==='function')openWpFotoZumMalen(t.id,bericht.id,cur);
   };
-  navBar.append(prevBtn,malBtn,nextBtn);
+  /* v234: Wegschicken direkt von hier. Frank vor Ort: „manchmal muss ich der
+     Hausverwaltung das Bild schicken." Der Knopf teilt NICHT selbst — er öffnet das
+     vorhandene Teilen-Fenster mit genau diesem Foto vorausgewählt, wie es die
+     Pin-Großansicht seit v222 tut. Dort sitzt „🖼 Fotos bereinigt": GPS, Datum und
+     Kameradaten raus, bevor irgendetwas das Haus verlässt. */
+  const shrBtn=document.createElement('button');shrBtn.type='button';shrBtn.textContent='📤';
+  shrBtn.title='Foto wegschicken – ohne Standort- und Kameradaten';
+  shrBtn.style.cssText='padding:10px 16px;border-radius:20px;border:none;background:rgba(21,128,61,.9);color:#fff;font-size:15px;font-weight:700;cursor:pointer;';
+  shrBtn.onclick=()=>{
+    if(!bericht.id){bericht.id='wp_'+Date.now();scheduleSave();} // Altbestand ohne Kennung
+    const _bid=bericht.id,_idx=cur;
+    ov.remove();
+    if(typeof _shrWpFotoTeilen==='function')_shrWpFotoTeilen(_bid,_idx);
+  };
+  navBar.append(prevBtn,malBtn,shrBtn,nextBtn);
   function _showMobFoto(){
     const f=fotos[cur];
     lbl.textContent=(f.name||'Foto '+(cur+1))+' ('+(cur+1)+'/'+fotos.length+')';
@@ -15204,9 +15218,13 @@ function _shrOeffnen(preKeys){
   const _paare=[]; // v160: erst alle Kacheln bauen, dann EINMAL vorladen und anhängen
   const _kopfBei=new Map(); // v222: erstes Foto jeder Pin-Gruppe → davor kommt die Trennzeile
   for(const g of _shrPinGruppen(t)){if(g.fotos[0])_kopfBei.set(g.fotos[0],g.pin);}
+  const _wpKopfBei=new Map(); // v234: dasselbe je Wartungsprotokoll (Wache wie in _shrListe)
+  for(const g of (typeof _shrWpGruppen==='function'?_shrWpGruppen(t):[])){if(g.fotos[0])_wpKopfBei.set(g.fotos[0],g);}
   fotos.forEach((f,i)=>{
     const _kopfPin=_kopfBei.get(f);
     if(_kopfPin)grid.appendChild(_shrPinKopf(_kopfPin)); // v222: „🗺 Pin N · …"-Zeile
+    const _kopfWp=_wpKopfBei.get(f);
+    if(_kopfWp)grid.appendChild(_shrWpKopf(_kopfWp)); // v234: „📋 Wartungsprotokoll · …"-Zeile
     const key=_shrKey(f)||('i'+i);
     const cell=document.createElement('div');
     cell.style.cssText='position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;border:3px solid '+(_shrSel.has(key)?'var(--accent)':'transparent')+';cursor:pointer;';
@@ -15287,12 +15305,54 @@ function _shrPinFotoTeilen(pinId,idx){ // v222: Abkürzung Pin-Großansicht – 
   if(!k){toast('Foto ist noch nicht bereit','info',3000);return;}
   _shrOeffnen([k]);
 }
+/* ══ v234: WARTUNGSPROTOKOLL-FOTOS ins Teilen-Fenster ═══════════════════════════
+   Befund Frank 23.08.: „manchmal wenn ich vor Ort bin muss ich der Hausverwaltung das
+   Bild schicken." Protokoll-Fotos waren die letzte Foto-Art, die man am Handy NICHT
+   wegschicken konnte — `_shrListe` kannte nur t.fotos und die Pin-Gruppen.
+   Gebaut wie v222/v229 bei den Pins: dieselbe Liste, dieselbe Bereinigung, derselbe
+   EINE Weg. ⛔ Kein zweiter Teilen-Pfad — die Bereinigung (GPS/Datum/Kamera raus) darf
+   es nur an einer Stelle geben, sonst weicht eine Fassung irgendwann ab. */
+function _shrWpGruppen(t){
+  return ((t&&t.pruefberichte)||[])
+    .filter(b=>b&&(b.fotos||[]).length)
+    .map(b=>({bericht:b,
+      titel:String((b.kopf&&b.kopf.adresse)||b.titel||'Wartungsprotokoll').trim(),
+      datum:b.datum||'',
+      fotos:(b.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.driveId||f.localKey||f.localUrl))}))
+    .filter(g=>g.fotos.length);
+}
+function _shrWpKopf(g){ // Trennzeile im Teilen-Raster – gleiche Bauart wie _shrPinKopf
+  const d=document.createElement('div');
+  d.style.cssText='grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:6px 8px;margin-top:6px;border-left:4px solid #1a5c3a;background:rgba(255,255,255,.07);border-radius:0 8px 8px 0;color:#eee;font-size:13px;';
+  d.innerHTML='<span style="width:22px;height:22px;border-radius:50%;background:#1a5c3a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;">📋</span>'
+    +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Wartungsprotokoll'
+    +(g.datum?' · '+esc(g.datum):'')+(g.titel?' — '+esc(g.titel):'')+'</span>';
+  return d;
+}
+function _shrWpFotoTeilen(berichtId,idx){ // Abkürzung aus der Protokoll-Großansicht – EIN Foto vorausgewählt
+  const t=currentTask();if(!t)return;
+  const b=((t.pruefberichte)||[]).find(x=>x&&String(x.id)===String(berichtId));
+  const fo=b&&(b.fotos||[])[idx];
+  const k=fo&&_shrKey(fo);
+  if(!k){toast('Foto ist noch nicht bereit','info',3000);return;}
+  _shrOeffnen([k]);
+}
 function _shrListe(t){
   const normale=((t&&t.fotos)||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.driveId||f.localKey||f.localUrl));
-  return normale.concat(_shrPinGruppen(t).flatMap(g=>g.fotos)); // v222: erst die normalen Fotos, dann die Pins
+  // v222: erst die normalen Fotos, dann die Pins · v234: zuletzt die Protokoll-Fotos
+  // ⚠ typeof-Wache: test_v222 schneidet _shrListe aus und führt es OHNE Umgebung aus.
+  // Ohne sie stürzt die Suite ab statt fehlzuschlagen (3 statt 26 Prüfungen) – und eine
+  // abgestürzte Suite sieht in der Übersicht fast aus wie eine bestandene.
+  return normale.concat(_shrPinGruppen(t).flatMap(g=>g.fotos))
+                .concat((typeof _shrWpGruppen==='function'?_shrWpGruppen(t):[]).flatMap(g=>g.fotos));
 }
 function _shrGewaehlte(){
-  const t=currentTask();if(!t||!t.fotos||!_shrSel)return[];
+  /* ⛔ v234: `!t.fotos` musste hier raus. Die Abfrage stammt aus der Zeit, als es NUR
+     t.fotos gab. Ein Auftrag, dessen Bilder ausschließlich im Wartungsprotokoll (oder am
+     Dachplan-Pin) hängen, hat gar kein t.fotos — dort stieg das Teilen genau hier
+     stillschweigend aus und schickte nichts, obwohl Kacheln zu sehen und angetippt waren.
+     _shrListe verträgt ein fehlendes t.fotos längst (`||[]`). */
+  const t=currentTask();if(!t||!_shrSel)return[];
   // v154 FIX: dieselbe Schlüssel-Bildung wie beim Aufbau der Kacheln in _shrOeffnen –
   // dort dient die laufende Nummer als Notschlüssel, wenn ein Foto (noch) weder localKey
   // noch driveId noch id hat. Diese Stelle fragte NUR _shrKey ab, das für so ein Foto ''
@@ -18185,7 +18245,7 @@ function openLightbox(src,name,externalUrl,opts){
   }else{
     _lbFotoIdx=-1;_lbFotoKey='';
     bar.classList.remove('open','editing');
-    if(shareBtn)shareBtn.style.display=_lbPinFoto?'':'none'; // v222: auch im Pin-Einsatz teilen können
+    if(shareBtn)shareBtn.style.display=(_lbPinFoto||_lbWpFoto)?'':'none'; // v222: Pin · v234: Protokoll
     {const _ib=document.getElementById('lbInfoBtn');if(_ib)_ib.style.display=_lbPinFoto?'':'none';} // v223
     if(_navP)_navP.style.display='none';
     if(_navN)_navN.style.display='none';
@@ -18737,6 +18797,12 @@ function lbShareFoto(){
     const info=_lbPinFoto;
     closeLightbox(); // setzt _lbPinFoto zurück – Info vorher gesichert
     _shrPinFotoTeilen(info.pinId,info.idx);
+    return;
+  }
+  if(_lbWpFoto){ // v234: Protokoll-Foto in der Mal-Ansicht – wer eben einen Mangel
+    const info=_lbWpFoto; //     eingekringelt hat, will meist genau das verschicken
+    closeLightbox(); // setzt _lbWpFoto zurück – Info vorher gesichert
+    _shrWpFotoTeilen(info.berichtId,info.idx);
     return;
   }
   if(_lbFotoIdx>=0){const i=_lbFotoIdx;closeLightbox();shareFoto(i);}
