@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v232';
+const MOB_VERSION='v233';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -16338,6 +16338,13 @@ try{
 }catch(e){console.warn('[Einstellungen] gemerkte Kürzel-Liste:',e);}
 async function _pamSettingsAktualisieren(){
   try{
+    // v233: Zwischenspeicher zuerst freigeben, damit JEDER Aufruf wirklich frisch
+    // liest. `_mobilLeseDesktopSettings` merkt sich sein Ergebnis für die ganze
+    // Sitzung – ohne diese Zeile kam der 🔄-Knopf sofort mit dem alten Stand zurück,
+    // und am Rechner geänderte Kürzel erreichten das Handy erst nach einem
+    // vollständigen App-Start. Der Preis ist EIN Drive-Zugriff je Aktualisieren;
+    // der Poll-Takt (alle 10 s) ruft hier bewusst NICHT an.
+    _mobilSettingsCache=null;
     const st=await _mobilLeseDesktopSettings();
     if(st&&st.hvKuerzel&&typeof st.hvKuerzel==='object'){
       pamSettings={version:st.version||1,hvKuerzel:st.hvKuerzel};
@@ -16345,9 +16352,8 @@ async function _pamSettingsAktualisieren(){
       return;
     }
     // Nichts Brauchbares bekommen (kein Netz, kein Token, Feld fehlt): den gemerkten
-    // Stand behalten und den Zwischenspeicher freigeben, damit der nächste Anlauf es
-    // noch einmal versucht – sonst bliebe die App bis zum Neustart beim Fehlversuch.
-    _mobilSettingsCache=null;
+    // Stand behalten. Das Freigeben oben erledigt schon, dass der nächste Anlauf es
+    // wirklich noch einmal versucht – hier ist nichts mehr zu tun.
   }catch(e){console.warn('[Einstellungen] Kürzel-Liste (mobil):',e);}
 }
 let _mobilSettingsCache=null;
