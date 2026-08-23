@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v231';
+const MOB_VERSION='v232';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -7639,6 +7639,10 @@ async function loadFile(){
     startPolling();
     _mobOfflineActive=false; // frischer Drive-Stand → Offline-Modus verlassen, Speichern wieder erlaubt
     try{ if(typeof _pamTryOpenPendingTaskMobile==='function')_pamTryOpenPendingTaskMobile(); }catch(e){} // Deep-Link öffnen, sobald Daten da sind (auch nach Login-Redirect)
+    // v232: Genau hier ist die Anmeldung gültig und der Drive-Stand frisch – der
+    // richtige Augenblick, die Kürzel-Liste nachzuziehen. Bewusst OHNE await: das
+    // Laden der Boards darf nicht darauf warten.
+    try{ _pamSettingsAktualisieren(); }catch(e){}
     return true;
   }catch(e){toast('Laden fehlgeschlagen: '+e.message,'error');return false;}
 }
@@ -16308,6 +16312,44 @@ async function _quickNoteFolderUsable(id){
 // Desktops (ab b566) gibt es das Feld „Schnellnotizen (Handy)" – ist dort ein Ordner
 // eingetragen, gilt er auch hier. Leer oder nicht erreichbar = alles wie bisher
 // (Seed-ID + Namens-Fallback). Einmal pro App-Start gelesen.
+/* ── v232: Kürzel je Hausverwaltung – dieselbe Liste wie am Rechner ─────────────
+   Der Rechner legt das Kürzel seit b747/b748 fest; die Liste liegt in Drive in
+   `pam_settings.json` unter `hvKuerzel`. Das Handy riet bis v231 weiter am
+   Ordnernamen – und kam damit auf einen anderen Vorspann als der Rechner.
+   Gefangen hat das `test_v195` – die Prüfung „Handy und Rechner rechnen gleich".
+   ⚠ Zahlen zur Messung stehen in CHANGES.md, nicht hier: wie viele Verwaltungen
+     betreut werden, ist selbst eine Kundenangabe.
+   ⛔ Die Liste wird hier NUR GELESEN. Gepflegt wird sie allein am Rechner; am
+      Handy gibt es dafür bewusst keinen Bildschirm.
+   ⛔ Es steht weder ein Verwaltungsname noch ein Kürzel in dieser Datei – sie wird
+      öffentlich ausgeliefert. Hier steht nur der WEG zur Liste.
+   ⛔ `_objKuerzelAusNas` bleibt synchron. Ein `await` mitten im Aufruf würde alle
+      gemerkten Plätze veralten lassen (die Lehre aus b664) – deshalb liegt die
+      Liste in einer normalen Variablen, die vorher gefüllt wird.
+   ⚠ Der Name `pamSettings` ist derselbe wie am Rechner: `test_v195` vergleicht die
+     beiden Funktionsrümpfe Zeichen für Zeichen. */
+const PAM_SETTINGS_KEY='pam_settings_mobil';
+let pamSettings={version:1,hvKuerzel:{}};
+// Zuerst der zuletzt gemerkte Stand vom Gerät: auf dem Dach ohne Empfang ist das die
+// einzige Quelle. Ohne ihn hinge der Kartentitel am Funkloch – mal mit Kürzel, mal ohne.
+try{
+  const _s=JSON.parse(localStorage.getItem(PAM_SETTINGS_KEY)||'null');
+  if(_s&&typeof _s==='object'&&_s.hvKuerzel&&typeof _s.hvKuerzel==='object')pamSettings=_s;
+}catch(e){console.warn('[Einstellungen] gemerkte Kürzel-Liste:',e);}
+async function _pamSettingsAktualisieren(){
+  try{
+    const st=await _mobilLeseDesktopSettings();
+    if(st&&st.hvKuerzel&&typeof st.hvKuerzel==='object'){
+      pamSettings={version:st.version||1,hvKuerzel:st.hvKuerzel};
+      try{localStorage.setItem(PAM_SETTINGS_KEY,JSON.stringify(pamSettings));}catch(e){}
+      return;
+    }
+    // Nichts Brauchbares bekommen (kein Netz, kein Token, Feld fehlt): den gemerkten
+    // Stand behalten und den Zwischenspeicher freigeben, damit der nächste Anlauf es
+    // noch einmal versucht – sonst bliebe die App bis zum Neustart beim Fehlversuch.
+    _mobilSettingsCache=null;
+  }catch(e){console.warn('[Einstellungen] Kürzel-Liste (mobil):',e);}
+}
 let _mobilSettingsCache=null;
 async function _mobilLeseDesktopSettings(){
   if(_mobilSettingsCache!==null)return _mobilSettingsCache;
@@ -16411,14 +16453,28 @@ function _pamGeoQuery(a){
   return (str+(plz?', '+plz:'')+(ort?' '+ort:'')).trim();
 }
 // Titel-Vorspann: Das Kürzel steht an den Objektdaten nirgends (dort steht der
-// ausgeschriebene Firmenname), wohl aber im NAS-Pfad im Ordner unterhalb von
-// 01_Hausverwaltungen – erstes Wort. So bringt jede Hausverwaltung ihr Kürzel mit.
+// ausgeschriebene Firmenname). Seit v232 kommt es aus derselben Festlegung wie am
+// Rechner (⚙ → „Kürzel je Hausverwaltung", b747/b748) – siehe `pamSettings` oben.
+// Steht der Ordner dort nicht drin, wird wie früher aus dem NAS-Pfad geraten:
+// erstes Wort unterhalb von 01_Hausverwaltungen, wenn es 2–5 Großbuchstaben sind.
 const V195_TRENNER=' – ';
 function _objKuerzelAusNas(nas){
   const teile=String(nas||'').split(/[\\/]+/).filter(Boolean);
   const i=teile.findIndex(x=>/^01_Hausverwaltungen$/i.test(x));
-  const ordner=(i>=0&&teile[i+1])?teile[i+1]:'';
-  const wort=(ordner.trim().split(/\s+/)[0]||'');
+  const ordner=(i>=0&&teile[i+1])?String(teile[i+1]).trim():'';
+  if(!ordner)return '';
+  // b747: Festlegung aus den Einstellungen zuerst. Groß-/Kleinschreibung egal –
+  // Ordner werden gelegentlich umbenannt.
+  // ⚠ `typeof`-Wache, weil diese Funktion in den Prüfsuiten einzeln ausgeschnitten
+  // und ohne die Umgebung ausgeführt wird (test_v195). Ohne sie bricht sie dort ab.
+  const tab=(typeof pamSettings!=='undefined'&&pamSettings&&pamSettings.hvKuerzel)||null;
+  if(tab){
+    const fest=Object.keys(tab).find(k=>String(k).toLowerCase()===ordner.toLowerCase());
+    if(fest&&tab[fest])return String(tab[fest]);
+  }
+  const wort=(ordner.split(/\s+/)[0]||'');
+  // Nur, was wie ein Kürzel aussieht. Heißt der Ordner „Musterverwaltung Erfurt",
+  // bleibt der Vorspann ohne Kürzel – lieber nichts als ein sinnloses Wort davor.
   return /^[A-ZÄÖÜ]{2,5}$/.test(wort)?wort:'';
 }
 function _objTitelVorspann(obj){
