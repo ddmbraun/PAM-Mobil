@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v234';
+const MOB_VERSION='v235';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -7785,6 +7785,11 @@ function _dachplanKonfliktMerge(remoteDp,localDp){
      Gerät getroffene Umschaltung nie an. */
   {const _rt=remoteDp.baseTs||'',_lt=localDp.baseTs||'';
    if(_rt>_lt){m.base=remoteDp.base;m.baseTs=_rt;}}
+  /* v235: dieselbe Regel für die KARTENEBENE (amtlich TH / Esri / Google / Karte).
+     Ohne sie gälte die Object.assign-Zeile oben – „lokal gewinnt" – und die am anderen
+     Gerät getroffene Wahl käme nie an, genau wie die Ansicht bis v225. */
+  {const _rt=remoteDp.layerTs||'',_lt=localDp.layerTs||'';
+   if(_rt>_lt){m.layer=remoteDp.layer;m.layerTs=_rt;}}
   /* Foto-Union je Pin: dieselbe Aufnahme erkennt man an `key` ODER `driveId` –
      ein Nachzügler-Upload ergänzt driveId am selben key, ein Desktop-Foto trägt
      nur driveId. Beim Zusammenlegen bleiben BEIDE Kennungen erhalten; eine
@@ -19309,14 +19314,28 @@ window.Dachplan=(function(){
   let imap=null,imgLayer=null,locMi=null,locCi=null;
   let layObjs=null,layName=''; // v129: Kartenebenen + aktive Ebene (Auswahl steckt im ⋯-Menü)
   // v129: Ebene umschalten (ersetzt den Leaflet-Umschalter im Bild)
-  function setLayer(name){
+  /* ══ v235: Die KARTENEBENE gehört zum AUFTRAG, nicht zum Gerät ═══════════════════
+     Bis v234 stand die Wahl (amtlich TH / Esri / Google / Karte) ausschließlich in
+     localStorage['ptpm_dp_layer'] – am PC unter dem anderen Namen 'pam_dp_layer'.
+     localStorage wandert nie nach Drive, es gab also gar keine Leitung dazwischen:
+     „am PC Google, am Handy amtlich TH" blieb für immer verschieden (Befund Frank 23.08.).
+     Jetzt trägt der Auftrag `dachplan.layer` + `dachplan.layerTs` – dasselbe Muster wie
+     `base`/`baseTs` seit v225, KEIN zweiter Weg.
+     ⛔ `stumm` für alles Automatische (Öffnen, Nachladen) – sonst Ping-Pong wie v214.
+     ⛔ Der Teilbereich hat keine Kartenebene (Riegel in setBase, v226/b742). */
+  function setLayer(name,stumm){
     if(!layObjs||!layObjs[name])return;
     if(!map){say('Die Ansicht gilt für die Luftbild-Karte','error');return;}
     Object.keys(layObjs).forEach(k=>{try{if(map.hasLayer(layObjs[k]))map.removeLayer(layObjs[k]);}catch(_){}});
     layObjs[name].addTo(map);
     layName=name;
     try{localStorage.setItem('ptpm_dp_layer',name);}catch(_){}
-    markLayer();say(name);
+    if(dp&&!_tpStack){ // v235: die Wahl an den Auftrag – im Teilbereich gibt es keine
+      const _wechsel=(dp.layer!==name);
+      dp.layer=name;
+      if(_wechsel&&!stumm){try{dp.layerTs=new Date().toISOString();save();}catch(_){}}
+    }
+    markLayer();if(!stumm)say(name);
   }
   function markLayer(){try{E.screen.querySelectorAll('.dpLay').forEach(b=>b.classList.toggle('on',b.dataset.lay===layName));}catch(_){}}
   // v129: kleiner Knopf oben rechts, wenn ein Pin ohne Pin-Fenster angesprungen wurde
@@ -19719,6 +19738,10 @@ window.Dachplan=(function(){
     // v129: kein Leaflet-Umschalter mehr im Bild – Auswahl steckt im ⋯-Menü (setLayer)
     let _startName=(t&&t.lat&&t.lon&&!_inTH(Number(t.lat),Number(t.lon)))?'Luftbild Welt (Esri)':'Luftbild amtlich (TH)';
     try{const _sav=localStorage.getItem('ptpm_dp_layer');if(_sav&&_lays[_sav])_startName=_sav;}catch(e){} // v126: gewählte Ebene gemerkt
+    /* v235: Die Wahl am AUFTRAG hat Vorrang vor der Geräte-Notiz darüber. Die bleibt für
+       den ALTBESTAND – Aufträge ohne `layer` sollen nicht alle auf „amtlich TH" springen.
+       Kennt dieses Gerät den Namen nicht, bleibt es beim Gerätewert statt bei grauer Fläche. */
+    try{const _al=dp&&dp.layer;if(_al&&_lays[_al])_startName=_al;}catch(e){}
     layObjs=_lays;layName=_startName;
     _lays[_startName].addTo(map);
     markLayer();
@@ -20601,6 +20624,7 @@ window.Dachplan=(function(){
       /* v225: merken, was GERADE auf dem Schirm ist – gleich zeigt dp auf das frische
          Objekt, und dessen `base` ist der gespeicherte, nicht der gewählte Stand. */
       const _altBase=(dp&&dp.base)||'map', _altTs=(dp&&dp.baseTs)||'';
+      const _altLay=(dp&&dp.layer)||'', _altLayTs=(dp&&dp.layerTs)||''; // v235: dasselbe für die Kartenebene
       if(!frisch.dachplan||frisch.dachplan.mode!=='map')frisch.dachplan={mode:'map',base:'map',center:null,zoom:null,pins:[],nextNr:1};
       t=frisch;dp=frisch.dachplan;
       if(!dp.pins)dp.pins=[];if(!dp.nextNr)dp.nextNr=(dp.pins.length+1);if(!dp.base)dp.base='map';
@@ -20609,6 +20633,12 @@ window.Dachplan=(function(){
          Ansicht zurück – und mit ihr verschwanden die Karten-Pins still, weil
          renderPins im Bild-Modus auf renderImgPins umleitet. */
       if(_altTs&&_altTs>(dp.baseTs||'')){dp.base=_altBase;dp.baseTs=_altTs;}
+      /* v235: dieselbe Regel für die Kartenebene – und hat die Gegenseite die jüngere
+         Wahl, wird die Karte WIRKLICH umgeschaltet, nicht nur der Wert gesetzt. Sonst
+         stünde am offenen Handy weiter das alte Luftbild, obwohl der Auftrag schon das
+         neue trägt. `stumm`, denn das kommt vom Nachladen, nicht vom Nutzer. */
+      if(_altLayTs&&_altLayTs>(dp.layerTs||'')){dp.layer=_altLay;dp.layerTs=_altLayTs;}
+      else if(!_tpStack&&dp.layer&&dp.layer!==layName)setLayer(dp.layer,true);
       if(sel&&!dp.pins.some(p=>p&&p.id===sel)){sel=null;closeSheet();} // gewählter Pin existiert nicht mehr
       /* Hat sich die Ansicht geändert, muss WIRKLICH umgeschaltet werden – renderPins
          allein zeichnet nur neu und ließe die falsche Fläche stehen. */
