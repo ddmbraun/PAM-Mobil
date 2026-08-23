@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v230';
+const MOB_VERSION='v231';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -8747,7 +8747,12 @@ function _openWartungsprotokollMobil(existingIdx){
             const rmv=document.createElement('button');rmv.type='button';rmv.textContent='✕';
             rmv.style.cssText='position:absolute;top:2px;right:2px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:8px;cursor:pointer;padding:0;line-height:16px;text-align:center;z-index:2;';
             rmv.onclick=(e)=>{e.stopPropagation();it.fotoRefs.splice(ri,1);scheduleSave();_mobRenderFotoRefs();};
-            const f=bericht.fotos.find(f=>f.driveId===refId||f.localUrl===refId);
+            /* v231: `localKey` mitprüfen. Ein frisch aufgenommenes Foto hat noch keine
+               driveId, und seine `localUrl` wechselt kurz darauf von blob: auf data:
+               (Schritt B in _wpMobFotoAufnehmen) – eine Verknüpfung darauf riss still.
+               `localKey` steht von der Aufnahme an fest. Alte Verweise auf driveId oder
+               localUrl gelten unverändert weiter. */
+            const f=bericht.fotos.find(f=>f.driveId===refId||f.localKey===refId||f.localUrl===refId);
             if(f){
               const img=document.createElement('img');
               img.style.cssText='width:100%;height:100%;object-fit:cover;';
@@ -8812,6 +8817,7 @@ function _openWartungsprotokollMobil(existingIdx){
     const fInfo=document.createElement('div');fInfo.style.cssText='padding:0 14px 8px;font-size:11px;color:var(--text2);';
     fInfo.textContent='Klicken = im PDF ✓. 360°-Fotos bitte als Flat-Export aus Insta360.';
     const fotoGrid=document.createElement('div');fotoGrid.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px 8px;';
+    fotoGrid.id='_wpMobFotoGrid'; // v231: damit der Maler die Miniaturen nachziehen kann
     _wpMobRenderFotos(bericht,fotoGrid);
     const fotoBtnRow=document.createElement('div');fotoBtnRow.style.cssText='display:flex;gap:8px;padding:0 14px 14px;';
     const camBtn=document.createElement('button');camBtn.type='button';camBtn.textContent='📷 Kamera';
@@ -8935,7 +8941,22 @@ function _wpMobOpenFoto(bericht,startIdx){
   const nextBtn=document.createElement('button');nextBtn.type='button';nextBtn.textContent='Weiter ▶';
   nextBtn.style.cssText='padding:10px 20px;border-radius:20px;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:14px;font-weight:600;cursor:pointer;';
   nextBtn.onclick=()=>{if(cur<fotos.length-1){cur++;_showMobFoto();}};
-  navBar.append(prevBtn,nextBtn);
+  /* v231: Der Stift. Diese Ansicht hier bekommt bewusst KEINEN eigenen Maler – sie
+     schließt sich und übergibt an die normale Groß-Ansicht, in der der Stift seit jeher
+     wohnt (dasselbe tut der Dachplan seit v215). Ein zweiter Maler wäre ein zweiter Ort,
+     an dem dieselben Fehler noch einmal zu reparieren wären. */
+  const malBtn=document.createElement('button');malBtn.type='button';malBtn.textContent='✏️ Malen';
+  malBtn.style.cssText='padding:10px 20px;border-radius:20px;border:none;background:#2e4fc4;color:#fff;font-size:14px;font-weight:700;cursor:pointer;';
+  malBtn.onclick=()=>{
+    const t=currentTask();
+    if(!t){toast('Kein Auftrag offen','error');return;}
+    // Altbestand: Berichte von vor der Kennung („wp_…") bekommen sie jetzt – sonst
+    // fände der Speicher-Schritt das Protokoll später nicht wieder.
+    if(!bericht.id){bericht.id='wp_'+Date.now();scheduleSave();}
+    ov.remove();
+    if(typeof openWpFotoZumMalen==='function')openWpFotoZumMalen(t.id,bericht.id,cur);
+  };
+  navBar.append(prevBtn,malBtn,nextBtn);
   function _showMobFoto(){
     const f=fotos[cur];
     lbl.textContent=(f.name||'Foto '+(cur+1))+' ('+(cur+1)+'/'+fotos.length+')';
@@ -8968,7 +8989,9 @@ function _wpMobOpenFoto(bericht,startIdx){
 
 function _wpMobFotoPickerForItem(bericht,it,onChangeCb){
   const fotos=(bericht.fotos||[]);
-  if(!fotos.length){toast('Bitte zuerst Fotos laden','info');return;}
+  /* v231: Früher ging hier gar nichts, solange die Berichtsliste leer war („Bitte zuerst
+     Fotos laden") – man musste erst nach unten zu den Fotos, aufnehmen, zurückscrollen und
+     dann verknüpfen. Jetzt öffnet sich der Dialog auch leer, weil er selbst aufnehmen kann. */
   const GID='_wpMobFotoPicker';const old=document.getElementById(GID);if(old)old.remove();
   const ov=document.createElement('div');ov.id=GID;
   ov.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;';
@@ -8988,14 +9011,23 @@ function _wpMobFotoPickerForItem(bericht,it,onChangeCb){
   grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;';
   fotos.forEach((f,fi)=>{
     const cell=document.createElement('div');
-    const linked=(it.fotoRefs||[]).includes(f.driveId||f.localUrl||'');
+    // v231: derselbe stabile Schlüssel wie beim Auflösen oben – localKey vor localUrl.
+    const _refKey=f=>f.driveId||f.localKey||f.localUrl||'';
+    const _refDrin=f=>{const r=(it.fotoRefs||[]);
+      return r.includes(_refKey(f))||(f.driveId&&r.includes(f.driveId))||(f.localKey&&r.includes(f.localKey))||(f.localUrl&&r.includes(f.localUrl));};
+    const linked=_refDrin(f);
     cell.style.cssText='position:relative;border:2px solid '+(linked?'#c0392b':'var(--border)')+';border-radius:8px;overflow:hidden;background:var(--bg3);aspect-ratio:1;cursor:pointer;';
     cell.onclick=()=>{
       if(!it.fotoRefs)it.fotoRefs=[];
-      const key=f.driveId||f.localUrl||'';
-      const ix=it.fotoRefs.indexOf(key);
+      const key=_refKey(f);
+      /* Abhängen muss auch einen ALTEN Verweis treffen (driveId/localUrl aus früheren
+         Fassungen) – sonst bliebe er stehen und das Foto wirkte „nicht abwählbar". */
+      let ix=it.fotoRefs.indexOf(key);
+      if(ix<0&&f.driveId)ix=it.fotoRefs.indexOf(f.driveId);
+      if(ix<0&&f.localKey)ix=it.fotoRefs.indexOf(f.localKey);
+      if(ix<0&&f.localUrl)ix=it.fotoRefs.indexOf(f.localUrl);
       if(ix>=0)it.fotoRefs.splice(ix,1);else it.fotoRefs.push(key);
-      const lk=it.fotoRefs.includes(key);
+      const lk=_refDrin(f);
       cell.style.borderColor=lk?'#c0392b':'var(--border)';
       const fpb=cell.querySelector('.fpbm');if(fpb)fpb.style.display=lk?'flex':'none';
       scheduleSave();if(onChangeCb)onChangeCb();
@@ -9012,17 +9044,59 @@ function _wpMobFotoPickerForItem(bericht,it,onChangeCb){
     fpb.textContent='✓';
     cell.appendChild(fpb);grid.appendChild(cell);
   });
+  if(!fotos.length){
+    const leer=document.createElement('div');
+    leer.style.cssText='grid-column:1/-1;font-size:12px;color:var(--text2);padding:10px 2px;';
+    leer.textContent='Noch keine Fotos im Bericht – unten aufnehmen oder aus Drive laden.';
+    grid.appendChild(leer);
+  }
+  /* ── v231: dieselbe Auswahl wie unten im Formular, direkt am Mangel ──────────────
+     Kamera und Galerie hängen das Aufgenommene gleich an DIESEN Punkt (über den
+     `onBehalten`-Rückruf, also erst nach der Behalten/Verwerfen-Frage). Drive öffnet nur
+     die Ordner-Auswahl: dort kommen mehrere Bilder auf einmal in die Berichtsliste, und
+     welche davon zu diesem einen Mangel gehören, kann niemand raten – die hakt man
+     danach im wieder geöffneten Dialog an. */
+  const neuRow=document.createElement('div');
+  neuRow.style.cssText='display:flex;gap:8px;';
+  const _formGrid=()=>document.getElementById('_wpMobFotoGrid')||document.createElement('div');
+  const _verknuepfeNeue=(neue)=>{
+    if(!it.fotoRefs)it.fotoRefs=[];
+    (neue||[]).forEach(f=>{
+      const k=f.driveId||f.localKey||f.localUrl||'';
+      if(k&&!it.fotoRefs.includes(k))it.fotoRefs.push(k);
+    });
+    scheduleSave();
+    if(onChangeCb)onChangeCb();
+    toast('✓ '+(neue||[]).length+' Foto'+((neue||[]).length!==1?'s':'')+' verknüpft','success',2000);
+  };
+  const _aufnehmen=(cam)=>{
+    ov.remove(); // der Aufnahme-Dialog legt sich sonst hinter diesen hier
+    _wpMobFotoAufnehmen(bericht,_formGrid(),cam,_verknuepfeNeue);
+  };
+  const mkBtn=(txt,stil,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=txt;
+    b.style.cssText='flex:1;padding:10px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;'+stil;
+    b.onclick=fn;return b;};
+  neuRow.append(
+    mkBtn('📷 Kamera','border:1.5px dashed var(--accent);background:rgba(108,99,255,.06);color:var(--accent);',()=>_aufnehmen(true)),
+    mkBtn('🖼 Galerie','border:1.5px solid var(--border);background:var(--bg3);color:var(--text);',()=>_aufnehmen(false)),
+    mkBtn('☁ Drive','border:1.5px dashed #34a853;background:rgba(52,168,83,.06);color:#1a7a40;',()=>{
+      ov.remove();_wpMobLadeDriveFotos(bericht,_formGrid());
+    })
+  );
   const doneBtn=document.createElement('button');doneBtn.type='button';doneBtn.textContent='✓ Fertig';
   doneBtn.style.cssText='width:100%;padding:12px;border-radius:10px;background:#1a5c3a;color:#fff;border:none;font-size:15px;font-weight:700;cursor:pointer;';
   doneBtn.onclick=()=>ov.remove();
-  box.append(hdr,hint,grid,doneBtn);
+  box.append(hdr,hint,grid,neuRow,doneBtn);
   ov.appendChild(box);
   ov.onclick=()=>ov.remove();
   document.body.appendChild(ov);
 }
 
 
-function _wpMobFotoAufnehmen(bericht,grid,camera){
+/* v231: `onBehalten` – Rückruf mit den Fotos, die die Entscheidung überlebt haben.
+   Nur so kann der Mangel-Picker frisch Aufgenommenes gleich verknüpfen, ohne ein
+   verworfenes Bild zu verknüpfen (der Verweis bliebe sonst als Karteileiche stehen). */
+function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
   const inp=document.createElement('input');inp.type='file';inp.accept='image/*';
   if(!camera)inp.multiple=true; // Galerie: Mehrfachauswahl erlauben
   if(camera)inp.setAttribute('capture','environment');inp.style.display='none';
@@ -9050,15 +9124,30 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
        Aufnahme sofort nach Drive; wer danach „verwerfen" wollte, hatte die Datei bereits
        oben liegen und musste sie in Drive von Hand hinterherlöschen. Jetzt gilt auch
        hier: entschieden wird VOR dem Upload, und verworfen heißt „war nie in Drive".
-       ⚠ Kein „📷 Weiteres" und kein „Text/Malen": dieser Weg baut ein Wegwerf-Eingabefeld
-         (es gibt kein festes Kamerafeld zum Anklicken), und die Berichts-Fotos liegen in
-         `bericht.fotos`, nicht in `t.fotos` — die Vollbild-Ansicht fände sie dort nicht.
-         Lieber zwei Knöpfe weniger als zwei, die ins Leere greifen (Regel aus v185). */
+       ⚠ v203 ließ „📷 Weiteres" und „Text/Malen" hier bewusst weg: dieser Weg baut ein
+         Wegwerf-Eingabefeld (kein festes Kamerafeld zum Anklicken), und die Berichts-Fotos
+         liegen in `bericht.fotos`, nicht in `t.fotos` — die Vollbild-Ansicht fand sie dort
+         nicht. Lieber zwei Knöpfe weniger als zwei, die ins Leere greifen (Regel aus v185).
+       ⚡ v231: Beide Gründe sind weg, deshalb sind beide Knöpfe zurück — nicht gegen die
+         Entscheidung von v203, sondern weil ihre Voraussetzung jetzt existiert:
+         `weiteresFn` macht die Kamera selbst wieder auf (kein Feld nötig), und
+         `bearbeitenFn` führt über `openWpFotoZumMalen` in die Groß-Ansicht, die den
+         Bericht seit v231 kennt. Beide Schalter sind dieselbe Bauart wie `verwerfenFn`. */
     let _wpEntscheidung=Promise.resolve();
     try{
       _wpEntscheidung=_showSchnellFotoPreview(fotoObjs.map(o=>o.fo),null,{
-        bearbeiten:false,
-        weiteres:false,
+        bearbeitenFn:function(f){
+          const t2=currentTask();
+          if(!t2){toast('Kein Auftrag offen','error');return;}
+          if(!bericht.id){bericht.id='wp_'+Date.now();scheduleSave();} // Altbestand ohne Kennung
+          const i=bericht.fotos.indexOf(f);
+          if(i<0){toast('Foto nicht gefunden','error');return;}
+          openWpFotoZumMalen(t2.id,bericht.id,i);
+        },
+        /* v191-Regel gilt weiter: nach Bildern aus der Galerie KEIN Kamera-Angebot —
+           dort holt man mehrere auf einmal. Nur der Kamera-Weg bekommt „Weiteres". */
+        weiteresFn: camera?function(){_wpMobFotoAufnehmen(bericht,grid,true);}:undefined,
+        weiteres: !!camera,
         verwerfenFn:function(f){
           const i=bericht.fotos.indexOf(f);
           if(i>=0)bericht.fotos.splice(i,1);
@@ -9085,6 +9174,10 @@ function _wpMobFotoAufnehmen(bericht,grid,camera){
        des alten) gilt mit, weil es derselbe Dialog ist. */
     try{await _wpEntscheidung;}catch(e){console.warn('[WP-Foto] Entscheidung:',e);}
     const _wpBehalten=fotoObjs.filter(o=>o.fo._entscheidung!=='verworfen');
+    // v231: erst jetzt verknüpfen – Verworfenes ist hier schon heraus
+    if(typeof onBehalten==='function'&&_wpBehalten.length){
+      try{onBehalten(_wpBehalten.map(o=>o.fo));}catch(e){console.warn('[WP-Foto] onBehalten:',e);}
+    }
     if(!_wpBehalten.length){try{_wpMobRenderFotos(bericht,grid);}catch(e){}return;}
 
     // ── 2. Uploads parallel im Hintergrund ─────────────────────────────────
@@ -10437,7 +10530,11 @@ function _showSchnellFotoPreview(fo, t, opt){
   // v191: „📷 Weiteres Foto" nur, wenn die Aufnahme von der KAMERA kam. Nach einem
   // Bild aus der Galerie wäre ein Kamera-Angebot verkehrt — dort holt man mehrere
   // auf einmal. Bis v190 hing der Knopf ungefiltert an jedem Dialog.
-  const kannWeiteres   = opt.weiteres   !== false;
+  /* v231: `weiteresFn` – dritter Schalter derselben Bauart wie `verwerfenFn` (v203) und
+     `bearbeitenFn` (v215). Der Standardweg klickt ein Kamerafeld per Kennung an; das
+     Wartungsprotokoll baut aber ein Wegwerf-Feld ohne Kennung und konnte „Weiteres"
+     deshalb nie anbieten. Wer selbst weiß, wie er seine Kamera aufmacht, sagt es hier. */
+  const kannWeiteres   = (opt.weiteres !== false) || (typeof opt.weiteresFn==='function');
   const liste=Array.isArray(fo)?fo.filter(Boolean):(fo?[fo]:[]);
   /* ⛔ v191: Ein noch offener Dialog wird hier gleich ersetzt (prev.remove()). Sein
      Versprechen MUSS vorher erfüllt werden — sonst wartet das zugehörige uploadFoto
@@ -10542,6 +10639,15 @@ function _showSchnellFotoPreview(fo, t, opt){
      wieder auf. Ohne die Entscheidung bliebe der Stapel hängen und nichts ginge hoch. */
   btnMore.onclick=function(){
     schliessen();
+    /* v231: eigener Kamera-Weg zuerst – siehe `weiteresFn` oben.
+       ⚠ `typeof`-Wache um `opt`, weil dieser Rückruf in den Prüfsuiten einzeln
+       ausgeschnitten und ohne seine Umgebung ausgeführt wird (test_v209). Ohne sie
+       bricht er dort mit „opt is not defined" ab – dieselbe Vorsichtsmaßnahme wie am
+       Rechner in `_objKuerzelAusNas`. */
+    if(typeof opt!=='undefined'&&opt&&typeof opt.weiteresFn==='function'){
+      try{opt.weiteresFn();}catch(e){console.warn('[Foto-Dialog] Weiteres:',e);}
+      return;
+    }
     var inp=document.getElementById(kameraFeld);if(inp)inp.click();
   };
   // v110: ✏️ Bearbeiten – behält das Foto und öffnet direkt die Vollbild-Ansicht (Text + Malen), Wunsch Frank
@@ -18053,6 +18159,7 @@ function closeLightbox(){
   lb.classList.remove('open');
   lb.style.zIndex=''; // v215: Pin-Foto-Einsatz hebt die Lightbox über den Dachplan – hier zurück
   _lbPinFoto=null;    // v215: Pin-Bezug gilt nur für diese eine Ansicht
+  _lbWpFoto=null;     // v231: dasselbe für den Protokoll-Bezug
   lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
   document.removeEventListener('keydown',_lbOnKey);
   _lbFotoIdx=-1;_lbFotoKey='';
@@ -18082,6 +18189,7 @@ function _lbResetZoom(){_lz={s:1,tx:0,ty:0};const img=document.getElementById('l
 // v99: Blättern durch die Task-Fotos (Pfeile, Wischgeste, Pfeiltasten) – mit Umlauf wie am Desktop
 function _lbNavFoto(dir){
   if(_lbPinFoto)return; // v215: Pin-Foto-Ansicht – die Pfeile gehören zu t.fotos, hier wäre Blättern falsch
+  if(_lbWpFoto)return;  // v231: dasselbe für Protokoll-Fotos – geblättert wird in der Protokoll-Ansicht
   if(_lbFotoIdx<0)return;
   const t=currentTask();if(!t||!t.fotos||t.fotos.length<2)return;
   const c=document.getElementById('drawCanvas');
@@ -18677,6 +18785,65 @@ async function _uploadEditedPinFoto(t,fo,dataUrl){
     try{_fotoPendUpdate();}catch(e2){} // v216: Warnleuchte SOFORT an – der Nachhol-Lauf holt die bemalte Fassung
   }
 }
+/* ══ v231: MALEN/TEXT für WARTUNGSPROTOKOLL-FOTOS – dieselbe Lightbox, derselbe Stift ══
+   Gleiche Ausgangslage wie die Pin-Fotos aus v215: Protokoll-Fotos wohnen in
+   `bericht.fotos` (also task.pruefberichte[].fotos), nicht in t.fotos – deshalb kannte
+   der Speicher-Schritt sie nicht. `_lbWpFoto` merkt den Bezug über die BERICHT-KENNUNG
+   (bericht.id, seit jeher 'wp_'+Zeit) statt über einen Listenplatz: ein Konflikt-Merge
+   darf die Berichte umsortieren, ohne dass die Zeichnung im falschen Protokoll landet. */
+let _lbWpFoto=null; // {taskId,berichtId,idx} solange die Lightbox ein Protokoll-Foto zeigt
+function _lbWpBericht(){
+  if(!_lbWpFoto)return null;
+  try{
+    const t=findTaskById(_lbWpFoto.taskId);
+    return (t&&(t.pruefberichte||[]).find(b=>b&&String(b.id)===String(_lbWpFoto.berichtId)))||null;
+  }catch(e){return null;}
+}
+function _lbWpFotoObj(){
+  const b=_lbWpBericht();
+  return (b&&(b.fotos||[])[_lbWpFoto.idx])||null;
+}
+async function openWpFotoZumMalen(taskId,berichtId,idx){
+  const t=findTaskById(taskId);
+  const b=t&&(t.pruefberichte||[]).find(x=>x&&String(x.id)===String(berichtId));
+  const f=b&&(b.fotos||[])[idx];
+  if(!f){toast('Foto nicht gefunden','error');return;}
+  /* Dieselbe Reihenfolge wie im Pin-Weg: erst die Gerätekopie, dann Drive. Am Protokoll
+     kommt der Fall „schon hochgeladen, Gerätekopie gelöscht" häufig vor – nach dem Upload
+     räumt _wpMobFotoAufnehmen die IndexedDB ab. Dann ist Drive die einzige Quelle. */
+  let src='';
+  if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))src=f.localUrl;
+  if(!src&&f.localKey){try{src=await _mobPhotoGet(f.localKey)||'';}catch(e){}}
+  if(!src&&(f.editedDriveId||f.driveId)){try{src=await _fetchFotoBlob(f.editedDriveId||f.driveId)||'';}catch(e){}}
+  if(!src){toast('Foto noch nicht verfügbar','info');return;}
+  _lbWpFoto={taskId:taskId,berichtId:berichtId,idx:idx};
+  /* Das Protokoll-Formular und seine Foto-Vollbildansicht liegen auf 99999 – die
+     Lightbox (9999) muss für diesen Einsatz darüber; closeLightbox stellt es zurück. */
+  try{const lb=document.getElementById('lightbox');if(lb)lb.style.zIndex='100010';}catch(e){}
+  openLightbox(src,'📋 Protokoll · '+(f.name||'Foto '+(idx+1)),'',{caption:f.caption||''});
+  lbStartDraw(); // wer hierher kommt, will malen – Stift sofort bereit
+}
+async function _uploadEditedWpFoto(t,f,dataUrl){
+  try{
+    const folderId=extractDriveFolderId(t.gdrive)||extractDriveFolderId(t.gdriveOrdner)
+      ||extractDriveFolderId(localStorage.getItem('ptpm_default_foto_folder')||'');
+    if(!folderId){toast('Zeichnung nur lokal – kein Foto-Ordner im Task','info');return;}
+    if(!(await ensureToken())){toast('Zeichnung nur lokal – nicht angemeldet/offline','info');return;}
+    // v217-Lehre: `_dataUrlToBlob` statt `fetch(dataUrl)` – der Direktweg scheiterte reproduzierbar.
+    const blob=_dataUrlToBlob(dataUrl);
+    const file=new File([blob],f.editedName||'protokoll_bearbeitet.jpg',{type:'image/jpeg'});
+    const meta=await _uploadOneFotoToDrive(file,folderId);
+    f.editedDriveId=meta.id;
+    forceSave(); // wie v217: SOFORT sichern, alles Weitere darf die Kennung nicht mehr kosten
+    try{_blobCacheEinfuegen(_fotoBlobCache,meta.id,dataUrl);}catch(e2){}
+    toast('✏ Bearbeitete Kopie in Drive gespeichert','success');
+    try{_fotoPendUpdate();}catch(e2){}
+  }catch(e){
+    console.warn('[WpFoto-Edit-Upload]',e);
+    toast('⚠ Zeichnung lokal gespeichert – Upload-Fehler: '+((e&&e.message)||e)+' – die Leuchte holt sie nach','info',6000);
+    try{_fotoPendUpdate();}catch(e2){}
+  }
+}
 function lbSaveDraw(){
   if(_lbDrawSaving)return;_lbDrawSaving=true;
   const canvas=document.getElementById('drawCanvas'),img=document.getElementById('lbImg');
@@ -18693,6 +18860,24 @@ function lbSaveDraw(){
       fo.editedName='dachplan_pin_bearbeitet.jpg';
       scheduleSave();toast('Zeichnung gespeichert','success');
       _uploadEditedPinFoto(t,fo,dataUrl);
+    }
+  }
+  else if(_lbWpFoto){ // v231: Wartungsprotokoll-Foto – siehe Kommentar oben
+    const f=_lbWpFotoObj(),t=findTaskById(_lbWpFoto.taskId);
+    if(f&&t){
+      /* Anders als beim Pin: die Gerätekopie ist hier oft schon abgeräumt (nach dem
+         Drive-Upload löscht _wpMobFotoAufnehmen den IndexedDB-Eintrag). `localUrl`
+         setzen ist trotzdem richtig und wichtig – die Fotoliste des Formulars und die
+         Vollbild-Ansicht zeigen es zuerst, die Zeichnung ist also sofort sichtbar. */
+      f.localUrl=dataUrl;
+      if(!f.localKey)f.localKey='photo_'+Date.now()+'_wped'; // ohne Gerätekopie → jetzt eine (die bearbeitete)
+      _mobPhotoSave(f.localKey,dataUrl).catch(()=>{});
+      f.editedName=(f.name||'Foto').replace(/(\.[^.]+)?$/,'_bearbeitet.jpg');
+      scheduleSave();toast('Zeichnung gespeichert','success');
+      _uploadEditedWpFoto(t,f,dataUrl);
+      // Formular-Miniaturen sofort nachziehen, falls das Protokoll noch offen ist
+      try{const _g=document.getElementById('_wpMobFotoGrid');const _b=_lbWpBericht();
+          if(_g&&_b)_wpMobRenderFotos(_b,_g);}catch(e){}
     }
   }
   lbDiscardDraw();img.src=dataUrl;_lbDrawSaving=false;
