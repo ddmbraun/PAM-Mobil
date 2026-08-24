@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v235';
+const MOB_VERSION='v236';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -19027,7 +19027,10 @@ async function _uploadEditedFoto(t,f,dataUrl){
     // v121: Aufnahmedaten (GPS/Datum/Kamera) des ORIGINALS in die Kopie übernehmen –
     // die Canvas-Kopie hätte sonst keinerlei EXIF und verdeckt das Original überall.
     try{dataUrl=await _mobExifTransplant(f,dataUrl);}catch(e){console.warn('[EditedFoto-EXIF]',e);}
-    const blob=await (await fetch(dataUrl)).blob();
+    // v236: NICHT über die eigene Adresse abholen – die Sicherheitsregel der Seite
+    // verbietet das, und der Upload scheiterte deshalb still. Die Zeichnung blieb dann
+    // nur auf dem Gerät, also genau der Zustand, den v109 hier abschaffen wollte.
+    const blob=_dataUrlToBlob(dataUrl);
     const file=new File([blob],f.editedName||'Foto_bearbeitet.jpg',{type:'image/jpeg'});
     const meta=await _uploadOneFotoToDrive(file,folderId);
     f.editedDriveId=meta.id;
@@ -19458,11 +19461,11 @@ window.Dachplan=(function(){
         +'<div class="dpTOnly" style="height:1px;background:var(--border);margin:4px 0;"></div>'
         // v129 (Wunsch Frank): Ebenen-Auswahl sitzt nicht mehr als Leaflet-Kästchen IM Bild,
         // sondern hier im Menü – die Karte bleibt frei. Namen = Schlüssel aus _lays.
-        +'<div style="font-size:12px;color:var(--text2);font-weight:700;padding:2px 4px 0;">Kartenansicht</div>'
-        +'<button class="dpb dpLay" data-lay="Luftbild amtlich (TH)">🛰 Luftbild amtlich (TH)</button>'
-        +'<button class="dpb dpLay" data-lay="Luftbild Welt (Esri)">🌍 Luftbild Welt (Esri)</button>'
-        +'<button class="dpb dpLay" data-lay="Luftbild Google">🟩 Luftbild Google</button>'
-        +'<button class="dpb dpLay" data-lay="Karte">🗺 Karte (OpenStreetMap)</button>'
+        +'<div class="dpKarteNur" style="font-size:12px;color:var(--text2);font-weight:700;padding:2px 4px 0;">Kartenansicht</div>'
+        +'<button class="dpb dpLay dpKarteNur" data-lay="Luftbild amtlich (TH)">🛰 Luftbild amtlich (TH)</button>'
+        +'<button class="dpb dpLay dpKarteNur" data-lay="Luftbild Welt (Esri)">🌍 Luftbild Welt (Esri)</button>'
+        +'<button class="dpb dpLay dpKarteNur" data-lay="Luftbild Google">🟩 Luftbild Google</button>'
+        +'<button class="dpb dpLay dpKarteNur" data-lay="Karte">🗺 Karte (OpenStreetMap)</button>'
         +'<div style="height:1px;background:var(--border);margin:4px 0;"></div>'
         // v212: 📐 statt 🖼️ – das Bild-Zeichen hieß sonst zweierlei (auch „Galerie"
         // beim Pin-Foto). v207: die beiden Standort-Knöpfe sind von hier ins Menü
@@ -19830,7 +19833,20 @@ window.Dachplan=(function(){
   /* ⛔ Der Basisbild-Schlüssel MUSS den Teilplan unterscheiden. Sonst legt der
      Teilplan sein Foto unter demselben Schlüssel ab wie der Hauptplan und
      überschreibt dessen Luftbild/Dachplan im Gerätespeicher. */
-  function _dpBasisKey(){return 'dpbase_'+t.id+(_tpStack?('_tp'+_tpStack.pinId):'');}
+  // v236 (Befund Frank 24.08.2026): Am PC ein neues Basisbild geladen – am Tablet blieb
+  // für immer das alte stehen. Die Gerätekopie gewann IMMER, und niemand prüfte, ob in
+  // Drive etwas Neueres liegt. Über den Schlüssel löst sich das von selbst: ein anderes
+  // Bild in Drive heißt ein anderer Schlüssel, die alte Kopie kann nicht mehr treffen.
+  // ⛔ OHNE Drive-Kennung bleibt der alte Schlüssel gültig. Das ist der Fall „am Gerät
+  // aufgenommen, noch nicht hochgeladen" – dort IST die Kopie das Einzige, was es von
+  // dem Bild gibt, und sie darf nicht verloren gehen.
+  function _dpBasisKey(driveId){
+    const basis='dpbase_'+t.id+(_tpStack?('_tp'+_tpStack.pinId):'');
+    // typeof: die Funktion muss auch ohne umgebendes dp benutzbar bleiben.
+    const _dp=(typeof dp!=='undefined')?dp:null;
+    const d=(driveId===undefined)?((_dp&&_dp.imgDriveId)||''):(driveId||'');
+    return d?(basis+'_'+d):basis;
+  }
   function _tpPinsZahl(p){try{return ((p&&p.plan&&p.plan.pins)||[]).length;}catch(_){return 0;}}
   function _tpHatPlan(p){return !!(p&&p.plan&&(p.plan.imgKey||p.plan.imgDriveId||_tpPinsZahl(p)));}
   function tpOeffnen(pinId){
@@ -20314,7 +20330,21 @@ window.Dachplan=(function(){
   // ════ Bild-Modus (zweite Ebene, CRS.Simple) ════
   let calStep=0,calTmp=null;
   function scaleImg(file,maxDim,q){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{let w=im.width,h=im.height;const s=Math.min(1,maxDim/Math.max(w,h));w=Math.round(w*s);h=Math.round(h*s);const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);res({url:c.toDataURL('image/jpeg',q),w:w,h:h});};im.onerror=()=>res({url:r.result,w:1000,h:750});im.src=r.result;};r.readAsDataURL(file);});}
-  function dataUrlToFile(durl,name){return fetch(durl).then(r=>r.blob()).then(b=>new File([b],name,{type:'image/jpeg'}));}
+  // v236: Gegenstück zu Desktop b773. Diese Funktion holte das fertige Bild über seine
+  // EIGENE Adresse ab. Die Sicherheitsregel der Seite erlaubt das Abholen nur von
+  // bestimmten Zielen – Bilddaten-Adressen gehören bewusst nicht dazu. Folge: Der
+  // Drive-Upload des Basisbilds scheiterte am Handy immer und meldete nur „Bild lokal
+  // gesichert – Drive-Upload später". Genau daraus entstand Franks Befund vom 24.08.:
+  // eine Gerätekopie ohne Drive-Datei, die danach jedes neuere Bild verdeckte.
+  // Jetzt wird selbst entschlüsselt, wie es _fdkDataUrlBytes am PC seit b734 tut.
+  // ⛔ Die Sicherheitsregel bleibt unangetastet – test_v236 wacht darüber.
+  function dataUrlToFile(durl,name){
+    try{
+      const s=String(durl||'');
+      if(s.indexOf(',')<0)return Promise.reject(new Error('Keine Bilddaten'));
+      return Promise.resolve(new File([_dataUrlToBlob(s)],name,{type:'image/jpeg'}));
+    }catch(e){return Promise.reject(e);}
+  }
   function bnd(){const W=dp.imgW||1000,H=dp.imgH||750;return [[0,0],[H,W]];}
   function frToLatLng(nx,ny){const W=dp.imgW||1000,H=dp.imgH||750;return [(1-ny)*H,nx*W];}
   function latLngToFr(ll){const W=dp.imgW||1000,H=dp.imgH||750;return {nx:ll.lng/W,ny:1-(ll.lat/H)};}
@@ -20329,7 +20359,15 @@ window.Dachplan=(function(){
     }catch(_){}}});
     return true;
   }
-  function showBaseImg(url){if(!imap)return;try{if(imgLayer)imap.removeLayer(imgLayer);}catch(_){}imgLayer=L.imageOverlay(url,bnd()).addTo(imap);imap.setMaxBounds(bnd());}
+  // v236: Bisher blieb die Fläche STUMM leer, wenn das Bild nicht lud – niemand konnte
+  // sehen, woran es liegt. Dieselbe Art stillen Wegschauens wie im Desktop-Fehler b773.
+  function showBaseImg(url){
+    if(!imap)return;
+    try{if(imgLayer)imap.removeLayer(imgLayer);}catch(_){}
+    imgLayer=L.imageOverlay(url,bnd()).addTo(imap);
+    try{imgLayer.on('error',()=>{say('Bild konnte nicht angezeigt werden – Empfang und Google-Anmeldung prüfen','error');});}catch(_){}
+    imap.setMaxBounds(bnd());
+  }
   /* v226 (Befund Frank 21.08.): Gegenstück zu showBaseImg. Ohne das blieb beim Wechsel
      in eine Ebene OHNE Bild das Bild der vorigen Ebene stehen – im leeren Teilbereich
      sah man weiter den Dachplan des Hauptplans und hielt dessen Inhalt für „schon da".
@@ -20340,19 +20378,34 @@ window.Dachplan=(function(){
      LOKAL ablegen, damit es beim nächsten Mal offline da ist. Bis v211 las der
      Bild-Modus NUR imgKey: ein am PC geladenes Bild hieß am Handy „Kein Bild",
      Pins setzen und Kalibrieren blieben gesperrt. */
+  // v236: Wo darf eine Gerätekopie noch gewinnen? Erst der ausdrückliche Vermerk am
+  // Auftrag, dann der berechnete Schlüssel. Gerufen wird das NUR, wenn es keine
+  // Drive-Datei gibt oder Drive nicht geantwortet hat.
+  async function _dpKopieSuchen(kAlt){
+    try{if(dp&&dp.imgKey){const u=await _mobPhotoGet(dp.imgKey);if(u)return u;}}catch(_){}
+    try{const u=await _mobPhotoGet(kAlt);if(u)return u;}catch(_){}
+    return null;
+  }
   async function _dpBasisBildLaden(){
-    try{if(dp.imgKey){const u=await _mobPhotoGet(dp.imgKey);if(u)return u;}}catch(_){}
-    if(!dp.imgDriveId)return null;
+    // v236: Reihenfolge mit Bedacht, siehe _dpBasisKey.
+    const kNeu=_dpBasisKey(),kAlt=_dpBasisKey('');
+    try{const u=await _mobPhotoGet(kNeu);if(u)return u;}catch(_){}
+    // Ohne Drive-Datei ist die Gerätekopie das Einzige, was es von dem Bild gibt.
+    if(!dp.imgDriveId)return await _dpKopieSuchen(kAlt);
     let blobUrl=null;
     try{blobUrl=await _fetchFotoBlob(dp.imgDriveId);}catch(_){}
-    if(!blobUrl)return null;
+    // Letzter Rückfall: eine ältere Kopie ist besser als eine leere Fläche. Sie kann
+    // hier nichts Neueres verdecken – Drive war ja gerade nicht erreichbar.
+    if(!blobUrl)return await _dpKopieSuchen(kAlt);
     try{
       // Blob-Adresse → dataUrl: nur so lässt sich das Bild im Gerätespeicher ablegen
       const b=await (await fetch(blobUrl)).blob();
       const durl=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.onerror=rej;fr.readAsDataURL(b);});
-      const key=_dpBasisKey(); // derselbe Schlüssel, den loadBild vergibt (v224: je Ebene)
-      await _mobPhotoSave(key,durl);
-      if(dp.imgKey!==key){dp.imgKey=key;save();}
+      await _mobPhotoSave(kNeu,durl);
+      // v236: Die abgelöste Kopie hat ausgedient – sie war der Grund dafür, dass am
+      // Tablet für immer das alte Bild stand.
+      if(kAlt!==kNeu){try{await _mobPhotoDelete(kAlt);}catch(_){}}
+      if(dp.imgKey!==kNeu){dp.imgKey=kNeu;save();}
       // Bildmaße nachtragen, falls sie fehlen (z. B. nach einem PC-Reset-Altfall) –
       // die Pin-Positionen sind relativ, aber bnd()/Zuschnitt brauchen echte Maße
       if(!dp.imgW||!dp.imgH){const dim=await new Promise(res=>{const i=new Image();i.onload=()=>res({w:i.naturalWidth,h:i.naturalHeight});i.onerror=()=>res(null);i.src=durl;});if(dim&&dim.w){dp.imgW=dim.w;dp.imgH=dim.h;save();}}
@@ -20363,12 +20416,17 @@ window.Dachplan=(function(){
     if(!/^image\//.test(file.type||'')){say('Bitte ein Bild wählen','error');return;}
     say('Bild wird geladen…');
     const sc=await scaleImg(file,2600,0.85);
-    const key=_dpBasisKey();try{await _mobPhotoSave(key,sc.url);}catch(_){} // v224: eigener Schlüssel je Teilplan
+    // v236: ausdrücklich OHNE Drive-Kennung – hochgeladen ist noch nichts.
+    const key=_dpBasisKey('');try{await _mobPhotoSave(key,sc.url);}catch(_){} // v224: eigener Schlüssel je Teilplan
     dp.imgKey=key;dp.imgW=sc.w;dp.imgH=sc.h;
     try{E.screen.querySelector('#dpNoImg').classList.add('dp-hidden');}catch(_){} // v127
     showBaseImg(sc.url);try{imap.fitBounds(bnd());}catch(_){}renderImgPins();save();say('Basisbild gesetzt');
     const folderId=resolveFolder();
-    if(folderId){try{if(typeof ensureToken==='function')await ensureToken();const f=await dataUrlToFile(sc.url,'dachplan_basis.jpg');const meta=await _uploadOneFotoToDrive(f,folderId);dp.imgDriveId=meta.id;save();}catch(e){say('Bild lokal gesichert – Drive-Upload später');}}
+    if(folderId){try{if(typeof ensureToken==='function')await ensureToken();const f=await dataUrlToFile(sc.url,'dachplan_basis.jpg');const meta=await _uploadOneFotoToDrive(f,folderId);dp.imgDriveId=meta.id;save();
+      // v236: Kopie auf den drive-gebundenen Schlüssel umziehen, sonst holt das eigene
+      // Gerät sein eben hochgeladenes Bild beim nächsten Öffnen wieder aus Drive.
+      try{const kNeu=_dpBasisKey();if(kNeu!==key){await _mobPhotoSave(kNeu,sc.url);dp.imgKey=kNeu;save();await _mobPhotoDelete(key);}}catch(_){}
+    }catch(e){say('Bild lokal gesichert – Drive-Upload später');}}
   }
   /* v221 (Wunsch Frank): Ein bereits gespeichertes Auftrags-Foto (Bereich „Fotos")
      als Basisbild übernehmen. „🖼 Datei wählen" (v221: „📷 Bild laden") bietet nur die Dateien des
@@ -20451,6 +20509,11 @@ window.Dachplan=(function(){
     try{E.screen.querySelector('#dpBild').style.display=isB?'':'none';E.screen.querySelector('#dpBildFotos').style.display=isB?'':'none';E.screen.querySelector('#dpCalib').style.display=isB?'':'none';
       E.screen.querySelector('#dpKam').style.display=isB?'':'none';}catch(_){} // v221: Fotos-Weg nur im Bild-Modus, wie 📷; v228: Kamera genauso
     E.mapEl.classList.toggle('dp-hidden',isB);E.imapEl.classList.toggle('dp-hidden',!isB);
+    // v236 (Befund Frank 24.08.2026): Die Ebenen-Auswahl sitzt im Menü und war deshalb
+    // auch im Bild-Modus erreichbar. Sie schaltete dort die AUSGEBLENDETE Luftbild-Karte
+    // um – der Knopf markierte sich, meldete den Namen, und zu sehen war nichts. Am PC
+    // gibt es das nicht, weil die Auswahl dort ein Kästchen IN der Karte ist.
+    try{E.screen.querySelectorAll('.dpKarteNur').forEach(el=>el.classList.toggle('dp-hidden',isB));}catch(_){}
     Object.keys(markers).forEach(k=>{try{if(map)map.removeLayer(markers[k]);}catch(_){}try{if(imap)imap.removeLayer(markers[k]);}catch(_){}delete markers[k];});
     if(isB){
       if(!ensureImap())return;
