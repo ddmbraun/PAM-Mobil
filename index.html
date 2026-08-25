@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v236';
+const MOB_VERSION='v237';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -4625,7 +4625,8 @@ function _buildMobileSaveObj(){
   // v215: gleiche Kopffeld-Reihenfolge wie beim Drive-Speichern und wie der Desktop
   // (buildSaveObject) – und _archivedTasks (PC-Archiv-Ablage) auch im Backup erhalten
   const obj={_statuses:statuses};
-  if(Array.isArray(_remoteArchivedTasks)&&_remoteArchivedTasks.length)obj._archivedTasks=_remoteArchivedTasks.slice();
+  if(!Array.isArray(_remoteArchivedTasks))_remoteArchivedTasks=[]; // v237: Wache, damit .slice() nie stolpert
+  obj._archivedTasks=_remoteArchivedTasks.slice(); // v237: IMMER, auch leer (Desktop b787; Näheres in CHANGES.md)
   if(Object.keys(_remoteBoardStatuses||{}).length)obj._boardStatuses={..._remoteBoardStatuses};
   if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
   if(Object.keys(mobileStatusFilter||{}).length)obj._mobileStatusFilter={...mobileStatusFilter};
@@ -7557,7 +7558,8 @@ function _applyMobileFilter(data){
     for(const t of v){if(t&&t.id)_schutzFelderUebernehmen(t,_schutzAlt.get(t.id));}
   }
   statuses=Array.isArray(data._statuses)?data._statuses:[];
-  _remoteArchivedTasks=Array.isArray(data._archivedTasks)?data._archivedTasks.slice():[]; // v215: durchreichen
+  // v215: durchreichen. v237: Fach fehlt → bisherigen Stand BEHALTEN statt leeren (Desktop b787).
+  _remoteArchivedTasks=Array.isArray(data._archivedTasks)?data._archivedTasks.slice():(Array.isArray(_remoteArchivedTasks)?_remoteArchivedTasks.slice():[]);
   mobileWhitelist=Array.isArray(data._mobileBoards)?data._mobileBoards.slice():[];
   mobileStatusFilter=(data._mobileStatusFilter&&typeof data._mobileStatusFilter==='object')?{...data._mobileStatusFilter}:{};
   _remoteBoardStatuses=(data._boardStatuses&&typeof data._boardStatuses==='object')?{...data._boardStatuses}:{};
@@ -8029,7 +8031,8 @@ async function saveFile(){
        identische Stände, nur die Kopf-Reihenfolge wechselte hin und her).
        _archivedTasks wird DURCHGEREICHT – dort lagert der PC archivierte Karten. */
     const obj={_statuses:statuses};
-    if(Array.isArray(_remoteArchivedTasks)&&_remoteArchivedTasks.length)obj._archivedTasks=_remoteArchivedTasks.slice();
+    if(!Array.isArray(_remoteArchivedTasks))_remoteArchivedTasks=[]; // v237: Wache vor .slice()
+    obj._archivedTasks=_remoteArchivedTasks.slice(); // v237: IMMER, auch leer – hier räumte das Handy dem PC das Archiv ab
     if(Object.keys(_remoteBoardStatuses||{}).length)obj._boardStatuses={..._remoteBoardStatuses};
     if(Array.isArray(mobileWhitelist)&&mobileWhitelist.length)obj._mobileBoards=mobileWhitelist.slice();
     if(Object.keys(mobileStatusFilter||{}).length)obj._mobileStatusFilter={...mobileStatusFilter}; // v182: stand bisher NICHT im Drive-Save – jedes Handy-Speichern fraß den Mobil-Spaltenfilter aus der Datei
