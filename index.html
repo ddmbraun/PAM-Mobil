@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v237';
+const MOB_VERSION='v238';
 function _lastWriterInfo(){
   const ua=navigator.userAgent||'';
   const sm=ua.match(/SM-[A-Z0-9]+/); // Samsung-Modell: Handy und Tablet unterscheidbar
@@ -4763,6 +4763,20 @@ async function _mobPhotoSetMeta(key,patch){
   }catch(e){}
 }
 // v143: Alle Einträge OHNE die (großen) Bilddaten auflisten – für Waisen-Suche
+// v238: Trägt dieser Datensatz WIRKLICH Bilddaten? Befund Frank 25.08.2026 – ein Foto liess
+// sich weder hochladen noch entfernen. Ursache: der Datensatz war da, die Bilddaten fehlten.
+// Der Zaehler und die Anzeige fragten nur, OB ein Datensatz existiert; der Upload braucht die
+// Daten. Zwei Stellen, zwei Urteile -> Sackgasse. Diese Funktion ist ab jetzt die EINE Antwort.
+// ⛔ Nur die LAENGE pruefen, die Daten nicht anfassen: der Cursor haelt sie ohnehin schon in
+//    der Hand, ein Entschluesseln waere teuer und ist fuer die Frage nicht noetig.
+// „data:image/jpeg;base64," allein ist rund 23 Zeichen – darunter ist nichts Brauchbares.
+function _mobHatBilddaten(v){
+  if(!v)return false;
+  const d=v.dataUrl;
+  if(typeof d==='string')return d.length>100;
+  if(d&&typeof d.size==='number')return d.size>0; // Blob-Fassung
+  return !!d;
+}
 async function _mobPhotoListMeta(){
   try{
     const db=await _mobPhotoDbOpen();
@@ -4772,7 +4786,7 @@ async function _mobPhotoListMeta(){
       const req=tx.objectStore(_MOB_PHOTO_STORE).openCursor();
       req.onsuccess=e=>{
         const c=e.target.result;
-        if(c){const v=c.value||{};out.push({key:v.key,ts:v.ts||0,taskId:v.taskId||'',name:v.name||'',done:v.done||0});c.continue();}
+        if(c){const v=c.value||{};out.push({key:v.key,ts:v.ts||0,taskId:v.taskId||'',name:v.name||'',done:v.done||0,hatBild:_mobHatBilddaten(v)});c.continue();}
         else{db.close();res(out);}
       };
       req.onerror=()=>{db.close();res([]);};
@@ -9343,7 +9357,7 @@ async function _mobRetryPendingUploads(opts){
           // sagen, in Drive nachsehen. Häufigster Fall der Sackgasse (Befund Frank 31.07.):
           // der Upload lief längst, nur der Task-Eintrag verlor die Datei-Kennung.
           let geheilt=false;
-          try{geheilt=await _fotoDriveWiederfinden(fo,folderId);}catch(e2){console.warn('[MobPhoto] Wiederfinden:',e2);}
+          try{geheilt=await _fotoDriveWiederfinden(fo,folderId,laut);}catch(e2){console.warn('[MobPhoto] Wiederfinden:',e2);} // v238: nur beim Knopf-Lauf nachfragen
           if(geheilt){b.geheilt++;if(fo._dpBasis&&fo.driveId)fo._dpBasis.imgDriveId=fo.driveId;} // v211: Basisbild-Kennung an den Dachplan
           else b.woanders++;
         }else{b.fehler++;console.warn('[MobPhoto] Retry:',e);}
@@ -9365,7 +9379,9 @@ async function _mobRetryPendingUploads(opts){
 // „beide Geräte sagen: liegt auf dem anderen" – die entsteht, wenn der Upload erfolgreich
 // war (lokale Kopie danach gelöscht), der Task-Stand mit der Kennung aber verloren ging.
 // Bewusst vorsichtig: nur bei eindeutigem Treffer (gleiche Dateigröße ODER genau 1 Fund).
-async function _fotoDriveWiederfinden(fo,folderId){
+// v238: `fragen` = darf bei Mehrdeutigkeit nachfragen. NUR vom Knopf-Lauf gesetzt (laut),
+// nie beim stillen Nachladen im Hintergrund – sonst stuende alle 15 Sekunden eine Rueckfrage.
+async function _fotoDriveWiederfinden(fo,folderId,fragen){
   if(!fo||fo.driveId||!folderId)return false;
   const roh=String(fo.name||'').trim();
   if(!roh)return false;
@@ -9373,14 +9389,48 @@ async function _fotoDriveWiederfinden(fo,folderId){
   if(such.length<5)return false; // zu unspezifisch → lieber nicht raten
   const q="'"+folderId+"' in parents and trashed=false and name contains '"+such+"'";
   const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)
-    +'&fields=files(id,name,size,thumbnailLink,webViewLink,webContentLink)&pageSize=20',
+    +'&fields=files(id,name,size,createdTime,modifiedTime,thumbnailLink,webViewLink,webContentLink)&pageSize=20',
     {headers:{Authorization:'Bearer '+gdriveToken}});
   if(!r.ok)return false;
   const files=((await r.json()).files)||[];
   if(!files.length)return false;
   let m=null;
   if(fo.size)m=files.find(f=>Number(f.size||0)===Number(fo.size)); // Größe = stärkster Beleg
+  // v238: Zweiter Beleg, wenn die Groesse UNBEKANNT ist (size 0 oder fehlt – bei Fotos aus
+  // „Teilen"/Zwischenablage der Normalfall, Befund Frank 25.08.2026). Dann entscheidet die
+  // Aufnahmezeit: eine Datei, die im Ordner zeitlich dicht am Foto liegt, ist es.
+  // ⛔ Nur wenn genau EINE Datei im Fenster liegt. Liegen zwei drin, ist es wieder mehrdeutig
+  //    und es wird NICHT geraten – dieselbe Vorsicht wie beim Namen.
+  // ⛔ 10 Minuten, nicht mehr: Upload und Aufnahme liegen dicht beieinander; ein weiter
+  //    gefasstes Fenster fasst eine ganze Foto-Serie und traefe die falsche Datei.
+  if(!m&&!fo.size){
+    const soll=Date.parse(fo.ts||fo.uploadedAt||'')||0;
+    if(soll){
+      const nah=files.filter(f=>{
+        const t=Date.parse(f.createdTime||f.modifiedTime||'')||0;
+        return t&&Math.abs(t-soll)<=10*60*1000;
+      });
+      if(nah.length===1)m=nah[0];
+    }
+  }
   if(!m&&files.length===1)m=files[0];
+  // v238: Immer noch mehrdeutig → nicht mehr stumm aufgeben, sondern Frank fragen. Er weiss,
+  // welches Bild er aufgenommen hat; damit ist ER der eindeutige Beleg.
+  // ⛔ Nur wenn ausdruecklich erlaubt (Knopf-Lauf), nie im stillen Hintergrund-Nachladen –
+  //    sonst poppte im 15-Sekunden-Takt eine Rueckfrage auf.
+  if(!m&&fragen&&files.length>1){
+    const sortiert=files.slice().sort((a,b)=>{
+      const soll=Date.parse(fo.ts||fo.uploadedAt||'')||0;
+      if(!soll)return 0;
+      return Math.abs((Date.parse(a.createdTime||'')||0)-soll)-Math.abs((Date.parse(b.createdTime||'')||0)-soll);
+    });
+    for(const k of sortiert.slice(0,5)){
+      const wann=(k.createdTime||'').slice(0,16).replace('T',' ');
+      const groesse=k.size?(Math.round(Number(k.size)/1024)+' KB'):'Größe unbekannt';
+      if(confirm('Ist das dieses Foto?\n\n'+(k.name||'ohne Namen')+'\n'+(wann?wann+' Uhr · ':'')+groesse
+        +'\n\nOK = ja, diese Datei mit dem Eintrag verbinden\nAbbrechen = nein, nächste zeigen')){m=k;break;}
+    }
+  }
   if(!m)return false; // mehrdeutig → nichts tun, lieber melden
   fo.driveId=m.id;
   fo.name=m.name||fo.name;
@@ -17488,7 +17538,12 @@ function _fotoPendRefreshKeys(){
   if(_fotoPendKeysBusy)return;
   _fotoPendKeysBusy=true;
   _mobPhotoListMeta().then(ms=>{
-    const s=new Set(ms.map(m=>m.key).filter(Boolean));
+    // v238: nur Schluessel, deren Datensatz WIRKLICH Bilddaten traegt. Vorher genuegte die
+    // blosse Existenz des Datensatzes – ein leerer galt als „Bild ist hier", die Anzeige sagte
+    // „wartet" und der ✕-Ausweg blieb ausgeblendet, waehrend der Upload BLOB_MISSING warf.
+    // ⛔ `!==false` und nicht `===true`: liefert eine Quelle das Feld einmal nicht mit, gilt
+    //    weiterhin „ist hier". Lieber ein ✕ zu wenig als ein gutes Foto zum Entfernen anbieten.
+    const s=new Set(ms.filter(m=>m&&m.hatBild!==false).map(m=>m.key).filter(Boolean));
     const changed=!_fotoPendLocalKeys||s.size!==_fotoPendLocalKeys.size||[...s].some(k=>!_fotoPendLocalKeys.has(k));
     _fotoPendLocalKeys=s;
     _fotoPendKeysBusy=false;
@@ -17563,7 +17618,15 @@ function _fotoPendPanelRender(){
         +'<div style="font-size:12px;color:var(--text2);display:flex;gap:8px;">'+(zeit?'<span>'+zeit+'</span>':'')+st+'</div>'
       +'</div>'
       // v148: Ausweg – Eintrag entfernen, wenn das Bild hier nicht liegt (Sackgassen-Fall)
-      +(fremd?'<button onclick="_fotoPendEntfernen(\''+escAttr(x.task.id||'')+'\',\''+escAttr(key)+'\',event)" title="Eintrag entfernen" style="flex-shrink:0;min-height:38px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">✕</button>':'')
+      // v238: Der Ausweg steht jetzt IMMER zur Verfuegung. Befund Frank 25.08.2026: Sein Foto
+      // galt als „hier" (Datensatz da, Bilddaten leer) – damit war das ✕ ausgeblendet und der
+      // Upload scheiterte zugleich: weder hochladen noch entfernen. v238 laesst _fotoIstHier
+      // zwar die Wahrheit sagen, aber der Geraetespeicher ist von aussen nicht messbar; es darf
+      // KEINE Lage mehr geben, aus der man nicht herauskommt.
+      // ⛔ Ungefaehrlich, weil _fotoPendEntfernen ausdruecklich rueckfragt, NUR den Verweis im
+      //    Task entfernt und eine vorhandene Drive-Datei stehen laesst. Der Text der Rueckfrage
+      //    richtet sich danach, ob das Bild hier zu liegen scheint.
+      +'<button onclick="_fotoPendEntfernen(\''+escAttr(x.task.id||'')+'\',\''+escAttr(key)+'\',event,'+(fremd?'0':'1')+')" title="Eintrag entfernen" style="flex-shrink:0;min-height:38px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">✕</button>'
       +'</div>';
   }).join('');
   if(list.length>20)h+='<div style="font-size:12px;color:var(--text2);padding:6px 0;">… und '+(list.length-20)+' weitere</div>';
@@ -17610,11 +17673,16 @@ async function _fotoPendRetryNow(){
 }
 // v148: Ausweg aus der Sackgasse – Eintrag entfernen, wenn das Bild nirgends mehr existiert.
 // Entfernt NUR den Verweis im Task; eine bereits hochgeladene Drive-Datei bleibt bestehen.
-async function _fotoPendEntfernen(taskId,key,ev){
+// v238: `scheintHier` = die Anzeige haelt das Bild fuer vorhanden. Dann wird deutlicher
+// gewarnt, denn dann koennte es sich um ein Foto handeln, das gleich hochgeht.
+async function _fotoPendEntfernen(taskId,key,ev,scheintHier){
   if(ev&&ev.stopPropagation)ev.stopPropagation();
   const t=_fotoTaskById(taskId);
   if(!t){toast('Task nicht gefunden','error');return;}
-  if(!confirm('Diesen Foto-Eintrag entfernen?\n\nDas Bild ist auf diesem Gerät nicht vorhanden und wurde auch in Drive nicht gefunden. Eine trotzdem vorhandene Drive-Datei bleibt erhalten – hier verschwindet nur der Verweis im Task.'))return;
+  const frage=scheintHier
+    ? 'Diesen Foto-Eintrag WIRKLICH entfernen?\n\n⚠ Das Bild scheint auf diesem Gerät vorhanden zu sein. Wenn es sich nur nicht hochladen lässt, zuerst „📤 Jetzt erneut hochladen" versuchen.\n\nEntfernen löscht NUR den Verweis im Auftrag. Eine bereits in Drive liegende Datei bleibt erhalten.'
+    : 'Diesen Foto-Eintrag entfernen?\n\nDas Bild ist auf diesem Gerät nicht vorhanden und wurde auch in Drive nicht gefunden. Eine trotzdem vorhandene Drive-Datei bleibt erhalten – hier verschwindet nur der Verweis im Task.';
+  if(!confirm(frage))return;
   let weg=false;
   const raus=arr=>{if(!Array.isArray(arr))return arr;const n=arr.length;const r=arr.filter(f=>!(f&&_fpKey(f)===key));if(r.length<n)weg=true;return r;};
   t.fotos=raus(t.fotos);
@@ -17624,7 +17692,12 @@ async function _fotoPendEntfernen(taskId,key,ev){
     if(t.dachplan.imgKey===key&&!t.dachplan.imgDriveId){t.dachplan.imgKey=null;weg=true;}
   }
   if(key)_mobPhotoSetMeta(key,{done:1}); // Waisen-Rettung fasst den Schlüssel nicht mehr an
+  // v238: Fehlschlag nicht mehr VERSCHWEIGEN. Bis v237 hiess `weg=false` schlicht: es passiert
+  // nichts – kein Haken, keine Meldung, der Eintrag blieb stehen. Von aussen sah das genauso
+  // aus wie ein kaputter Knopf (Befund Frank 25.08.2026: „das Bild laesst sich nicht loeschen").
+  // Der Eintrag ist dann unter einer ANDEREN Kennung abgelegt als der, die die Liste anzeigt.
   if(weg){forceSave();toast('✓ Eintrag entfernt','success',2500);}
+  else toast('⚠ Der Eintrag wurde im Auftrag nicht gefunden – er ist unter einer anderen Kennung abgelegt. Bitte Bescheid geben, dann wird gemessen.','error',8000);
   if(currentTaskId===taskId){const ct=findTaskById(taskId);if(ct)try{renderDetail(ct);}catch(e){}}
   _fotoPendSig='';
   _fotoPendUpdate();
