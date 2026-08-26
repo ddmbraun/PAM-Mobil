@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v241';
+const MOB_VERSION='v242';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -4668,7 +4668,10 @@ function _buildMobileSaveObj(){
 function _saveMobileBackup(){
   // dirty-Flag mitschreiben: nur Backups mit ungespeicherten Änderungen werden beim
   // nächsten Start wiederhergestellt (_restoreMobileBackupIfDirty)
-  try{localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify({ts:new Date().toISOString(),dirty:!!dirty,data:_buildMobileSaveObj()},_mobSaveReplacer));}catch(e){}
+  // v242: Erfolg zurückmelden – die Aufrufer dürfen „lokal gesichert" nur noch
+  // behaupten, wenn es stimmt. Speicher-voll wird über die Foto-Warnung gemeldet.
+  try{localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify({ts:new Date().toISOString(),dirty:!!dirty,data:_buildMobileSaveObj()},_mobSaveReplacer));return true;}
+  catch(e){try{_speicherProblemMelden(e,'Board-Backup');}catch(_e){console.warn('[PTP-Mobile] Board-Backup:',e);}return false;}
 }
 function _getMobileBackup(){
   try{const s=localStorage.getItem(MOBILE_BACKUP_KEY);return s?JSON.parse(s):null;}catch(e){return null;}
@@ -4682,14 +4685,24 @@ function _getMobileBackup(){
 async function _restoreMobileBackupIfDirty(){
   const bk=_getMobileBackup();
   if(!bk||!bk.dirty||!bk.data)return;
-  let mergedCount=0;
+  let mergedCount=0,gerettet=0;
   try{
     for(const[bn,arr]of Object.entries(bk.data)){
       if(bn.startsWith('_')||!Array.isArray(arr))continue;
       for(const bt of arr){
         if(!bt||!bt.id)continue;
         const lt=findTaskById(bt.id);
-        if(!lt)continue;
+        if(!lt){
+          // v242: Im Offline-Start NEU angelegte Aufträge retten. Deren Kennung hat der
+          // PC nie gesehen – Verwechslung mit dort Gelöschtem ist ausgeschlossen (das
+          // war der Grund für „keine ganzen Tasks wiederherstellen", der hier nicht gilt).
+          if(bt._offlineNeu){
+            delete bt._offlineNeu;
+            const ziel=(boards[bn]&&Array.isArray(boards[bn]))?bn:_mobDefaultBoard();
+            if(ziel&&Array.isArray(boards[ziel])){boards[ziel].push(bt);gerettet++;mergedCount++;}
+          }
+          continue;
+        }
         const before=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
         lt.notizVerlauf=_mergeListByKey(lt.notizVerlauf,bt.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
         lt.zeitEntries=_mergeListByKey(lt.zeitEntries,bt.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
@@ -4702,7 +4715,7 @@ async function _restoreMobileBackupIfDirty(){
   // Backup als verarbeitet markieren (dirty löschen), Daten als Sicherheitsnetz behalten
   try{bk.dirty=false;localStorage.setItem(MOBILE_BACKUP_KEY,JSON.stringify(bk));}catch(e){}
   if(mergedCount>0){
-    toast('↻ '+mergedCount+' ungespeicherte Einträge wiederhergestellt','success');
+    toast('↻ '+mergedCount+' ungespeicherte Einträge wiederhergestellt'+(gerettet>0?(' (davon '+gerettet+' neu angelegte Aufträge)'):''),'success');
     try{renderList();}catch(e){}
     forceSave();
   }
@@ -4721,10 +4734,33 @@ function _mobRestoreBoardsOffline(schnellstart){
     _mobOfflineActive=true;
     // v120 (Geduld-Paket): Beim Schnellstart (Netz vorhanden, Verbindung läuft im
     // Hintergrund an) passenderen Hinweis zeigen als „Offline".
-    const _txt=(schnellstart&&navigator.onLine!==false)?'⏳ Lokaler Stand – verbinde im Hintergrund…':'📴 Offline – lokaler Stand (nur ansehen)';
+    const _echtOffline=!(schnellstart&&navigator.onLine!==false);
+    const _txt=_echtOffline?'📴 Offline – lokaler Stand (nur ansehen)':'⏳ Lokaler Stand – verbinde im Hintergrund…';
     try{toast(_txt,'info');}catch(e){}
+    if(_echtOffline)_mobOfflineBannerZeigen(); // v242: bleibt stehen, bis frisch geladen wurde
     return true;
   }catch(e){console.warn('[PTP-Mobile] Offline-Restore fehlgeschlagen:',e);return false;}
+}
+// ── v242: Offline-Start sichtbar und ehrlich machen ─────────────────────────
+// Band bleibt stehen, solange die Boards aus dem lokalen Backup stammen; loadFile
+// räumt es beim ersten frischen Drive-Stand ab. Dazu genau EINE Warnung bei der
+// ersten Änderung im Offline-Start (mehr würde nur nerven).
+let _mobOfflineEditGewarnt=false;
+function _mobOfflineBannerZeigen(){
+  try{
+    if(document.getElementById('mobOfflineBanner'))return;
+    const b=document.createElement('div');
+    b.id='mobOfflineBanner';
+    b.textContent='📴 Offline-Start – nur ansehen. Es bleiben nur: Notizen, Zeiten, Termine und NEU angelegte Aufträge.';
+    b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;font-size:13px;line-height:1.35;padding:6px 10px;text-align:center;';
+    document.body.appendChild(b);
+  }catch(e){}
+}
+function _mobOfflineBannerWeg(){try{const b=document.getElementById('mobOfflineBanner');if(b)b.remove();}catch(e){}}
+function _mobOfflineEditWarnung(){
+  if(!_mobOfflineActive||_mobOfflineEditGewarnt)return;
+  _mobOfflineEditGewarnt=true;
+  try{alert('📴 Du bist OHNE Netz gestartet.\n\nDiese Änderung geht beim nächsten Verbinden verloren – gerettet werden nur Notizen, Zeiten, Termine und NEU angelegte Aufträge.');}catch(e){}
 }
 
 // ── JSON-Replacer: localUrl (data:/blob:) und _uploading aus Fotos heraushalten ──
@@ -7643,6 +7679,7 @@ let fileLastModified=null;
 async function loadFile(){
   if(!fileId)return false;
   if(!(await ensureToken()))return false;
+  const _warOffline=_mobOfflineActive; // v242: Übergang Offline→Online erkennen
   try{
     const r=await fetch('https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media&_='+Date.now(),
       {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
@@ -7670,6 +7707,11 @@ async function loadFile(){
     }catch(e){console.warn('[PTP-Mobile]',e);}
     startPolling();
     _mobOfflineActive=false; // frischer Drive-Stand → Offline-Modus verlassen, Speichern wieder erlaubt
+    _mobOfflineBannerWeg(); // v242: Offline-Band abräumen
+    // v242: Direkt nach dem Offline→Online-Übergang die Offline-Einträge zurückholen.
+    // Vorher lief das nur beim nächsten App-START – wer zwischendurch speicherte,
+    // überschrieb das dirty-Backup und die Offline-Notizen waren weg.
+    if(_warOffline){try{await _restoreMobileBackupIfDirty();}catch(e){console.warn('[PTP-Mobile] Offline-Restore:',e);}}
     try{ if(typeof _pamTryOpenPendingTaskMobile==='function')_pamTryOpenPendingTaskMobile(); }catch(e){} // Deep-Link öffnen, sobald Daten da sind (auch nach Login-Redirect)
     // v232: Genau hier ist die Anmeldung gültig und der Drive-Stand frisch – der
     // richtige Augenblick, die Kürzel-Liste nachzuziehen. Bewusst OHNE await: das
@@ -7875,7 +7917,7 @@ async function saveFile(){
   }
   if(!fileId||!gdriveToken){
     // Fix: Indikator blieb sonst auf "Speichere…" hängen; Änderungen lokal sichern
-    if(dirty){_saveMobileBackup();setSaveInd('error','✗ Nicht verbunden – lokal gesichert');}
+    if(dirty){const _ls=_saveMobileBackup();setSaveInd('error',_ls?'✗ Nicht verbunden – lokal gesichert':'⚠ NICHT gesichert – Gerätespeicher voll!');}
     return;
   }
   // Mutex: parallele saveFile()-Läufe (forceSave + Retry-Timer + pagehide) verhindern
@@ -8144,11 +8186,11 @@ async function saveFile(){
         // Fix: dirty bleibt TRUE und Backup wird gesichert – vorher wurden die
         // Änderungen hier verworfen (dirty=false) → Schnellnotizen gingen verloren.
         // Nach Neu-Login speichert afterLogin() die ausstehenden Änderungen nach.
-        _saveMobileBackup();
+        const _ls2=_saveMobileBackup(); // v242: Erfolg prüfen – Meldung darf nicht lügen
         // v120 (Geduld-Paket): Nur bei wirklich fehlendem Dauer-Ticket zum Login
         // schicken – bei Netz-/Serverproblem lokal gesichert lassen + weiterprobieren.
         if(localStorage.getItem('pam_gdrive_refresh_token')||localStorage.getItem(HANDOFF_CODE_KEY)){
-          setSaveInd('error','✗ Nicht verbunden – lokal gesichert');
+          setSaveInd('error',_ls2?'✗ Nicht verbunden – lokal gesichert':'⚠ NICHT gesichert – Gerätespeicher voll!');
           _mobArmOnlineRetry();
           _mobRetrySoonThenWarn();
         }else{
@@ -8178,20 +8220,14 @@ async function saveFile(){
       clearTimeout(saveTimer);
       saveTimer=setTimeout(()=>{saveFile();},delay);
     } else {
-      // Max Retries überschritten: dirty zurücksetzen damit Polling wieder läuft
-      // Backup wurde gesichert – Remote-Stand laden um wieder konsistent zu sein
-      setSaveInd('error','✗ Sync fehlgeschlagen – lade Remote-Stand');
-      dirty=false;
-      _saveRetryCount=0;
-      setTimeout(async()=>{
-        try{
-          await loadFile();
-          // Fix: Backup-Einträge sofort zurückmergen (nicht erst beim nächsten App-Start)
-          try{await _restoreMobileBackupIfDirty();}catch(ex2){console.warn('[PTP-Mobile]',ex2);}
-          renderList();toast('⚠ Offline-Backup gesichert. Remote-Stand geladen.','error',5000);
-        }
-        catch(ex){console.warn('[PTP-Mobile] Fallback-Load:',ex);}
-      },1000);
+      // v242: Änderungen BEHALTEN statt den Remote-Stand darüberzuladen. dirty bleibt
+      // stehen, neuer Versuch alle 15 s – derselbe Weg wie beim gestörten Konflikt-Check
+      // (v220). _saveRetryCount bleibt über 3, damit weitere Fehlschläge direkt hier
+      // landen; erst ein ERFOLG setzt ihn zurück. Ausweg von Hand: forceReloadFromDrive
+      // („PC-Stand laden", fragt vorher nach).
+      setSaveInd('error','⚠ Speichern klappt nicht – Änderungen bleiben auf dem Gerät, neuer Versuch…');
+      clearTimeout(saveTimer);
+      saveTimer=setTimeout(()=>{saveFile();},15000);
     }
   }finally{
     // Mutex freigeben; falls während des Saves ein weiterer Save-Wunsch kam → nachholen
@@ -9662,6 +9698,7 @@ async function _wpMobPdf(bericht,task){
 
 
 function scheduleSave(){
+  _mobOfflineEditWarnung(); // v242: erste Änderung im Offline-Start einmalig ansagen
   dirty=true;_dirtyTs=Date.now();
   setSaveInd('saving','…');
   clearTimeout(saveTimer);
@@ -9669,6 +9706,7 @@ function scheduleSave(){
 }
 // Sofort-Speichern (nicht debouncen) — für strukturelle Änderungen wie addNotiz/addZeit/addTermin
 function forceSave(){
+  _mobOfflineEditWarnung(); // v242: erste Änderung im Offline-Start einmalig ansagen
   dirty=true;_dirtyTs=Date.now();
   clearTimeout(saveTimer);
   saveFile();
@@ -9680,6 +9718,13 @@ function setSaveInd(cls,msg){
 }
 async function refreshData(){
   if(dirty){await saveFile();}
+  // v242: Nur laden, wenn das Speichern wirklich durch ist – loadFile ERSETZT die Boards,
+  // vorher flogen gescheiterte (dirty gebliebene) Änderungen damit aus dem Speicher.
+  // Ausnahme Offline-Start: dort ist loadFile der Weg zurück in den Normalbetrieb.
+  if(dirty&&!_mobOfflineActive){
+    toast('⚠ Nicht aktualisiert – erst müssen deine Änderungen gespeichert sein (Netz prüfen)','error',5000);
+    return;
+  }
   await loadFile();
   if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
   else{renderList();if(_mobView==='heute')renderHeuteMobil();}
@@ -14516,6 +14561,7 @@ function _ensureFotoEingangTask(){
     hausverwaltung:'',adresse:'',schadensbild:'',kontakte:[],gdrive:'',gdriveOrdner:'',nas:'',
     links:[],attachments:[],timeEntries:[],ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[],
     createdAt:d.toISOString()}; // v150: echtes Erstell-Datum
+  if(_mobOfflineActive)t._offlineNeu=true; // v242: im Offline-Start entstanden → wird beim Verbinden gerettet
   boards[savedBoard].push(t);
   _qaInFlightIds.add(id);setTimeout(()=>{try{_qaInFlightIds.delete(id);}catch(_e){}},120000);
   forceSave();
@@ -17320,6 +17366,7 @@ async function _submitQuickAdd(){
     ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[],
     createdAt:now.toISOString() // v150: echtes Erstell-Datum (Anzeige oben im Task + auf der Karte)
   };
+  if(_mobOfflineActive)newT._offlineNeu=true; // v242: im Offline-Start entstanden → wird beim Verbinden gerettet
   boards[zielBoard].push(newT);
   // v62/v65: Standort (📍) + bearbeitbares Adressfeld übernehmen
   if(_qaStandort){newT.lat=_qaStandort.lat;newT.lon=_qaStandort.lon;newT.standortErfasst=_qaStandort.erfasst||new Date().toISOString();} // v71: Erfassungszeitpunkt
