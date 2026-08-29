@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v242';
+const MOB_VERSION='v243';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10067,7 +10067,11 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
   const _erst=_taskErstelltText(t,true);
   const erstelltHtml=_erst?'<span style="opacity:.75">📅 '+_erst+'</span>':'';
   const _mobAusK=t.mobilAusblenden?'<span>📱🚫 ausgeblendet</span>':''; // v219: Kennzeichen in der Kompaktzeile
-  const _teile=[info,herkunft,erstelltHtml,_mobAusK].filter(Boolean).join(' · ');
+  // v243: dieselben zwei Kennzeichen wie in der grossen Karte, nur als Text - die
+  // Kompakt-Ansicht hat keine Abzeichen, aber dieselbe Verwechslungsgefahr.
+  const _aufK=(()=>{try{const _n=t.objektId?0:_qaAufAnzahl(t.id);return _n?'<span>🛠 '+_n+'</span>':'';}catch(e){return '';}})();
+  const _amObjK=t.objektId?'<span>🛠 Auftrag am Objekt</span>':'';
+  const _teile=[info,herkunft,erstelltHtml,_mobAusK,_aufK,_amObjK].filter(Boolean).join(' · ');
   const infoZeile=_teile
     ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+_teile+'</div>'
     :'';
@@ -10210,6 +10214,16 @@ function renderList(resetScroll){
       +(status?'<span class="badge status">'+esc(status)+'</span>':'')
       +(_mobIsOfflinePinned(t.id)?'<span class="badge" style="background:#0f5132;color:#fff;border:1px solid #1a8a3c;">📴 Offline</span>':'')
       +(t.mobilAusblenden?'<span class="badge" style="background:#F3EEFB;color:#7A4FB5;border:1px solid #D5C6EE;">📱🚫 ausgeblendet</span>':'') // v219
+      /* v243 (B): "an diesem Haus haengen n Auftraege" - dasselbe blaue Abzeichen wie
+         am Rechner (_tuBadgeAufHtml, b652/b681). Am Handy fehlte es ganz; man sah einer
+         Objekt-Karte nicht an, ob etwas dranhaengt. Die Karte selbst oeffnet das Objekt,
+         das Abzeichen braucht darum keinen eigenen Klick. */
+      +(()=>{try{const _n=t.objektId?0:_qaAufAnzahl(t.id);return _n?'<span class="badge" style="background:#E6F1FB;color:#185FA5;border:1px solid #B5D4F4;font-weight:700;" title="'+_n+' Auftrag/Aufträge an diesem Objekt – Objekt öffnen, die Liste steht im Fenster">🛠 '+_n+'</span>':'';}catch(e){return '';}})()
+      /* v243 (D): Umgekehrt kennzeichnen, was ein Auftrag AM Objekt ist. Am Rechner
+         trennen Spalten die Auftraege von den Haeusern, am Handy ist das Board EINE
+         Liste - dort stand die Auftragskarte bisher ununterscheidbar zwischen den
+         Haeusern. */
+      +(t.objektId?'<span class="badge" style="background:#EAF6EC;color:#1E6B33;border:1px solid #BFE3C6;" title="'+escAttr(t.objektName||'Auftrag an einem Objekt')+'">🛠 Auftrag am Objekt</span>':'')
       +(isRunning?'<span class="task-timer-badge" style="color:var(--text);font-size:12px;font-weight:600;margin-left:auto">⏱ '+formatTimerFor(t.id)+'</span>':'')
       +'</div>'
       +(()=>{ try {
@@ -11922,6 +11936,9 @@ function renderDetail(t){
   // mitreißen, sie ist nur Beschriftung.
   const _mailAnz=(function(){try{return _mailListe(t).length;}catch(e){return 0;}})();
   const _turnusAnz=(function(){try{return ((t&&t.turnusListe)||[]).filter(Boolean).length;}catch(e){return 0;}})();
+  // v243: Zahl fuer die Kachel "Auftraege am Objekt". Sie stand bisher als einzige
+  // Kachel ohne Zaehler da - man musste sie oeffnen, um zu sehen, ob etwas dranhaengt.
+  const _aufAnz=(function(){try{return (t&&!t.objektId)?_qaAufAnzahl(t.id):0;}catch(e){return 0;}})();
   // Checkliste: die Kachel zeigt „erledigt/gesamt" – dieselbe Zählung wie _mCkTitle().
   const _ckGes=(mTaskCheckliste||[]).length;
   const _ckFertig=(mTaskCheckliste||[]).filter(x=>x&&x.done).length;
@@ -12112,7 +12129,7 @@ function renderDetail(t){
     //    Beides gehört zusammen auf eine Seite: der Knopf legt an, die Liste zeigt,
     //    was schon dranhängt. Der Rückweg „🏠 Zum Objekt" steht dagegen in der
     //    Fußzeile der Übersicht – er ist ein Weg weg, kein Bereich.
-    +br('Auftraege','🛠','Aufträge am Objekt','',false,_qaObjektAuftragKnopf(t)+_qaObjektAuftragListe(t))
+    +br('Auftraege','🛠','Aufträge am Objekt',(_aufAnz?String(_aufAnz):''),!_aufAnz,_qaObjektAuftragKnopf(t)+_qaObjektAuftragListe(t))
     // ── WIEDERKEHRENDE LEISTUNGEN (v177) ── erscheint nur, wenn welche angelegt sind.
     +br('Turnus','🔁','Wiederkehrende Leistungen',String(_turnusAnz),false,_tuMobObjektSektion(t,oc))
     // ── NOTIZEN ── (Außer-Haus-Termine: seit v108 weiter unten, direkt über der Zeiterfassung)
@@ -17242,20 +17259,69 @@ function _qaObjektAuftragKnopf(t){
 function _qaObjektAuftraegeSammle(objektId){
   var treffer=[];
   if(!objektId)return treffer;
-  var nimm=function(topf,sichtbar){
+  var gesehen={}; // v243: eine Karte darf nur EINMAL in der Liste stehen
+  var nimm=function(topf,sichtbar,archiv){
     if(!topf)return;
     Object.keys(topf).forEach(function(b){
       if(b.charAt(0)==='_')return;
       (topf[b]||[]).forEach(function(t){
-        if(t&&t.objektId===objektId)treffer.push({t:t,board:b,sichtbar:sichtbar});
+        if(!t||t.objektId!==objektId)return;
+        if(t.id&&gesehen[t.id])return;
+        if(t.id)gesehen[t.id]=1;
+        treffer.push({t:t,board:b,sichtbar:sichtbar,archiv:!!archiv});
       });
     });
   };
   nimm(boards,true);
   try{nimm(hiddenBoards,false);}catch(e){}
   try{nimm(_mobileFilteredOut,false);}catch(e){}
+  /* v243: Das Archiv des Rechners lag bisher nur als Durchreiche-Ablage da
+     (_remoteArchivedTasks, v215) und wurde NIE durchsucht - ein am PC archivierter
+     Auftrag verschwand am Handy still aus der Liste, waehrend er am PC weiter mit
+     "Archiv" dastand (_objAuftraegeZu). Jetzt lesen beide Geraete dieselben Toepfe. */
+  try{
+    (_remoteArchivedTasks||[]).forEach(function(t){
+      if(!t||t.objektId!==objektId)return;
+      if(t.id&&gesehen[t.id])return;
+      if(t.id)gesehen[t.id]=1;
+      treffer.push({t:t,board:'',sichtbar:false,archiv:true});
+    });
+  }catch(e){}
   treffer.sort(function(a,b){return String(b.t.createdAt||'').localeCompare(String(a.t.createdAt||''));});
   return treffer;
+}
+/* v243 (B/C): Wie viele Auftraege haengen an welchem Objekt? Gegenstueck zu
+   _objAufZaehlung am Rechner (b652). Die Board-Liste fragt das je Karte ab, darum
+   wird EINMAL je Zeichen-Durchlauf gezaehlt und danach wieder vergessen - dieselbe
+   Bauart wie am Rechner, damit ein frisch angelegter Auftrag nie an einem alten
+   Zwischenstand haengen bleibt. */
+var _qaAufZaehlCache=null;
+function _qaAufZaehlung(){
+  if(_qaAufZaehlCache)return _qaAufZaehlCache;
+  var m={},gesehen={};
+  var zaehl=function(t){
+    if(!t||!t.objektId)return;
+    if(t.id&&gesehen[t.id])return;
+    if(t.id)gesehen[t.id]=1;
+    m[t.objektId]=(m[t.objektId]||0)+1;
+  };
+  try{
+    [boards,hiddenBoards,_mobileFilteredOut].forEach(function(topf){
+      try{
+        Object.keys(topf||{}).forEach(function(b){
+          if(b.charAt(0)==='_')return;
+          (topf[b]||[]).forEach(zaehl);
+        });
+      }catch(e){}
+    });
+  }catch(e){}
+  try{(_remoteArchivedTasks||[]).forEach(zaehl);}catch(e){}
+  _qaAufZaehlCache=m;
+  setTimeout(function(){_qaAufZaehlCache=null;},0);
+  return m;
+}
+function _qaAufAnzahl(objektId){
+  try{return objektId?(_qaAufZaehlung()[objektId]||0):0;}catch(e){return 0;}
 }
 function _qaObjektAuftragListe(t){
   try{
@@ -17266,7 +17332,7 @@ function _qaObjektAuftragListe(t){
     var zeilen=liste.map(function(e){
       var roh=String(e.t.createdAt||'').substring(0,10);
       var datum=/^\d{4}-\d{2}-\d{2}$/.test(roh)?roh.split('-').reverse().join('.'):'';
-      var wo=e.sichtbar?(esc(e.board)+(e.t.status?' · '+esc(e.t.status):'')):'nur am PC';
+      var wo=e.archiv?'📦 Archiv':(e.sichtbar?(esc(e.board)+(e.t.status?' · '+esc(e.t.status):'')):'nur am PC');
       return '<div style="display:flex;align-items:center;gap:8px;padding:'+_tuMs(9)+' 2px;border-top:0.5px solid var(--border);'
         +(e.sichtbar?'':'opacity:.55;')+'"'
         +(e.sichtbar?' onclick="openDetail(\''+esc(e.t.id)+'\')"':'')+'>'
@@ -17406,8 +17472,29 @@ async function _submitQuickAdd(){
   try{
   // v62: sofort speichern + zurück zur Liste (kein Auto-Öffnen mehr)
   forceSave();
-  renderList();
-  const _qaRefresh=()=>{ try{renderList();}catch(e){} };
+  /* v243: Das offene Objekt-Fenster MUSS mitgezogen werden. Bis v242 lief hier nur
+     renderList() - die BOARD-Liste. Wer im Objekt stand und darin einen Auftrag
+     anlegte, sah die Liste "Auftraege an diesem Objekt" auf dem alten, meist leeren
+     Stand stehen; der neue Auftrag erschien erst nach Schliessen und erneutem
+     Oeffnen. Neu gezeichnet wird ENG: nur das Objekt, an dem gerade angelegt wurde -
+     so kann kein halb getippter Text in einem anderen Task ueberschrieben werden.
+     renderDetail statt openDetail, sonst wuerde _mBereichAktiv zurueckgesetzt und
+     man floege aus der geoeffneten Kachel heraus. */
+  const _qaRefresh=()=>{
+    /* v243: Der Zaehl-Zwischenspeicher haelt nur einen Durchlauf (setTimeout 0) - hier
+       aber kommt der neue Auftrag SYNCHRON dazwischen. Ohne dieses Leeren zeigte das
+       Abzeichen an der Karte die Zahl von VOR dem Anlegen, waehrend die Liste darunter
+       schon die neue zeigte (im Browser nachgestellt: Abzeichen 4, Liste 5). */
+    try{_qaAufZaehlCache=null;}catch(e){}
+    try{renderList();}catch(e){}
+    try{
+      if(auftragObjekt&&currentTaskId&&currentTaskId===auftragObjekt.id){
+        const _o=findTaskById(currentTaskId);
+        if(_o)renderDetail(_o);
+      }
+    }catch(e){console.warn('[v243] Objekt-Fenster auffrischen:',e);}
+  };
+  _qaRefresh();
   // v62: GPS aus dem ersten Foto übernehmen (sofern nicht schon per 📍-Button gesetzt)
   await _qaApplyGpsFromFiles(newT,fotoFiles);
   // v78: erst NACH der EXIF/GPS-Auswertung verkleinern.
