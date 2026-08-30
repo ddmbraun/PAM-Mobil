@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v248';
+const MOB_VERSION='v249';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -8011,7 +8011,16 @@ async function saveFile(){
                     const rt=remoteVisible[bn][idx];
                     // Scalars: localTask gewinnt – ABER nicht wenn localTask leer ist und Remote etwas hat
                     const mergedTask={...rt,...localTask};
-                    const scalarFields=['ausführungsdatum','due','title','desc','adresse','hausverwaltung','schadensbild','owner','status','ampel','source','gdrive','nas','tags','aktivitaet','ausfuehrungstermin','createdAt']; // Fix: tags, aktivitaet, ausfuehrungstermin ergänzt · v150: createdAt
+                    const scalarFields=['ausführungsdatum','due','title','desc','adresse','hausverwaltung','schadensbild','owner','status','ampel','source','gdrive','nas','tags','aktivitaet','ausfuehrungstermin','createdAt','objektId','objektName']; // Fix: tags, aktivitaet, ausfuehrungstermin ergänzt · v150: createdAt
+                    /* v249: objektId/objektName gehoeren in DIESE Liste, nicht in _pcOnly.
+                       Der Merge oben ist {...remote,...lokal} - lokal gewinnt. Ein am PC
+                       zugeordnetes Objekt steht am Handy aber noch auf "", und ein leerer
+                       String ueberschreibt beim Spread den echten Wert: die Zuordnung waere
+                       beim naechsten Speichern vom Handy still weg. Mit der Leer-Regel hier
+                       gewinnt Remote, solange lokal nichts steht - ordnet das Handy selbst
+                       zu, traegt localTask den Wert und behaelt ihn.
+                       NICHT nach _pcOnly verschieben: dort gewinnt Remote IMMER, und eine
+                       am Handy gesetzte Zuordnung kaeme nie am Rechner an. */
                     for(const f of scalarFields){
                       const lv=localTask[f];const rv=rt[f];
                       if((lv===''||lv===null||lv===undefined)&&rv){mergedTask[f]=rv;}
@@ -17465,7 +17474,7 @@ function _qaObjektWahl(){
   var s=document.getElementById('qaObjektSuche');if(s)s.value='';
   _qaObjektListeZeichnen();
 }
-function _qaObjektSchliessen(){var ov=document.getElementById('qaObjektOverlay');if(ov)ov.style.display='none';}
+function _qaObjektSchliessen(){var ov=document.getElementById('qaObjektOverlay');if(ov)ov.style.display='none';_qaObjektModus="quickadd";_objZuordnenMobTaskId="";}
 function _qaObjektListeZeichnen(){
   var el=document.getElementById('qaObjektListe');if(!el)return;
   var q=((document.getElementById('qaObjektSuche')||{}).value||'').trim().toLowerCase();
@@ -17483,11 +17492,83 @@ function _qaObjektListeZeichnen(){
   }).join('');
   el.innerHTML=h;
 }
+/* v249: Die Objektauswahl bedient jetzt ZWEI Wege. `_qaObjektModus` entscheidet,
+   wohin die Wahl geht:
+     "quickadd"  - wie seit v181: Vorwahl fuer einen NEUEN Auftrag am Objekt
+     "zuordnen"  - v249: der BESTEHENDE, gerade offene Auftrag wird verbunden
+   Der Modus wird nach jeder Wahl und bei jedem Schliessen zurueckgesetzt. Ohne das
+   Zuruecksetzen truege der naechste Griff zum blauen + noch den Zuordnen-Modus und
+   wuerde beim Antippen eines Objekts still den falschen Weg gehen. */
+var _qaObjektModus="quickadd";
 function _qaObjektSetzen(id){
+  /* typeof-Wache: die Pruefsuiten schneiden diese Funktion einzeln aus und fuehren
+     sie ohne die Umgebung aus (test_v181). Ohne die Wache bricht das mit einem
+     ReferenceError ab - gleiches Muster wie _objKuerzelAusNas am Rechner. */
+  if(typeof _qaObjektModus!=="undefined"&&_qaObjektModus==="zuordnen"){
+    /* Die Auftrags-Kennung VOR dem Schliessen sichern: _qaObjektSchliessen leert
+       _objZuordnenMobTaskId (damit ein abgebrochener Weg nichts liegen laesst).
+       Ohne dieses Sichern liefe das Zuordnen danach ins Leere - gefunden in der
+       Browser-Gegenprobe, die Pruefsuite sah es nicht (Attrappe statt echter
+       Schliessen-Funktion). */
+    var _zuTask=_objZuordnenMobTaskId;
+    _qaObjektModus="quickadd";
+    _qaObjektSchliessen();
+    return id?_objZuordnenMobSetzen(id,_zuTask):undefined;
+  }
   if(!id){_qaObjekt=null;}
   else{_qaObjekt=_qaObjektSammle().find(function(x){return x.id===id;})||null;}
   _qaObjektSchliessen();
   _qaObjektKnopf();
+}
+function _objZuordnenMobOeffnen(taskId){
+  var t=findTaskById(taskId);
+  if(!t){toast("Auftrag nicht gefunden","error");return;}
+  if(!_qaObjektSammle().length){
+    toast("Kein Objekt vorhanden - Objektkarte zuerst am PC anlegen","error",5000);
+    return;
+  }
+  _objZuordnenMobTaskId=taskId;
+  _qaObjektModus="zuordnen";
+  _qaObjektWahl();
+}
+var _objZuordnenMobTaskId="";
+async function _objZuordnenMobSetzen(objektId,taskId){
+  var t=findTaskById(taskId||_objZuordnenMobTaskId);
+  _objZuordnenMobTaskId="";
+  if(!t){toast("Auftrag nicht gefunden","error");return;}
+  if(t.id===objektId){toast("Eine Karte kann sich nicht selbst zugeordnet werden","error",5000);return;}
+  var obj=findTaskById(objektId);
+  if(!obj){toast("Objekt nicht gefunden","error");return;}
+  t.objektId=obj.id;
+  t.objektName=obj.title||"";
+  /* Leere Felder vom Objekt uebernehmen - wortgleich zum Rechner (b820) und zum
+     Anlegeweg v181/v186/v187. Gefuellte Felder bleiben unangetastet: am Auftrag
+     steht oft die genauere Angabe (Aufgang, Hausnummer-Zusatz). */
+  var geerbt=[];
+  if(!String(t.adresse||"").trim()&&String(obj.adresse||"").trim()){t.adresse=obj.adresse;geerbt.push("Adresse");}
+  if(!String(t.hausverwaltung||"").trim()&&String(obj.hausverwaltung||"").trim()){t.hausverwaltung=obj.hausverwaltung;geerbt.push("Auftraggeber");}
+  if(!String(t.nas||"").trim()&&String(obj.nas||"").trim()){t.nas=obj.nas;geerbt.push("NAS-Pfad");}
+  try{forceSave();}catch(e){console.warn("[v249] Speichern:",e);}
+  try{renderList();}catch(e){}
+  try{
+    var _o=findTaskById(t.id);
+    if(_o&&currentTaskId===t.id)renderDetail(_o);
+  }catch(e){console.warn("[v249] Auffrischen:",e);}
+  toast("✓ Zugeordnet: "+(obj.title||"Objekt")+(geerbt.length?" · übernommen: "+geerbt.join(", "):""),"success",5000);
+}
+async function _objZuordnenMobLoesen(taskId){
+  var t=findTaskById(taskId);
+  if(!t||!t.objektId){toast("Kein Objekt zugeordnet","error");return;}
+  var name=t.objektName||"diesem Objekt";
+  if(!confirm("Verbindung zu „"+name+"“ aufheben?\n\nDer Auftrag selbst bleibt unverändert."))return;
+  t.objektId="";t.objektName="";
+  try{forceSave();}catch(e){console.warn("[v249] Speichern:",e);}
+  try{renderList();}catch(e){}
+  try{
+    var _o=findTaskById(t.id);
+    if(_o&&currentTaskId===t.id)renderDetail(_o);
+  }catch(e){}
+  toast("✓ Verbindung aufgehoben","success",4000);
 }
 function _qaObjektKnopf(){
   var b=document.getElementById('quickAddObjektBtn');if(!b)return;
@@ -17616,6 +17697,16 @@ function _qaObjektAuftragListe(t){
 /* v186: Rückweg – am Auftrag steht, zu welchem Objekt er gehört. Antippen öffnet es. */
 function _qaObjektRueckweg(t){
   try{
+    /* v249: Ohne Objektbezug steht hier jetzt der Weg HIN statt gar nichts. Bis v248
+       war die Fusszeile an einem Auftrag ohne Objekt leer - und es gab in der ganzen
+       App keine Stelle, an der sich ein bestehender Auftrag mit seinem Haus verbinden
+       liess (Befund Frank 30.08.: ein frisch angelegtes Objekt bleibt leer).
+       Nur an Auftragskarten: Auf einem Objekt-Board waere der Knopf sinnlos. */
+    if(t&&!t.objektId){
+      var _bnZ=findBoardByTaskId(t.id);
+      if((boardTypes[_bnZ]||"baustelle")==="immobilie")return "";
+      return '<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_objZuordnenMobOeffnen(\''+esc(t.id)+'\')">\u{1F3E0} Zu einem Objekt zuordnen …</button>';
+    }
     if(!t||!t.objektId)return '';
     var offen=null;
     Object.keys(boards||{}).forEach(function(b){
