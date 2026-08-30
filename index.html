@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v249';
+const MOB_VERSION='v250';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -17559,7 +17559,8 @@ async function _objZuordnenMobSetzen(objektId,taskId){
 async function _objZuordnenMobLoesen(taskId){
   var t=findTaskById(taskId);
   if(!t||!t.objektId){toast("Kein Objekt zugeordnet","error");return;}
-  var name=t.objektName||"diesem Objekt";
+  var _o=findTaskById(t.objektId); // v250: aktueller Titel, Kopie nur als Rueckfall
+  var name=(_o&&_o.title)||t.objektName||"diesem Objekt";
   if(!confirm("Verbindung zu „"+name+"“ aufheben?\n\nDer Auftrag selbst bleibt unverändert."))return;
   t.objektId="";t.objektName="";
   try{forceSave();}catch(e){console.warn("[v249] Speichern:",e);}
@@ -17713,7 +17714,10 @@ function _qaObjektRueckweg(t){
       if(offen||b.charAt(0)==='_')return;
       (boards[b]||[]).forEach(function(x){if(!offen&&x&&x.id===t.objektId)offen=x;});
     });
-    var name=esc(t.objektName||(offen&&offen.title)||'Objekt');
+    /* v250: Titel der Objektkarte zuerst. `objektName` ist die Kopie vom
+       Zuordnungs-Zeitpunkt; sie bleibt der Rueckfall fuer den Fall, dass das
+       Objektboard am Handy nicht freigegeben ist (Zeile „nur am PC" unten). */
+    var name=esc((offen&&offen.title)||t.objektName||'Objekt');
     if(!offen)return '<div style="margin:2px 0 10px;padding:'+_tuMs(9)+' '+_tuMs(12)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);font-size:'+_tuMs(13)+';color:var(--text2);">🏠 '+name+' <span style="opacity:.8;">· nur am PC</span></div>';
     return '<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="openDetail(\''+esc(t.objektId)+'\')">🏠 Zum Objekt: '+name+'</button>';
   }catch(e){console.warn('[v186] Rückweg:',e);return '';}
