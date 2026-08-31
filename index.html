@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v252';
+const MOB_VERSION='v253';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11979,7 +11979,12 @@ function renderDetail(t){
   const _turnusAnz=(function(){try{return ((t&&t.turnusListe)||[]).filter(Boolean).length;}catch(e){return 0;}})();
   // v243: Zahl fuer die Kachel "Auftraege am Objekt". Sie stand bisher als einzige
   // Kachel ohne Zaehler da - man musste sie oeffnen, um zu sehen, ob etwas dranhaengt.
-  const _aufAnz=(function(){try{return (t&&!t.objektId)?_qaAufAnzahl(t.id):0;}catch(e){return 0;}})();
+  /* v253: Die Zahl an der Kachel gilt jetzt auch im Auftrag - dann fuer sein Objekt.
+     Ohne das blieb die Kachel dort leer und wurde von `br()` ganz ausgeblendet. */
+  const _aufAnz=(function(){try{
+    if(!t)return 0;
+    return t.objektId?_qaAufAnzahl(t.objektId):_qaAufAnzahl(t.id);
+  }catch(e){return 0;}})();
   // Checkliste: die Kachel zeigt „erledigt/gesamt" – dieselbe Zählung wie _mCkTitle().
   const _ckGes=(mTaskCheckliste||[]).length;
   const _ckFertig=(mTaskCheckliste||[]).filter(x=>x&&x.done).length;
@@ -17531,6 +17536,11 @@ function _qaObjektSetzen(id){
 
    ⚠ Das Objekt bekommt KEINEN Drive-Ordner - den verlinkt Frank am Rechner mit 📂.
    Alles andere (Liste, Zuordnung, Vererbung) funktioniert auch ohne ihn. */
+function _qaWeitererAuftrag(objektId){
+  var o=_qaObjektSammle().find(function(x){return x.id===objektId;});
+  if(!o){toast("Objektkarte nicht gefunden","error",5000);return;}
+  newTask(o);   // v181-Weg: Objekt vorgewaehlt, Vererbung inklusive
+}
 function _objNeuAusTaskBoards(){
   return Object.keys(boards||{}).filter(function(b){
     return !b.startsWith("_")&&(boardTypes[b]||"baustelle")==="immobilie";
@@ -17786,9 +17796,17 @@ function _qaObjAufArchivToggle(){
 }
 function _qaObjektAuftragListe(t){
   try{
-    var bn=findBoardByTaskId(t.id);
-    if((boardTypes[bn]||'baustelle')!=='immobilie'||t.objektId)return '';
-    var alle=_qaObjektAuftraegeSammle(t.id);
+    /* v253: Die Liste steht jetzt AUCH im Auftrag - dort mit der objektId des
+       Auftrags. Bis v252 sah man die Geschwister nur am Objekt; wer im Auftrag
+       einen weiteren anlegte, bemerkte ihn nicht (Befund Frank 31.08.). */
+    var _hier='',_quelle='';
+    if(t.objektId){_quelle=t.objektId;_hier=t.id;}
+    else{
+      var bn=findBoardByTaskId(t.id);
+      if((boardTypes[bn]||'baustelle')!=='immobilie')return '';
+      _quelle=t.id;
+    }
+    var alle=_qaObjektAuftraegeSammle(_quelle);
     if(!alle.length)return '';
 
     // Die ZAEHLZEILE rechnet immer ueber ALLE - auch bei ausgeblendetem Archiv.
@@ -17805,7 +17823,7 @@ function _qaObjektAuftragListe(t){
     var zaehl=Object.keys(jahrAlle).map(Number).sort(function(x,y){return y-x;})
       .map(function(j){return (j?j:'ohne Datum')+': '+jahrAlle[j];}).join(' \u00b7 ');
 
-    var kopf='<div style="font-size:'+_tuMs(12)+';font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;">\uD83D\uDEE0 Auftr\u00e4ge an diesem Objekt ('+alle.length+')</div>'
+    var kopf='<div style="font-size:'+_tuMs(12)+';font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;">\uD83D\uDEE0 '+(_hier?'Weitere Auftr\u00e4ge an diesem Haus':'Auftr\u00e4ge an diesem Objekt')+' ('+alle.length+')</div>'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 2px;">'
       +'<span style="flex:1;min-width:0;font-size:'+_tuMs(11)+';color:var(--text2);">'+esc(zaehl)+'</span>'
       +(archivAnz?'<button type="button" onclick="event.stopPropagation();_qaObjAufArchivToggle()" style="flex-shrink:0;padding:'+_tuMs(3)+' '+_tuMs(9)+';border-radius:6px;border:1px solid var(--border);background:'+(_qaObjAufOhneArchiv?'var(--accent)':'var(--bg3)')+';color:'+(_qaObjAufOhneArchiv?'#fff':'var(--text2)')+';font-size:'+_tuMs(11)+';">'+(_qaObjAufOhneArchiv?'nur offene \u2713':'nur offene')+'</button>':'')
@@ -17833,7 +17851,7 @@ function _qaObjektAuftragListe(t){
           +(e.sichtbar?'':'opacity:.55;')+'"'
           +(e.sichtbar?' onclick="openDetail(\''+esc(e.t.id)+'\')"':'')+'>'
           +'<span style="flex:1;min-width:0;">'
-            +'<span style="display:block;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(e.t.title||'(ohne Titel)')+'</span>'
+            +'<span style="display:block;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(e.t.title||'(ohne Titel)')+((_hier&&e.t.id===_hier)?' <span style="font-weight:400;color:var(--accent);">\u2190 hier</span>':'')+'</span>'
             +'<span style="display:block;font-size:'+_tuMs(11)+';color:var(--text2);">'+wo+(datum?' \u00b7 '+datum:'')+'</span>'
           +'</span>'
           +(e.sichtbar?'<span style="flex-shrink:0;color:var(--text2);font-size:'+_tuMs(16)+';">\u203A</span>':'')
@@ -17873,8 +17891,13 @@ function _qaObjektRueckweg(t){
        Zuordnungs-Zeitpunkt; sie bleibt der Rueckfall fuer den Fall, dass das
        Objektboard am Handy nicht freigegeben ist (Zeile „nur am PC" unten). */
     var name=esc((offen&&offen.title)||t.objektName||'Objekt');
+    /* v253: Aus dem Auftrag heraus gleich noch einen am selben Haus anlegen -
+       Franks Ausgangsfrage vom 30.08. ⛔ Kein zweiter Anlegeweg: es wird
+       `_qaAuftragVomObjekt`s Weg genutzt (newTask mit vorgewaehltem Objekt, v181).
+       Nur wenn die Objektkarte am Handy da ist - sonst gibt es nichts zu erben. */
+    var _weiter=offen?('<button class="add-btn" style="width:100%;margin:2px 0 6px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_qaWeitererAuftrag(\''+esc(t.objektId)+'\')">➕ Weiterer Auftrag hier</button>'):'';
     if(!offen)return '<div style="margin:2px 0 10px;padding:'+_tuMs(9)+' '+_tuMs(12)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);font-size:'+_tuMs(13)+';color:var(--text2);">🏠 '+name+' <span style="opacity:.8;">· nur am PC</span></div>';
-    return '<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="openDetail(\''+esc(t.objektId)+'\')">🏠 Zum Objekt: '+name+'</button>';
+    return _weiter+'<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="openDetail(\''+esc(t.objektId)+'\')">🏠 Zum Objekt: '+name+'</button>';
   }catch(e){console.warn('[v186] Rückweg:',e);return '';}
 }
 
