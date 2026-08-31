@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v251';
+const MOB_VERSION='v252';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -17520,6 +17520,78 @@ function _qaObjektSetzen(id){
   _qaObjektSchliessen();
   _qaObjektKnopf();
 }
+/* == v252: Aus einem Auftrag ein OBJEKT machen ==============================
+   Anlass (Frank, 31.08.): Auf der Baustelle steht er an einem Haus, das noch kein
+   Objekt hat - er kann den Auftrag also nirgends zuordnen.
+
+   ⛔ Bewusst NICHT die Massenanlage vom Rechner ans Handy geholt: Die braucht einen
+   Drive-Ordner-Browser, den es hier gar nicht gibt (`_pickDriveFolder` = 0 Treffer),
+   und verschachtelte Drive-Ordner auf einem Handy durchzublaettern waere Quaelerei.
+   Hier entsteht EIN Objekt aus dem, was der Auftrag ohnehin weiss.
+
+   ⚠ Das Objekt bekommt KEINEN Drive-Ordner - den verlinkt Frank am Rechner mit 📂.
+   Alles andere (Liste, Zuordnung, Vererbung) funktioniert auch ohne ihn. */
+function _objNeuAusTaskBoards(){
+  return Object.keys(boards||{}).filter(function(b){
+    return !b.startsWith("_")&&(boardTypes[b]||"baustelle")==="immobilie";
+  });
+}
+function _objNeuAusTaskSchliessen(){
+  var o=document.getElementById("objNeuOverlay");
+  if(o)try{o.remove();}catch(e){}
+}
+function _objNeuAusTask(taskId){
+  var t=findTaskById(taskId);
+  if(!t){toast("Auftrag nicht gefunden","error");return;}
+  var adr=String(t.adresse||"").trim();
+  if(!adr){toast("Im Auftrag steht keine Adresse – zuerst eintragen","error",6000);return;}
+  var brd=_objNeuAusTaskBoards();
+  if(!brd.length){toast("Kein Objekt-Board vorhanden – am PC anlegen","error",6000);return;}
+  _objNeuAusTaskSchliessen();
+  var ov=document.createElement("div");
+  ov.id="objNeuOverlay";
+  ov.style.cssText="position:fixed;inset:0;z-index:9200;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;";
+  ov.innerHTML='<div style="width:100%;max-height:80%;overflow-y:auto;background:var(--bg2);border-radius:14px 14px 0 0;padding:'+_tuMs(16)+';">'
+    +'<div style="font-size:'+_tuMs(16)+';font-weight:800;color:var(--text);margin-bottom:'+_tuMs(4)+';">\uD83C\uDFE0 Objekt daraus machen</div>'
+    +'<div style="font-size:'+_tuMs(12)+';color:var(--text2);line-height:1.6;margin-bottom:'+_tuMs(10)+';">Es entsteht eine Objektkarte mit dieser Adresse, und der Auftrag wird sofort damit verbunden. Der Drive-Ordner bleibt leer \u2013 den verlinkst du am PC.</div>'
+    +'<div style="font-size:'+_tuMs(11)+';color:var(--text2);margin-bottom:'+_tuMs(2)+';">Name des Objekts</div>'
+    +'<input id="objNeuTitel" type="text" value="'+esc(adr)+'" autocomplete="off" style="width:100%;box-sizing:border-box;padding:'+_tuMs(11)+';background:var(--bg3);color:var(--text);border:1.5px solid var(--accent);border-radius:10px;font-size:'+_tuMs(15)+';margin-bottom:'+_tuMs(10)+';">'
+    +'<div style="font-size:'+_tuMs(11)+';color:var(--text2);margin-bottom:'+_tuMs(2)+';">Auf welches Board?</div>'
+    +brd.map(function(b){
+        return '<div onclick="_objNeuAusTaskAnlegen(\''+esc(taskId)+'\',\''+esc(b)+'\')" style="padding:'+_tuMs(13)+' '+_tuMs(12)+';border:1px solid var(--border);border-radius:10px;margin-bottom:'+_tuMs(8)+';font-size:'+_tuMs(15)+';font-weight:600;color:var(--text);background:var(--bg3);">\uD83C\uDFE0 '+esc(b)+'</div>';
+      }).join("")
+    +'<button onclick="_objNeuAusTaskSchliessen()" style="width:100%;padding:'+_tuMs(12)+';margin-top:'+_tuMs(4)+';border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:'+_tuMs(14)+';">Abbrechen</button>'
+  +'</div>';
+  ov.addEventListener("click",function(e){if(e.target===ov)_objNeuAusTaskSchliessen();});
+  document.body.appendChild(ov);
+}
+async function _objNeuAusTaskAnlegen(taskId,board){
+  var t=findTaskById(taskId);
+  if(!t){toast("Auftrag nicht gefunden","error");return;}
+  var titel=((document.getElementById("objNeuTitel")||{}).value||"").trim()||String(t.adresse||"").trim();
+  if(!titel){toast("Bitte einen Namen eingeben","error");return;}
+  if(!Array.isArray(boards[board])){toast("Board nicht gefunden","error");return;}
+  /* Spalte: die erste, die NICHT die Auffangspalte fuer Auftraege ist - eine
+     Objektkarte gehoert nicht in "🛠 Auftraege" (gleiche Regel wie am Rechner, b822). */
+  var sts=(_remoteBoardStatuses&&_remoteBoardStatuses[board])||[];
+  var spalte="";
+  for(var i=0;i<sts.length;i++){if(sts[i]!==AUFTRAG_SPALTE){spalte=sts[i];break;}}
+  if(!spalte)spalte=sts[0]||"";
+  var neu={id:generateId(),title:titel,desc:"",owner:"",due:"",status:spalte,ampel:"grün",
+    adresse:titel,hausverwaltung:String(t.hausverwaltung||""),nas:String(t.nas||""),
+    schadensbild:"",kontakte:[],gdrive:"",gdriveOrdner:"",links:[],attachments:[],
+    timeEntries:[],ausserhausTermine:[],zeitEntries:[],notizVerlauf:[],fotos:[],tags:[],source:"",
+    createdAt:new Date().toISOString()};
+  boards[board].push(neu);
+  // Den Auftrag sofort verbinden - sonst stuende das Objekt leer da.
+  t.objektId=neu.id;
+  t.objektName=neu.title;
+  try{forceSave();}catch(e){console.warn("[v252] Speichern:",e);}
+  _objNeuAusTaskSchliessen();
+  try{renderList();}catch(e){}
+  try{var _o=findTaskById(taskId);if(_o&&currentTaskId===taskId)renderDetail(_o);}catch(e){}
+  toast("✓ Objekt angelegt und verbunden: "+titel,"success",6000);
+}
 function _objZuordnenMobOeffnen(taskId){
   var t=findTaskById(taskId);
   if(!t){toast("Auftrag nicht gefunden","error");return;}
@@ -17784,7 +17856,12 @@ function _qaObjektRueckweg(t){
     if(t&&!t.objektId){
       var _bnZ=findBoardByTaskId(t.id);
       if((boardTypes[_bnZ]||"baustelle")==="immobilie")return "";
-      return '<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_objZuordnenMobOeffnen(\''+esc(t.id)+'\')">\u{1F3E0} Zu einem Objekt zuordnen …</button>';
+      /* v252: Zwei Wege nebeneinander - einem VORHANDENEN Objekt zuordnen, oder ein
+         NEUES daraus machen. Der zweite nur, wenn im Auftrag eine Adresse steht:
+         ohne sie haette das Objekt keinen Namen. */
+      var _hatAdr=!!String(t.adresse||'').trim();
+      return '<button class="add-btn" style="width:100%;margin:2px 0 6px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_objZuordnenMobOeffnen(\''+esc(t.id)+'\')">\u{1F3E0} Zu einem Objekt zuordnen …</button>'
+        +(_hatAdr?'<button class="add-btn" style="width:100%;margin:0 0 10px;min-height:'+_tuMs(42)+';font-size:'+_tuMs(13)+';" onclick="_objNeuAusTask(\''+esc(t.id)+'\')">\u{1F3E0} Neues Objekt daraus machen …</button>':'');
     }
     if(!t||!t.objektId)return '';
     var offen=null;
