@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v250';
+const MOB_VERSION='v251';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -17669,31 +17669,109 @@ function _qaAufZaehlung(){
 function _qaAufAnzahl(objektId){
   try{return objektId?(_qaAufZaehlung()[objektId]||0):0;}catch(e){return 0;}
 }
+/* v251: Jahr eines Auftrags - wortgleich zum Rechner (b828). Erst das
+   Ausfuehrungsdatum ("wann war ich da"), sonst das Anlegedatum.
+   ⚠ Es gibt ZWEI Ausfuehrungs-Felder; das erste gefuellte gewinnt.
+   ⛔ Das Anlegedatum kommt ueber `_taskErstelltAm` (v205), NICHT ueber
+   `createdAt` allein: alte Auftraege haben das Feld nicht, ihr Datum steckt in der
+   Task-Nummer. Genau daran fehlte in dieser Liste bisher jedes Datum. */
+function _qaObjAufJahrVon(task){
+  if(!task)return 0;
+  var roh=[task.ausfuehrungstermin,task["ausf\u00fchrungsdatum"]]
+    .map(function(x){return String(x||"").trim();}).filter(Boolean)[0]||"";
+  var m=/^(\d{4})-\d{2}-\d{2}/.exec(roh);
+  if(m)return +m[1];
+  var d=(typeof _taskErstelltAm==="function")?_taskErstelltAm(task):null;
+  return d?d.getFullYear():0;
+}
+function _qaObjAufDatumText(task){
+  var roh=[task&&task.ausfuehrungstermin,task&&task["ausf\u00fchrungsdatum"]]
+    .map(function(x){return String(x||"").trim();}).filter(Boolean)[0]||"";
+  var m=/^(\d{4})-(\d{2})-(\d{2})/.exec(roh);
+  if(m)return m[3]+"."+m[2]+"."+m[1];
+  var d=(typeof _taskErstelltAm==="function")?_taskErstelltAm(task):null;
+  if(!d)return "";
+  var p=function(n){return String(n).padStart(2,"0");};
+  return p(d.getDate())+"."+p(d.getMonth()+1)+"."+d.getFullYear();
+}
+/* Zustand. Bewusst NICHT gespeichert - beim naechsten Oeffnen soll wieder das
+   laufende Jahr offen sein. */
+var _qaObjAufJahrZu={};
+var _qaObjAufOhneArchiv=false;
+function _qaObjAufJahrToggle(j){
+  /* ⛔ Den EFFEKTIVEN Zustand umkehren, nicht den gespeicherten - siehe b828.
+     Aeltere Jahre sind zugeklappt, ohne dass etwas gespeichert ist. */
+  var heuer=new Date().getFullYear();
+  var zuJetzt=(j in _qaObjAufJahrZu)?_qaObjAufJahrZu[j]:(j!==heuer);
+  _qaObjAufJahrZu[j]=!zuJetzt;
+  /* renderDetail statt openDetail - sonst faellt man aus der geoeffneten Kachel
+     heraus (dieselbe Lehre wie v243). */
+  try{var t2=findTaskById(currentTaskId);if(t2)renderDetail(t2);}catch(e){}
+}
+function _qaObjAufArchivToggle(){
+  _qaObjAufOhneArchiv=!_qaObjAufOhneArchiv;
+  try{var t2=findTaskById(currentTaskId);if(t2)renderDetail(t2);}catch(e){}
+}
 function _qaObjektAuftragListe(t){
   try{
     var bn=findBoardByTaskId(t.id);
     if((boardTypes[bn]||'baustelle')!=='immobilie'||t.objektId)return '';
-    var liste=_qaObjektAuftraegeSammle(t.id);
-    if(!liste.length)return '';
-    var zeilen=liste.map(function(e){
-      var roh=String(e.t.createdAt||'').substring(0,10);
-      var datum=/^\d{4}-\d{2}-\d{2}$/.test(roh)?roh.split('-').reverse().join('.'):'';
-      var wo=e.archiv?'📦 Archiv':(e.sichtbar?(esc(e.board)+(e.t.status?' · '+esc(e.t.status):'')):'nur am PC');
-      return '<div style="display:flex;align-items:center;gap:8px;padding:'+_tuMs(9)+' 2px;border-top:0.5px solid var(--border);'
-        +(e.sichtbar?'':'opacity:.55;')+'"'
-        +(e.sichtbar?' onclick="openDetail(\''+esc(e.t.id)+'\')"':'')+'>'
-        +'<span style="flex:1;min-width:0;">'
-          +'<span style="display:block;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(e.t.title||'(ohne Titel)')+'</span>'
-          +'<span style="display:block;font-size:'+_tuMs(11)+';color:var(--text2);">'+wo+(datum?' · '+datum:'')+'</span>'
-        +'</span>'
-        +(e.sichtbar?'<span style="flex-shrink:0;color:var(--text2);font-size:'+_tuMs(16)+';">›</span>':'')
-        +'</div>';
-    }).join('');
-    return '<div style="margin:0 0 12px;padding:'+_tuMs(8)+' '+_tuMs(10)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);">'
-      +'<div style="font-size:'+_tuMs(12)+';font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;">🛠 Aufträge an diesem Objekt ('+liste.length+')</div>'
-      +zeilen
+    var alle=_qaObjektAuftraegeSammle(t.id);
+    if(!alle.length)return '';
+
+    // Die ZAEHLZEILE rechnet immer ueber ALLE - auch bei ausgeblendetem Archiv.
+    var jahrAlle={};
+    alle.forEach(function(e){var j=_qaObjAufJahrVon(e.t)||0;jahrAlle[j]=(jahrAlle[j]||0)+1;});
+    var archivAnz=alle.filter(function(e){return e.archiv;}).length;
+    var liste=_qaObjAufOhneArchiv?alle.filter(function(e){return !e.archiv;}):alle;
+
+    var jahre={};
+    liste.forEach(function(e){var j=_qaObjAufJahrVon(e.t)||0;(jahre[j]=jahre[j]||[]).push(e);});
+    var sortiert=Object.keys(jahre).map(Number).sort(function(x,y){return y-x;});
+    var heuer=new Date().getFullYear();
+
+    var zaehl=Object.keys(jahrAlle).map(Number).sort(function(x,y){return y-x;})
+      .map(function(j){return (j?j:'ohne Datum')+': '+jahrAlle[j];}).join(' \u00b7 ');
+
+    var kopf='<div style="font-size:'+_tuMs(12)+';font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;">\uD83D\uDEE0 Auftr\u00e4ge an diesem Objekt ('+alle.length+')</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 2px;">'
+      +'<span style="flex:1;min-width:0;font-size:'+_tuMs(11)+';color:var(--text2);">'+esc(zaehl)+'</span>'
+      +(archivAnz?'<button type="button" onclick="event.stopPropagation();_qaObjAufArchivToggle()" style="flex-shrink:0;padding:'+_tuMs(3)+' '+_tuMs(9)+';border-radius:6px;border:1px solid var(--border);background:'+(_qaObjAufOhneArchiv?'var(--accent)':'var(--bg3)')+';color:'+(_qaObjAufOhneArchiv?'#fff':'var(--text2)')+';font-size:'+_tuMs(11)+';">'+(_qaObjAufOhneArchiv?'nur offene \u2713':'nur offene')+'</button>':'')
       +'</div>';
-  }catch(e){console.warn('[v186] Auftragsliste:',e);return '';}
+
+    if(!liste.length){
+      return '<div style="margin:0 0 12px;padding:'+_tuMs(8)+' '+_tuMs(10)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);">'+kopf
+        +'<div style="font-size:'+_tuMs(12)+';color:var(--text2);padding:'+_tuMs(6)+' 0;">Alle '+archivAnz+' Auftr\u00e4ge sind archiviert.</div></div>';
+    }
+
+    var rumpf='';
+    sortiert.forEach(function(j){
+      var eintraege=jahre[j];
+      var zu=(j in _qaObjAufJahrZu)?_qaObjAufJahrZu[j]:(j!==heuer);
+      rumpf+='<div onclick="event.stopPropagation();_qaObjAufJahrToggle('+j+')" style="display:flex;align-items:center;gap:'+_tuMs(6)+';padding:'+_tuMs(8)+' 2px;border-top:0.5px solid var(--border);">'
+        +'<span style="font-size:'+_tuMs(12)+';color:var(--text2);width:'+_tuMs(14)+';">'+(zu?'\u25B6':'\u25BC')+'</span>'
+        +'<span style="flex:1;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);">'+(j?j:'ohne Datum')+'</span>'
+        +'<span style="font-size:'+_tuMs(12)+';color:var(--text2);">'+eintraege.length+'</span>'
+        +'</div>';
+      if(zu)return;
+      rumpf+=eintraege.map(function(e){
+        var datum=_qaObjAufDatumText(e.t);
+        var wo=e.archiv?'\uD83D\uDCE6 Archiv':(e.sichtbar?(esc(e.board)+(e.t.status?' \u00b7 '+esc(e.t.status):'')):'nur am PC');
+        return '<div style="display:flex;align-items:center;gap:8px;padding:'+_tuMs(9)+' 2px '+_tuMs(9)+' '+_tuMs(20)+';border-top:0.5px solid var(--border);'
+          +(e.sichtbar?'':'opacity:.55;')+'"'
+          +(e.sichtbar?' onclick="openDetail(\''+esc(e.t.id)+'\')"':'')+'>'
+          +'<span style="flex:1;min-width:0;">'
+            +'<span style="display:block;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(e.t.title||'(ohne Titel)')+'</span>'
+            +'<span style="display:block;font-size:'+_tuMs(11)+';color:var(--text2);">'+wo+(datum?' \u00b7 '+datum:'')+'</span>'
+          +'</span>'
+          +(e.sichtbar?'<span style="flex-shrink:0;color:var(--text2);font-size:'+_tuMs(16)+';">\u203A</span>':'')
+          +'</div>';
+      }).join('');
+    });
+
+    return '<div style="margin:0 0 12px;padding:'+_tuMs(8)+' '+_tuMs(10)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);">'
+      +kopf+rumpf+'</div>';
+  }catch(e){console.warn('[v251] Auftragsliste:',e);return '';}
 }
 /* v186: Rückweg – am Auftrag steht, zu welchem Objekt er gehört. Antippen öffnet es. */
 function _qaObjektRueckweg(t){
