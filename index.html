@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v253';
+const MOB_VERSION='v254';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9366,6 +9366,107 @@ function _extractFolderIdMob(url){
   if(!url)return '';const m=url.match(/[-\w]{25,}/);return m?m[0]:'';
 }
 
+/* ── v254: Foto-Upload mit Zeitlimit und Geduld ───────────────────────────────
+   Gemessener Befund 31.08.: „Das Foto-Hochladen hakt manchmal, obwohl WLAN da ist –
+   ich muss selbst neu anstoßen." Drei Ursachen; die ersten beiden wohnen hier.
+
+   1. KEIN ZEITLIMIT. Beide Upload-Wege schickten mit blankem fetch los. Ein WLAN mit
+      vollem Balken, aber ohne Datendurchsatz (Router ohne Internet, Gast-WLAN mit
+      Anmeldeseite, schwaches Signal an der Dachkante) lässt die Anfrage einfach
+      stehen. Der Stapel läuft bewusst nacheinander (v78) – ein hängendes Foto
+      blockierte damit ALLE folgenden. Und weil _fotoUploadInFlight dabei oben blieb,
+      stand auch pollForChanges still: es bewegte sich gar nichts mehr.
+   2. KURZE AUSSETZER GALTEN ALS ENDGÜLTIG. Nur 401 wurde wiederholt. 429 („zu viele
+      Anfragen") und 500/502/503/504 („Server gerade beschäftigt") sind bei Drive die
+      häufigsten Stolperer und wären nach Sekunden von selbst weg – sie warfen das
+      Foto trotzdem sofort in den Fehler-Zustand, wo es liegen blieb.
+   (Die dritte Ursache steht bei _fotoStillTick: nachgeladen wurde nur beim App-Start
+    und beim Signal „Netz ist zurück" – bei durchgehendem WLAN kommt das zweite nie.)
+
+   ⛔ Das Zeitlimit ist BEWUSST nicht _fetchTimeout (8 s). Zwei Gründe:
+      • 8 s sind für eine kurze Rückfrage gedacht. Ein Foto von 2 MB braucht bei
+        mäßigem WLAN ehrlich länger und würde damit reihenweise abgewürgt.
+      • _fetchTimeout wohnt in einem SPÄTEREN <script>-Block als seine beiden Nutzer
+        hier. Zur Laufzeit ginge das gut, aber die Prüfsuiten schneiden Funktionen
+        einzeln heraus und führen sie aus – genau daran sind bei b747 zweimal alte
+        Suiten zerbrochen. Deshalb steht der Baustein HIER, vor seinem ersten Nutzer,
+        und hält seine Zahlen INNEN: keine neue äußere Konstante, über die eine alte
+        Suite stolpern könnte.
+
+   ⛔⛔ WIEDERHOLEN NACH EINEM VERBINDUNGSABBRUCH DARF NICHT BLIND PASSIEREN.
+       Bricht die Verbindung mitten im Senden ab, weiß hier NIEMAND, ob Google die
+       Datei nicht doch angelegt hat. Blindes Nachsenden legt sie ein zweites Mal an –
+       dieselbe Falle, gegen die v137 den Doppellauf gesperrt hat. Darum sieht
+       _uploadSchonDa() vorher im Zielordner nach.
+       Und dabei zählt NICHT der Name allein: _mobUploadFromKey lädt unter dem rohen
+       Kameranamen hoch (fo.name, z.B. „image.jpg") – der kann sich mit einem ganz
+       anderen Bild doppeln. Ein falscher Treffer wäre schlimmer als eine Dublette:
+       das Foto zeigte hinterher lautlos auf ein fremdes Bild. Deshalb muss die GRÖSSE
+       auf das Byte genau mitstimmen, und ohne bekannte Größe wird gar nicht geraten.
+       Bei 429/5xx entfällt die Nachschau ganz: dort hat Google die Annahme
+       ausdrücklich verweigert, es KANN nichts angelegt worden sein. */
+function _uploadZeitlimitMs(bytes){
+  // Grundzeit + Zuschlag je Megabyte, gedeckelt. Ein 2-MB-Foto bekommt gut 105 s.
+  return Math.min(180000,45000+Math.round((Number(bytes)||0)/1048576*30000));
+}
+function _uploadFehlerGehtVorbei(status){
+  return status===429||status===500||status===502||status===503||status===504;
+}
+async function _uploadSchonDa(name,folderId,bytes){
+  // Ohne Name, Ordner oder Größe wird NICHT geraten – siehe ⛔⛔ oben.
+  if(!name||!folderId||!bytes)return null;
+  if(typeof gdriveToken==='undefined'||!gdriveToken)return null;
+  try{
+    const q="name='"+String(name).replace(/'/g,"\\'")+"' and '"+folderId+"' in parents and trashed=false";
+    const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)
+      +'&fields=files(id,name,size,mimeType,thumbnailLink,webViewLink,webContentLink)&pageSize=10',
+      {headers:{Authorization:'Bearer '+gdriveToken}});
+    if(!r.ok)return null;
+    const d=await r.json();
+    return ((d&&d.files)||[]).find(f=>f&&Number(f.size)===Number(bytes))||null;
+  }catch(e){console.warn('[MobPhoto] Nachschau:',e);return null;}
+}
+/* Schickt `senden(signal)` los und gibt die geglückte Antwort zurück.
+   ⛔ `senden` MUSS das Signal an fetch durchreichen, sonst greift das Zeitlimit nicht.
+   opts: {bytes,name,folderId} – name+folderId+bytes schalten den Doppelten-Schutz frei. */
+async function _uploadMitGeduld(senden,opts){
+  const grenze=_uploadZeitlimitMs(opts&&opts.bytes);
+  const pausen=[3000,10000]; // vor dem 2. und dem 3. Versuch
+  let letzter=null;
+  for(let versuch=0;versuch<=pausen.length;versuch++){
+    // Vor JEDEM Versuch: der Schlüssel kann während eines langen Uploads ablaufen.
+    if(!tokenValid())await _ensureTokenSilent();
+    const einmal=async()=>{
+      const ctrl=new AbortController();
+      const wecker=setTimeout(()=>ctrl.abort(),grenze);
+      try{return await senden(ctrl.signal);}finally{clearTimeout(wecker);}
+    };
+    let r=null,abbruch=null;
+    try{r=await einmal();}catch(e){abbruch=e;}
+    // 401 wie seit v137: EINMAL still erneuern und sofort nochmal – das zählt bewusst
+    // NICHT als Versuch, sonst kostet ein abgelaufener Schlüssel eine ganze Runde.
+    if(r&&r.status===401&&await _ensureTokenSilent()){
+      try{r=await einmal();abbruch=null;}catch(e){r=null;abbruch=e;}
+    }
+    if(r&&r.ok)return r;
+    // Endgültige Fehler (403 keine Berechtigung, 404 Ordner weg, …): wiederholen
+    // macht sie nicht besser, es verzögert nur die ehrliche Rückmeldung.
+    if(r&&!_uploadFehlerGehtVorbei(r.status)){
+      const txt=await r.text().catch(()=>'');
+      throw new Error('HTTP '+r.status+(txt?': '+txt.slice(0,120):''));
+    }
+    letzter=r?new Error('HTTP '+r.status):(abbruch||new Error('Netzfehler'));
+    if(versuch>=pausen.length)break;
+    // ⛔ Nur wenn die Verbindung abbrach (keine Antwort): erst nachsehen, dann senden.
+    if(!r&&opts&&opts.name&&opts.folderId){
+      const da=await _uploadSchonDa(opts.name,opts.folderId,opts.bytes);
+      if(da)return {ok:true,status:200,_schonDa:true,json:async()=>da,text:async()=>''};
+    }
+    await new Promise(res=>setTimeout(res,pausen[versuch]));
+  }
+  throw letzter||new Error('Upload fehlgeschlagen');
+}
+
 // ── Ausstehende Foto-Uploads wiederholen ─────────────────────────────────────
 // Beim App-Start / nach Login aufrufen: alle Fotos mit localKey aber ohne driveId
 // werden aus IndexedDB geladen und erneut zu Google Drive hochgeladen.
@@ -9579,17 +9680,20 @@ async function _mobUploadFromKey(fo,folderId,task){
   if(!dataUrl)throw new Error('BLOB_MISSING');
   const blob=_dataUrlToBlob(dataUrl);
   const mime=blob.type||'image/jpeg';
+  // v254: EINE Stelle für den Namen – er geht sowohl in die Metadaten als auch in die
+  // Nachschau des Doppelten-Schutzes. Zwei getrennte Ausdrücke könnten auseinanderlaufen.
+  const _name=fo.name||'foto.jpg';
   const form=new FormData();
-  form.append('metadata',new Blob([JSON.stringify({name:fo.name||'foto.jpg',parents:[folderId],mimeType:mime})],{type:'application/json'}));
+  form.append('metadata',new Blob([JSON.stringify({name:_name,parents:[folderId],mimeType:mime})],{type:'application/json'}));
   form.append('file',blob);
   // v137: wie _uploadOneFotoToDrive – abgelaufener Schlüssel bricht den Nachlade-Upload
   // nicht mehr ab, sondern wird einmal still erneuert und der Upload wiederholt.
-  const _send=()=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-    {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form});
-  if(!tokenValid())await _ensureTokenSilent();
-  let r=await _send();
-  if(r.status===401&&await _ensureTokenSilent())r=await _send();
-  if(!r.ok)throw new Error('HTTP '+r.status);
+  // v254: dazu Zeitlimit und Geduld bei kurzen Aussetzern – der 401-Weg von v137 steckt
+  // jetzt mit in _uploadMitGeduld. Die Größe kommt aus dem Blob und ist damit exakt die,
+  // die auch gesendet wird (Voraussetzung für den Doppelten-Schutz).
+  const _send=(signal)=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+    {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form,signal});
+  const r=await _uploadMitGeduld(_send,{bytes:blob.size||0,name:_name,folderId});
   const j=await r.json();
   fo.driveId=j.id;
   delete fo._uploadError; // v143: Fehler-Markierung aufheben – Warnleuchte geht aus
@@ -14305,12 +14409,12 @@ async function _uploadOneFotoToDrive(file,folderId){
   // v137: Schlüssel kann seit Upload-Beginn abgelaufen sein (ensureToken lief nur EINMAL
   // am Anfang von uploadFoto, davor liegt die Kompression aller Fotos) → vor jedem Foto
   // prüfen und bei 401 einmal still erneuern + wiederholen, statt „lokal gespeichert".
-  const _send=()=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,mimeType,thumbnailLink,webViewLink,webContentLink',
-    {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body});
-  if(!tokenValid())await _ensureTokenSilent();
-  let r=await _send();
-  if(r.status===401&&await _ensureTokenSilent())r=await _send();
-  if(!r.ok){const txt=await r.text().catch(()=>'');throw new Error('HTTP '+r.status+(txt?': '+txt.slice(0,120):''));}
+  // v254: dazu Zeitlimit und Geduld bei kurzen Aussetzern (429/5xx). Beides steckt in
+  // _uploadMitGeduld, samt Doppelten-Schutz: safeName trägt einen sekundengenauen
+  // Zeitstempel und ist zusammen mit der Dateigröße eindeutig.
+  const _send=(signal)=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,mimeType,thumbnailLink,webViewLink,webContentLink',
+    {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body,signal});
+  const r=await _uploadMitGeduld(_send,{bytes:file.size||0,name:safeName,folderId});
   return await r.json();
 }
 /* v185: Woher kam das Bild – Kamera oder Mediathek? Wird von den Eingabefeldern
@@ -18688,6 +18792,60 @@ async function _fotoPendEntfernen(taskId,key,ev,scheintHier){
 }
 setInterval(_fotoPendUpdate,15000); // Sicherheitsnetz: fängt alle Pfade, die keinen direkten Update-Aufruf haben
 setTimeout(_fotoPendUpdate,3000);   // Erststand kurz nach App-Start (Boards sind dann i.d.R. geladen)
+
+/* ── v254: stiller Nachlade-Takt ──────────────────────────────────────────────
+   Die dritte Ursache aus dem Befund vom 31.08. Nachgeladen wurde bis hierher an genau
+   ZWEI Momenten: 4 s nach afterLogin() und beim Browser-Signal „online".
+   Das zweite feuert nur bei einem WECHSEL offline→online. Wer durchgehend WLAN hat,
+   bekommt es nie – und musste die Warnleuchte von Hand antippen, damit überhaupt
+   etwas geschieht. Der 15-s-Takt eine Zeile darüber MALT die Leuchte nur neu; er hat
+   noch nie ein Foto nachgeladen. Genau hier fehlte der dritte Weg.
+
+   ⛔ Der Takt wird LÄNGER statt kürzer: 1 min, 3 min, 10 min, dann alle 15 min. Ein
+      Foto, das aus einem echten Grund nicht hochgeht (Ordner gelöscht, Bild liegt nur
+      auf dem anderen Gerät), soll nicht bis zum Abend im Minutentakt gegen dieselbe
+      Wand laufen. Kommt etwas Neues dazu oder ging etwas durch, fängt er wieder vorn an.
+   ⛔ Bewusst STILL: _mobRetryPendingUploads() OHNE {laut:true} gibt keine Meldungen aus.
+      Sichtbar ist nur, dass die Warnleuchte von allein grün wird.
+   ⛔ Er läuft nur bei echter Ruhe: Netz gemeldet, App im Vordergrund, kein Upload und
+      kein Nachladen bereits unterwegs, Schlüssel gültig. Sonst funkte der Takt genau in
+      den Upload hinein, den er heilen soll – und v137 hat den Doppellauf aus gutem
+      Grund gesperrt.
+   ⛔ Bewusst ein EIGENER Takt, nicht in _fotoPendUpdate oder uploadFoto eingehängt:
+      beide werden von alten Prüfsuiten ausgeschnitten und ausgeführt. Was hier steht,
+      fasst keine bestehende Funktion an. */
+let _fotoStillStufe=0,_fotoStillFaellig=0,_fotoStillLaeuft=false,_fotoStillOffenZuvor=0;
+function _fotoStillTakte(){return [60000,180000,600000,900000];}
+function _fotoStillOffen(){try{return _fotoPendList().length;}catch(e){return 0;}}
+async function _fotoStillTick(){
+  if(_fotoStillLaeuft)return;
+  const offen=_fotoStillOffen();
+  // Nichts offen → Takt zurück auf Anfang und schlafen legen.
+  if(!offen){_fotoStillStufe=0;_fotoStillFaellig=0;_fotoStillOffenZuvor=0;return;}
+  // Frisch dazugekommen → wieder mit dem kurzen Takt anfangen.
+  if(offen>_fotoStillOffenZuvor){_fotoStillStufe=0;_fotoStillFaellig=0;}
+  _fotoStillOffenZuvor=offen;
+  if(navigator.onLine===false)return;
+  if(document.visibilityState!=='visible')return;
+  if(_fotoUploadInFlight>0||_mobRetryUploadsBusy)return;
+  if(!gdriveToken||!tokenValid())return;
+  const takte=_fotoStillTakte();
+  // Erst ab hier läuft die Uhr: die Wartezeit soll RUHE messen, nicht Offline-Zeit.
+  if(!_fotoStillFaellig){_fotoStillFaellig=Date.now()+takte[Math.min(_fotoStillStufe,takte.length-1)];return;}
+  if(Date.now()<_fotoStillFaellig)return;
+  _fotoStillLaeuft=true;
+  try{
+    const b=await _mobRetryPendingUploads(); // STILL – ohne {laut:true} keine Meldungen
+    if(b&&(b.ok||b.geheilt))_fotoStillStufe=0;                 // ging etwas durch → wieder kurz
+    else _fotoStillStufe=Math.min(_fotoStillStufe+1,takte.length-1);
+  }catch(e){
+    _fotoStillStufe=Math.min(_fotoStillStufe+1,takte.length-1);
+    console.warn('[MobPhoto] Stiller Nachlade-Versuch:',e);
+  }finally{
+    _fotoStillLaeuft=false;_fotoStillFaellig=0;_fotoStillOffenZuvor=_fotoStillOffen();
+  }
+}
+setInterval(_fotoStillTick,30000); // billig: prüft nur, ob Ruhe herrscht und etwas offen ist
 
 // ══════════════════════════════════════════════
 //  OFFLINE-INDIKATOR (via saveInd)
