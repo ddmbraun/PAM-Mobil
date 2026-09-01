@@ -4608,7 +4608,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v254';
+const MOB_VERSION='v255';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5682,6 +5682,18 @@ async function _driveResumableUpdate(token, fileId, content, mimeType, etag) {
     body: JSON.stringify({ mimeType })
   });
   if (initR.status === 412) return initR; // 412 direkt zurückgeben → ETag-Konflikt-Dialog
+  /* v255: 401 ebenfalls durchreichen, statt sie in einen Fehler zu verwandeln.
+     Vorher warf ein abgelaufener Zugang HIER („Resumable-Init fehlgeschlagen: HTTP 401")
+     und landete im catch von saveFile – also im Wiederhol-Weg. Der Zweig „Zugang erneuern"
+     in saveFile wurde dafür NIE erreicht: er sah nur eine 401 aus Schritt 2 (dem PUT),
+     und die kommt in der Praxis kaum vor.
+     ⛔ Der Zweig wird hier bewusst NICHT im Wortlaut zitiert – ein Code-Zitat im Kommentar
+     macht jede spätere Suche danach mehrdeutig (beim Bau von v255 genau so passiert).
+     Das Handy versuchte es damit stumpf weiter, statt den Zugang zu erneuern.
+     Der Desktop hat genau das am 27.05.2026 behoben – das Handy hatte den Fix nie.
+     ⛔ Beide Aufrufer vertragen das: saveFile hat den 401-Zweig, und der Foto-Weg
+     (Aufnahmeort nach Drive schreiben) prüft `!r.ok` und meldet den Status. */
+  if (initR.status === 401) return initR;
   if (!initR.ok) throw new Error('Resumable-Init fehlgeschlagen: HTTP ' + initR.status);
 
   const sessionUrl = initR.headers.get('Location');
