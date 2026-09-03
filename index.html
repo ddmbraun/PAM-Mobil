@@ -134,6 +134,22 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 #listScreen.mk-suche .search-toggle-row .search-bar{display:flex!important}
 #listScreen .search-toggle-row .search-scope{display:none!important}
 #listScreen.mk-suche .search-toggle-row .search-scope{display:inline-flex!important;align-items:center}
+/* v256: Suchbereich-Pillen nur bei aufgeklappter Suche. Suchfeld und die Zeile
+   Liste/Kompakt/Heute bekommen je eine VOLLE Zeile – vorher brachen sie je nach Breite
+   mal nebeneinander, mal untereinander um (Befund Frank 03.09.). Die Heute-Zeile bleibt,
+   weil „📅 Heute" darin der Rückweg aus der Heute-Ansicht ist. */
+#listScreen .search-toggle-row .suche-bereich{display:none!important}
+#listScreen.mk-suche .search-toggle-row .suche-bereich{display:flex!important}
+.suche-bereich{flex:0 0 100%;box-sizing:border-box;flex-wrap:wrap;gap:6px;padding:0 12px 10px;background:var(--bg2)}
+.suche-pille{flex:1 1 40%;height:38px;border-radius:19px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer}
+.suche-pille.aktiv{background:var(--accent);border-color:var(--accent);color:#fff}
+.suche-bereich-hinweis{flex:0 0 100%;font-size:12px;color:var(--text2);padding:2px 2px 0}
+.search-toggle-row .search-bar{flex:1 1 100%}
+.search-toggle-row .view-toggle{flex:0 0 100%;box-sizing:border-box}
+/* v256: graue Treffer (Archiv / nur am PC) – nur zum Ansehen, kein Öffnen */
+.task-card.karte-grau{opacity:.62;cursor:default;border-left-color:#6b7080}
+.task-card.karte-grau:active{background:var(--bg2)}
+.kz.karte-grau{opacity:.62;cursor:default}
 #taskList .badge.status{background:var(--bg3);border-color:var(--border);color:var(--text2)}
 #taskList .card-akt{background:var(--bg3)!important}
 /* Auf dem Tablet das Panel nicht über die volle Breite aufreißen */
@@ -4308,8 +4324,14 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <input type="text" id="searchInput" placeholder="🔍 Suche Titel, Kostenstelle, Adresse…" oninput="renderList();document.getElementById('searchClear').style.display=this.value?'block':'none'" autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="search">
     <button class="search-clear" id="searchClear" onclick="document.getElementById('searchInput').value='';this.style.display='none';renderList()">✕</button>
   </div>
-  <!-- v140: Suchbereich – „Board" (wie bisher) oder „Überall" (alle Boards + Notizen + Foto-Texte) -->
-  <button class="search-scope" id="searchScopeBtn" onclick="_sucheScopeToggle()" title="Suchbereich: nur dieses Board oder überall (alle Boards, Notizen, Foto-Texte)">Board</button>
+  <!-- v256: Suchbereich als zwei Pillen UNTER dem Suchfeld. v140 hatte dafür EINEN Knopf mit
+       der Aufschrift „Board" neben dem Feld – gleicher Name wie der Board-Wähler darüber, und
+       niemand sah ihm an, dass er ein Schalter ist (Befund Frank 03.09.). -->
+  <div class="suche-bereich" id="sucheBereich">
+    <button class="suche-pille" id="suchePilleBoard" onclick="_sucheScopeSetzen('board')">Dieses Board</button>
+    <button class="suche-pille" id="suchePilleAlle" onclick="_sucheScopeSetzen('alle')">🌐 Überall</button>
+    <div class="suche-bereich-hinweis" id="sucheBereichHinweis">Überall = alle Boards, 📦 Archiv, ⏸ Später bearbeiten und alles, was nur am PC liegt</div>
+  </div>
   <div class="view-toggle">
     <button id="tabListeBtn" onclick="switchMobView('liste')" style="flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">☰ Liste</button>
     <!-- v141 (Wunsch Frank): schlanke Kompakt-Ansicht – nur Titel (vollständig, bis 2 Zeilen) -->
@@ -4608,7 +4630,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v255';
+const MOB_VERSION='v256';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10223,7 +10245,9 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
   // v150: Erstell-Datum klein am Ende der Zusatzzeile (falls bekannt)
   const _erst=_taskErstelltText(t,true);
   const erstelltHtml=_erst?'<span style="opacity:.75">📅 '+_erst+'</span>':'';
-  const _mobAusK=t.mobilAusblenden?'<span>📱🚫 ausgeblendet</span>':''; // v219: Kennzeichen in der Kompaktzeile
+  // v219: Kennzeichen in der Kompaktzeile. v256: ⏸ Später kommt in DIESELBE Stelle (beide
+  // Haken setzt nur der PC) – die Zeile _teile bleibt wortgleich, test_v219/v243 hängen daran.
+  const _mobAusK=[t.mobilAusblenden?'<span>📱🚫 ausgeblendet</span>':'',t.spaeterBearbeiten?'<span>⏸ Später</span>':''].filter(Boolean).join(' · ');
   // v243: dieselben zwei Kennzeichen wie in der grossen Karte, nur als Text - die
   // Kompakt-Ansicht hat keine Abzeichen, aber dieselbe Verwechslungsgefahr.
   const _aufK=(()=>{try{const _n=t.objektId?0:_qaAufAnzahl(t.id);return _n?'<span>🛠 '+_n+'</span>':'';}catch(e){return '';}})();
@@ -10239,11 +10263,36 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
 }
 // ── v140: Suchbereich „Board" (wie bisher) / „Überall" (alle Boards + Notizen + Foto-Texte) ──
 let _sucheScope='board';
-function _sucheScopeToggle(){
-  _sucheScope=(_sucheScope==='board'?'alle':'board');
-  const b=document.getElementById('searchScopeBtn');
-  if(b){b.textContent=(_sucheScope==='alle'?'🌐 Überall':'Board');b.classList.toggle('aktiv',_sucheScope==='alle');}
+// v256: zwei Pillen statt eines Knopfes; der Merker _sucheScope bleibt derselbe wie seit v140.
+function _suchePillenZeichnen(){
+  const pb=document.getElementById('suchePilleBoard'),pa=document.getElementById('suchePilleAlle');
+  if(pb)pb.classList.toggle('aktiv',_sucheScope!=='alle');
+  if(pa)pa.classList.toggle('aktiv',_sucheScope==='alle');
+}
+function _sucheScopeSetzen(v){
+  _sucheScope=(v==='alle'?'alle':'board');
+  _suchePillenZeichnen();
   renderList();
+}
+function _sucheScopeToggle(){_sucheScopeSetzen(_sucheScope==='board'?'alle':'board');} // v140-Aufrufer, falls noch einer existiert
+/* v256: graue Treffer-Karte für Aufträge, die das Handy nicht öffnen kann (Archiv, Spalten
+   oder Boards, die nur am PC liegen). openDetail/findTaskById kennen nur den Topf der
+   sichtbaren Boards; ein Öffnen und Ändern würde in Ablagen schreiben, die der PC als
+   seine eigenen führt (Archiv-leert-sich-Falle). Darum: Titel, Adresse, Abzeichen – kein onclick.
+   Dieselbe Regel wie in der Objekt-Ansicht seit v243 („nur am PC", „📦 Archiv"). */
+function _grauKarte(t,art,board){
+  const lbl=(art==='archiv')?'📦 Archiv':'💻 nur am PC';
+  const bd=board?'<span style="opacity:.75">'+esc(board)+'</span>':'';
+  if(_mobView==='kompakt'){
+    return '<div class="kz karte-grau"><div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
+      +'<div class="kz-info">'+[bd,'<span>'+lbl+'</span>',t.status?'<span>'+esc(t.status)+'</span>':''].filter(Boolean).join(' · ')+'</div></div>';
+  }
+  return '<div class="task-card karte-grau" title="Nur zum Ansehen – bearbeiten am PC"><div class="task-card-body">'
+    +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;"><span style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(board||'')+'</span></div>'
+    +'<div class="task-card-title" style="color:var(--text)">'+esc(t.title||'(ohne Titel)')+'</div>'
+    +(t.adresse?'<div style="font-size:12px;color:var(--text2);margin-top:2px;">'+esc(t.adresse)+'</div>':'')
+    +'<div class="task-card-meta"><span class="badge">'+lbl+'</span>'+(t.status?'<span class="badge status">'+esc(t.status)+'</span>':'')+'</div>'
+    +'</div></div>';
 }
 function renderList(resetScroll){
   // v133: Sichtbarkeit richtet sich nach der aktiven Ansicht – vorher wurde die Liste hier
@@ -10253,6 +10302,7 @@ function renderList(resetScroll){
   renderBoardBar();
   renderStatusBar();
   _mkUpdate(); // v138: Kompakt-Kopf (iPhone) mitpflegen
+  _suchePillenZeichnen(); // v256
   const rawQ=(document.getElementById('searchInput')?.value||'');
   // Normierung: Kleinbuchstaben + Umlaute vereinfachen (ae/oe/ue/ss)
   const _norm=s=>String(s||'').toLowerCase()
@@ -10269,16 +10319,41 @@ function renderList(resetScroll){
   // dabei bewusst nicht, die Status-Spalten gelten je Board); Treffer merken ihr Board.
   const _sucheAlle=(_sucheScope==='alle'&&qWords.length>0);
   const _sucheBoardVon=new Map();
+  /* v256: „Überall" liest ALLE VIER Töpfe, die loadFile beim Verteilen füllt – bis v255
+     nur den ersten. Ein am PC archivierter Auftrag war am Handy damit unauffindbar
+     (Befund Frank 03.09.): boards (sichtbar, auch ⏸ Später und 🙈 versteckte Karten –
+     die bleiben antippbar), _mobileFilteredOut (Archiv-Haken + Spalten, die die
+     Board-Einstellung nicht ans Handy gibt), hiddenBoards (fürs Handy nicht freigegeben),
+     _remoteArchivedTasks (Archiv-Ablage des PCs). Dieselbe Kennung zählt nur EINMAL,
+     der erste Topf gewinnt (wie _qaAufZaehlung, v243). Die Töpfe werden nur GELESEN. */
+  const _sucheArtVon=new Map(); // id → 'aktiv' | 'spaeter' | 'pc' | 'archiv'
   let filtered;
   if(_sucheAlle){
     filtered=[];
-    for(const _bn of Object.keys(boards)){
-      for(const _t of (boards[_bn]||[])){
-        if(!_t)continue;
-        const hay=_hayVon(_t);
-        if(qWords.every(w=>hay.includes(w))){filtered.push(_t);_sucheBoardVon.set(_t.id,_bn);}
+    const _gesehen={};
+    const _nimm=(topf,art)=>{
+      const _o=topf||{};
+      const _paare=Array.isArray(_o)?[['',_o]]:Object.keys(_o).map(k=>[k,_o[k]]);
+      for(const [_bn,_arr] of _paare){
+        if(_bn&&_bn.charAt(0)==='_')continue;
+        for(const _t of (_arr||[])){
+          if(!_t||!_t.id||_gesehen[_t.id])continue;
+          const hay=_hayVon(_t);
+          if(!qWords.every(w=>hay.includes(w)))continue;
+          _gesehen[_t.id]=1;
+          filtered.push(_t);
+          _sucheBoardVon.set(_t.id,_bn||_t._archivProjekt||'');
+          _sucheArtVon.set(_t.id,art(_t));
+        }
       }
-    }
+    };
+    _nimm(boards,t=>t.spaeterBearbeiten?'spaeter':'aktiv');
+    try{_nimm(_mobileFilteredOut,t=>t.archiviert?'archiv':'pc');}catch(e){}
+    try{_nimm(hiddenBoards,t=>t.archiviert?'archiv':'pc');}catch(e){}
+    try{_nimm(_remoteArchivedTasks,()=>'archiv');}catch(e){}
+    // Reihenfolge: bearbeitbar oben, dann Später, dann nur-am-PC, Archiv ganz unten (stabil)
+    const _rang={aktiv:0,spaeter:1,pc:2,archiv:3};
+    filtered.sort((a,b)=>(_rang[_sucheArtVon.get(a.id)]||0)-(_rang[_sucheArtVon.get(b.id)]||0));
   }else{
     filtered=_csTrim?tasks.filter(t=>(t.status||'').trim()===_csTrim):tasks;
     // Suche: alle Wörter müssen irgendwo auftauchen (Groß-/Kleinschreibung egal)
@@ -10311,6 +10386,9 @@ function renderList(resetScroll){
   list.innerHTML=filtered.map(t=>{ try {
     const status=t.status||'';
     const isRunning=t.id===runningTaskId;
+    // v256: Treffer aus Archiv / nur-am-PC-Töpfen sind nur zum Ansehen (kein Öffnen)
+    const _art=_sucheArtVon.get(t.id)||'aktiv';
+    if(_art==='pc'||_art==='archiv')return _grauKarte(t,_art,_sucheBoardVon.get(t.id)||'');
     // v141: Kompakt-Ansicht – schlanke Titel-Zeile statt großer Karte
     if(_mobView==='kompakt')return _kompaktZeile(t,isRunning,_sucheBoardVon.get(t.id)||'');
     // Tel/Maps-Buttons für Karten-Vorschau
@@ -10371,6 +10449,7 @@ function renderList(resetScroll){
       +(status?'<span class="badge status">'+esc(status)+'</span>':'')
       +(_mobIsOfflinePinned(t.id)?'<span class="badge" style="background:#0f5132;color:#fff;border:1px solid #1a8a3c;">📴 Offline</span>':'')
       +(t.mobilAusblenden?'<span class="badge" style="background:#F3EEFB;color:#7A4FB5;border:1px solid #D5C6EE;">📱🚫 ausgeblendet</span>':'') // v219
+      +(t.spaeterBearbeiten?'<span class="badge" style="background:#FDF1E4;color:#9A4E0A;border:1px solid #F2C9A0;">⏸ Später</span>':'') // v256
       /* v243 (B): "an diesem Haus haengen n Auftraege" - dasselbe blaue Abzeichen wie
          am Rechner (_tuBadgeAufHtml, b652/b681). Am Handy fehlte es ganz; man sah einer
          Objekt-Karte nicht an, ob etwas dranhaengt. Die Karte selbst oeffnet das Objekt,
