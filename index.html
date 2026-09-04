@@ -4630,7 +4630,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v257';
+const MOB_VERSION='v258';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -4649,6 +4649,7 @@ var _ztlBlatt3Auf=false; // b818: entsperrt? BEWUSST nirgends gespeichert - nach
 var ZETTEL_WEG_TAGE=14;
 var zettelFileId=null;
 var _ztlSyncTimer=null,_ztlSyncLaeuft=false;
+var _ztlSyncStand={zeit:0,fehler:'',fehlZeit:0}; // v258 (= Desktop b904): letzter gelungener Abgleich / letzter Fehler – der Kasten zeigt es an
 var _ztlZeilen=[];
 try{if(typeof localStorage!=='undefined'){var _zLade=JSON.parse(localStorage.getItem(ZETTEL_LS_KEY)||'null');if(_zLade&&Array.isArray(_zLade.zeilen))_ztlZeilen=_zLade.zeilen;}}catch(e){}
 var _ztlEditId=null; // v241: Zeile, die gerade bearbeitet wird (null = keine)
@@ -17262,6 +17263,7 @@ function _ztlKastenHtml(){
       +'<span style="font-size:14px;">📝</span>'
       +'<span style="font-size:14px;font-weight:700;color:var(--text);">Zettel</span>'
       +(offen?'<span style="font-size:12px;font-weight:600;color:#7F77DD;">'+offen+' offen</span>':'<span style="font-size:12px;color:var(--text2);">nichts offen</span>')
+      +((typeof _ztlSyncStandHtml==='function')?_ztlSyncStandHtml():'')
       +'</span>'
       +'<span onclick="_ztlKachelAuf()" title="Punkt anhängen, ohne aufzuklappen" style="width:26px;height:26px;border-radius:7px;border:1px solid var(--border);background:#7F77DD;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;cursor:pointer;flex-shrink:0;">+</span>'
       +'</div>';
@@ -17295,6 +17297,7 @@ function _ztlKastenHtml(){
     +'<span style="font-size:14px;">📝</span>'
     +'<span style="font-size:14px;font-weight:700;color:var(--text);">Zettel</span>'
     +(offen?'<span style="font-size:12px;font-weight:600;color:#7F77DD;">'+offen+' offen</span>':'<span style="font-size:12px;color:var(--text2);">nichts offen</span>')
+      +((typeof _ztlSyncStandHtml==='function')?_ztlSyncStandHtml():'')
     +'</div>';
   // b811: am Rechner zwei Reiter, am Handy stattdessen beide Listen mit einer Trennzeile.
   const zeigen=(typeof _ztlAnzeigeZeilen==='function')?_ztlAnzeigeZeilen():sicht;
@@ -17363,8 +17366,32 @@ function _ztlKastenHtml(){
   return h+'</div>';
 }
 function _ztlSyncBald(){clearTimeout(_ztlSyncTimer);_ztlSyncTimer=setTimeout(function(){_ztlSync();},2000);}
+// b904: Der Zettel-Abgleich meldet sich – vorher verschwand jeder Fehler still in der Konsole, und der
+// Zettel am Handy wusste dann etwas anderes als der am Rechner (Befund B Nr. 14 vom 03.09.).
+function _ztlSyncGut(){
+  if(typeof _ztlSyncStand==='undefined')return;
+  _ztlSyncStand.zeit=Date.now();
+  if(_ztlSyncStand.fehler){_ztlSyncStand.fehler='';try{_ztlZeichne();}catch(e){}}
+}
+function _ztlSyncSchlecht(e){
+  if(typeof _ztlSyncStand==='undefined')return;
+  const m=String((e&&e.message)||e||'?');
+  _ztlSyncStand.fehler=m;_ztlSyncStand.fehlZeit=Date.now();
+  console.warn('[Zettel] Abgleich:',m);
+  try{_ztlZeichne();}catch(_e){}
+}
+function _ztlSyncStandHtml(){
+  if(typeof _ztlSyncStand==='undefined'||!_ztlSyncStand)return'';
+  const hm=function(t){try{return new Date(t).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}catch(e){return'';}};
+  if(_ztlSyncStand.fehler)return '<span title="'+_ztlAttr('Abgleich fehlgeschlagen: '+_ztlSyncStand.fehler+(_ztlSyncStand.zeit?' – zuletzt gelungen '+hm(_ztlSyncStand.zeit):''))+'" style="font-size:11px;font-weight:600;color:#c0392b;white-space:nowrap;">⚠ nicht abgeglichen'+(_ztlSyncStand.zeit?' seit '+hm(_ztlSyncStand.zeit):'')+'</span>';
+  if(_ztlSyncStand.zeit)return '<span title="Zuletzt abgeglichen" style="font-size:11px;color:var(--text2);white-space:nowrap;">☁ '+hm(_ztlSyncStand.zeit)+'</span>';
+  return'';
+}
 async function _ztlSync(){
   if(_ztlSyncLaeuft)return;
+  // typeof-Wache: ausschneidende Suiten (b802/b886) kennen die Melder nicht – dann stumm wie vor b904, nie abstürzen
+  const _ztlGut=(typeof _ztlSyncGut==='function')?_ztlSyncGut:function(){};
+  const _ztlSchlecht=(typeof _ztlSyncSchlecht==='function')?_ztlSyncSchlecht:function(e){console.warn('[Zettel] Abgleich:',e);};
   const tokOk=(typeof gdriveTokenValid==='function')?gdriveTokenValid():!!(typeof gdriveToken!=='undefined'&&gdriveToken);
   if(!tokOk)return;
   if(!zettelFileId&&!_ztlZeilen.length)return;
@@ -17374,8 +17401,8 @@ async function _ztlSync(){
       const q=encodeURIComponent("name='"+ZETTEL_FILE_NAME+"' and trashed=false");
       const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+q+'&fields=files(id,modifiedTime)&orderBy=modifiedTime desc&pageSize=5',
         {headers:{Authorization:'Bearer '+gdriveToken}});
-      if(r.status===401){if(typeof _handleDrive401==='function')_handleDrive401();return;}
-      if(!r.ok)return;
+      if(r.status===401){if(typeof _handleDrive401==='function')_handleDrive401();_ztlSchlecht('Anmeldung abgelaufen');return;}
+      if(!r.ok){_ztlSchlecht('Drive HTTP '+r.status);return;}
       const d=await r.json();
       if(d.files&&d.files.length)zettelFileId=d.files[0].id;
     }
@@ -17384,16 +17411,20 @@ async function _ztlSync(){
       const r=await fetch('https://www.googleapis.com/drive/v3/files/'+zettelFileId+'?alt=media&_='+Date.now(),
         {headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
       if(r.ok){const d=await r.json();if(d&&Array.isArray(d.zeilen)){fern=d.zeilen;fernRoh=JSON.stringify(fern);}}
+      // b904: Lesen gescheitert → NICHT blind den eigenen Stand drüberschreiben (vorher lief es mit leerer Fernliste weiter)
+      else{_ztlSchlecht('Lesen HTTP '+r.status);return;}
     }
     const vorher=JSON.stringify(_ztlZeilen);
     _ztlZeilen=_ztlMerge(_ztlZeilen,fern,_ztlJetzt());
     const nachher=JSON.stringify(_ztlZeilen);
     if(nachher!==vorher){_ztlSpeichereLokal();_ztlZeichne();}
-    if(zettelFileId&&nachher===fernRoh)return;
+    if(zettelFileId&&nachher===fernRoh){_ztlGut();return;}
     const content=JSON.stringify({version:1,zeilen:_ztlZeilen,lastUpdated:_ztlJetzt()});
     if(zettelFileId){
-      await fetch('https://www.googleapis.com/upload/drive/v3/files/'+zettelFileId+'?uploadType=media',
+      const w=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+zettelFileId+'?uploadType=media',
         {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:content});
+      if(!w.ok)throw new Error('Schreiben HTTP '+w.status);
+      _ztlGut();
     }else{
       const b='zt_'+Date.now();
       const meta={name:ZETTEL_FILE_NAME,mimeType:'application/json'};
@@ -17402,9 +17433,10 @@ async function _ztlSync(){
         +'\r\n--'+b+'\r\nContent-Type: application/json\r\n\r\n'+content+'\r\n--'+b+'--';
       const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
         {method:'POST',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'multipart/related; boundary='+b},body});
-      if(r.ok){const f=await r.json();zettelFileId=f.id;}
+      if(r.ok){const f=await r.json();zettelFileId=f.id;_ztlGut();}
+      else throw new Error('Anlegen HTTP '+r.status);
     }
-  }catch(e){console.warn('[Zettel] Abgleich:',e);}
+  }catch(e){_ztlSchlecht(e);}
   finally{_ztlSyncLaeuft=false;}
 }
 // ── ZETTEL-TIMER – ab hier nichts in Prüfsuiten ausführen ──
