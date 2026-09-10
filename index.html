@@ -4489,12 +4489,26 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
          obwohl der kleine Knopf dafuer schon gebaut war (er leuchtet dann und zeigt die
          Zeit weiter). Ohne diesen Knopf war der halbe Einklapp-Weg tot. -->
     <button onclick="event.stopPropagation();_gtbEinklappen()" title="Leiste einklappen" aria-label="Leiste einklappen" style="flex-shrink:0;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:9px;width:44px;height:44px;font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;">▼</button>
-    <div onclick="_gtbOpenTask()" style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;cursor:pointer;">
-      <span style="font-size:calc(20px * var(--m-scale,1));flex-shrink:0;">⏱</span>
-      <span id="gtbTime" style="font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;font-size:calc(17px * var(--m-scale,1));">00:00:00</span>
-      <span id="gtbTitle" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(14px * var(--m-scale,1));opacity:.92;"></span>
+    <!-- v268: ZWEI Zeilen statt einer. Einzeilig blieben nur 193 px fuer Uhr, Zeit und
+         Namen - der Name war praktisch immer nach wenigen Zeichen abgeschnitten und Frank
+         konnte nicht erkennen, welche Baustelle laeuft. Der Name darf jetzt auf zwei
+         Zeilen umbrechen; das Woertchen "antippen zum Öffnen" sagt, dass die Zeile den
+         Auftrag oeffnet - anklickbar war sie schon immer, nur sah man es nicht. -->
+    <div onclick="_gtbOpenTask()" style="flex:1;min-width:0;cursor:pointer;padding:2px 0;">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <span id="gtbTime" style="font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;font-size:calc(19px * var(--m-scale,1));">00:00:00</span>
+        <span style="flex-shrink:0;font-size:calc(11px * var(--m-scale,1));opacity:.85;border:1px solid rgba(255,255,255,.35);border-radius:4px;padding:1px 6px;white-space:nowrap;">antippen zum Öffnen</span>
+      </div>
+      <div id="gtbTitle" style="font-size:calc(13px * var(--m-scale,1));opacity:.95;line-height:1.3;margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;"></div>
     </div>
-    <button onclick="_gtbStop()" style="flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.55);color:#fff;border-radius:9px;padding:0 16px;min-height:48px;font-size:calc(15px * var(--m-scale,1));font-weight:700;cursor:pointer;">⏹ Stopp</button>
+    <!-- v268: Das ▲ kommt im Lauf-Zustand zurueck. Bis v267 gab es hier NUR Stopp -
+         Frank: "ich kann nur noch Stopp drücken". Ein Baustellenwechsel zwang also zum
+         Stoppen. Der Weg dahinter (_cardTimerToggle) fragt ohnehin nach, ob die laufende
+         Uhr umgehaengt werden soll. -->
+    <button onclick="event.stopPropagation();_gtbSheetAuf()" title="Andere Baustelle wählen" aria-label="Andere Baustelle wählen" style="flex-shrink:0;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:9px;width:44px;height:44px;font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;">▲</button>
+    <!-- v268: "⏹ Stopp" wurde zum Symbol - das schafft 46 px fuer den Namen. Rot, damit
+         es sich von den anderen Knoepfen abhebt; 48 px Tippflaeche bleiben. -->
+    <button onclick="_gtbStop()" title="Stoppuhr stoppen" aria-label="Stoppuhr stoppen" style="flex-shrink:0;background:#a32d2d;border:none;color:#fff;border-radius:9px;width:48px;height:48px;font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;">⏹</button>
   </div>
   <!-- ⛔ v264: Die Farben stehen hier NICHT mehr fest. Der Ruhe-Zustand liegt auf
        var(--bg3) - im hellen Modus #e5e5ea, also fast weiss. Die Leiste erbt vom
@@ -4701,7 +4715,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v267';
+const MOB_VERSION='v268';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -13385,8 +13399,14 @@ function _gtbOpenTask(){
 }
 function _gtbStop(){
   const s=_loadTimerState();if(!s||!s.taskId)return;
-  const t=findTaskById(s.taskId);
-  if(confirm('Stoppuhr für „'+((t&&t.title)||'')+'" jetzt stoppen?'))_stopTimerWithEnd(Date.now());
+  // v268 (Wunsch Frank 10.09.2026): keine Rueckfrage mehr. Stoppen ist harmlos - der
+  // Zeiteintrag bleibt an der Karte stehen und laesst sich dort aendern oder loeschen,
+  // und eine neue Uhr ist einen Tipp entfernt. Die Rueckfrage kostete bei jedem Stopp
+  // einen zusaetzlichen Griff.
+  // ⚠ Die ANDERE Rueckfrage bleibt bewusst: "Die Stoppuhr läuft noch bei X - dort
+  //   stoppen und hier starten?" (_cardTimerToggle). Sie verhindert, dass eine Uhr
+  //   unbemerkt weiterlaeuft, waehrend anderswo eine zweite gestartet wird.
+  _stopTimerWithEnd(Date.now());
 }
 // Punkt 2: Erinnerungs-Overlay alle 30 Minuten (nur solange die App offen ist)
 function _timerReminderCheck(s){
