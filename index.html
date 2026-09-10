@@ -4671,7 +4671,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v265';
+const MOB_VERSION='v266';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -17971,6 +17971,24 @@ function _objKuerzelAusNas(nas){
   // bleibt der Vorspann ohne Kürzel – lieber nichts als ein sinnloses Wort davor.
   return /^[A-ZÄÖÜ]{2,5}$/.test(wort)?wort:'';
 }
+// ── v266: die beiden Helfer aus dem Rechner (b971). Bis v265 fehlten sie hier.
+// _objAuftragTitel fragt sie mit `typeof ... === 'function'` ab, stuerzte also nicht ab -
+// die b971-Wache gegen doppelte Strassennamen lief am Handy aber ins Leere.
+// ⚠ ZEICHENGLEICH zum Rechner halten: test_v195 vergleicht die Funktionsrumpfe.
+// ⛔ Der Unterschied zum eingebauten Ersatz ist die Zeile mit "strasse" -> "str":
+// ohne sie gelten "Friedrich Ebert Straße" und "Friedrich Ebert Str." als verschieden.
+function _pamFlach(s){
+  return String(s==null?'':s).toLowerCase()
+    .replace(/ß/g,'ss')
+    .replace(/stra(?:ss|s)e/g,'str')
+    .replace(/[^a-z0-9äöü]/g,'');
+}
+// Schneidet die Hausnummern vom Objektnamen ab: "Hermann von Salza Straße 7, 7a, 7b"
+// wird zu "Hermann von Salza Straße".
+function _pamStrasseAusObjekt(obj){
+  const s=String((obj&&obj.title)||'').replace(/\s*\(\d+\)\s*$/,'').trim();
+  return s.replace(/[\s,]+\d[\d\s,.\-–/a-zA-Z]*$/,'').trim();
+}
 function _objTitelVorspann(obj){
   if(!obj)return '';
   const ohneKs=String(obj.title||'').replace(/\s*\(\d+\)\s*$/,'').trim(); // Kostenstelle raus
@@ -17981,10 +17999,20 @@ function _objTitelVorspann(obj){
 function _objAuftragTitel(obj,kurz){
   const vorspann=_objTitelVorspann(obj);
   if(!vorspann)return kurz;
-  const flach=s=>String(s||'').toLowerCase().replace(/ß/g,'ss').replace(/[^a-z0-9äöü]/g,'');
+  const flach=s=>(typeof _pamFlach==='function')?_pamFlach(s)
+    :String(s||'').toLowerCase().replace(/ß/g,'ss').replace(/[^a-z0-9äöü]/g,'');
   const ohneKs=String(obj.title||'').replace(/\s*\(\d+\)\s*$/,'').trim();
-  // Adresse schon selbst mitgetippt? Dann nicht doppeln.
+  // Frank schreibt die Adresse manchmal selbst mit („Musterstraße 34, 34a Loch im
+  // Dach") – dann nicht doppeln.
   if(ohneKs&&flach(kurz).includes(flach(ohneKs)))return kurz;
+  // b971 (v266 ans Handy nachgezogen): Dieselbe Wache noch einmal, aber OHNE die
+  // Hausnummern. Sie verfehlte genau den Fall, in dem EIN Haus des Objekts genannt
+  // wird: Objekt „… Str. 5, 6, 7, 8", getippt „… Str. 8". Für die alte Wache waren das
+  // zwei verschiedene Anschriften – die Straße stand danach zweimal im Titel.
+  // ⚠ Am 10.09.2026 an den 46 echten Objektkarten gemessen: 120 von 184 Proben liefen
+  //   zwischen Handy und Rechner auseinander.
+  const strasse=(typeof _pamStrasseAusObjekt==='function')?_pamStrasseAusObjekt(obj):'';
+  if(strasse&&flach(strasse).length>=4&&flach(kurz).includes(flach(strasse)))return kurz;
   return vorspann+V195_TRENNER+kurz;
 }
 async function _ensureQuickNoteFolder(t,title,dateSlug){
