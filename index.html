@@ -4671,7 +4671,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v264';
+const MOB_VERSION='v265';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -13102,11 +13102,22 @@ function _updateGlobalTimerBar(){
     // bleibt sie weg - ein leerer Kasten hilft niemandem.
     if(_gtbInterval){clearInterval(_gtbInterval);_gtbInterval=null;}
     const liste=_gtbBaustellen(1);
-    if(!liste.length){bar.style.display='none';_gtbFabAusweichen(bar);return;}
-    const b=liste[0];
-    const ro=document.getElementById('gtbRuheOben');if(ro)ro.textContent=b.unter;
-    const rt=document.getElementById('gtbRuheTitel');if(rt)rt.textContent=b.titel;
-    bar.dataset.letzteId=b.id;
+    // ⛔ v265: Die Leiste verschwindet NICHT mehr, wenn nichts ansteht. Mit der neuen
+    // Regel (nur Haken oder heutiger Termin) waere sie sonst die meiste Zeit weg - und
+    // damit auch der Weg zur Suche. Sie zeigt dann "Baustelle wählen"; ▲ oeffnet das
+    // Blatt, in dem das Suchfeld steht. Erst wenn die App noch gar keine Daten hat
+    // (frisch angemeldet, leeres Board), bleibt sie ganz weg.
+    let leer=false;
+    if(!liste.length){
+      let hatDaten=false;
+      try{Object.keys(boards||{}).forEach(function(bn){if(bn.charAt(0)!=='_'&&(boards[bn]||[]).length)hatDaten=true;});}catch(e){}
+      if(!hatDaten){bar.style.display='none';_gtbFabAusweichen(bar);return;}
+      leer=true;
+    }
+    const b=leer?null:liste[0];
+    const ro=document.getElementById('gtbRuheOben');if(ro)ro.textContent=leer?'nichts in Ausführung':b.unter;
+    const rt=document.getElementById('gtbRuheTitel');if(rt)rt.textContent=leer?'Baustelle wählen …':b.titel;
+    bar.dataset.letzteId=leer?'':b.id;
     bar.style.background='var(--bg3)';
     _gtbFabAusweichen(bar);
     if(lauf)lauf.style.display='none';
@@ -13153,15 +13164,20 @@ function _gtbFabAusweichen(bar){
     if(cam)cam.style.bottom=(unten+GTB_FAB_ABSTAND)+'px';
   }catch(e){console.warn('[timer-leiste]',e);}
 }
-// ── v262: Baustellen fuer die Uhr-Leiste ─────────────────────────────────────
+// ── v265: Baustellen fuer die Uhr-Leiste ─────────────────────────────────────
+// ⛔ Umgestellt auf Franks Ansage vom 10.09.2026: "nur wenn es einen Ausfuehrungstermin
+// hat oder in Ausfuehrung ist - wenn keiner, dann einfach ueber die Suche."
 // Zwei Quellen, in dieser Reihenfolge:
-//   1. HEUTE GEPLANT - Aussenhaus-Termin, Ausfuehrungstermin oder Faelligkeit von heute.
-//      Das ist die eigene Vorbelegung; sie wird selten gepflegt, deshalb darf die
-//      Leiste sich nicht allein darauf verlassen (Zahlen in CHANGES.md, v262).
-//   2. ZULETZT DRAN - wo zuletzt die Uhr lief. Bewusst NICHT "zuletzt geoeffnet":
-//      sonst stehen dort Karten, in die nur kurz hineingesehen wurde.
-// Archivierte und auf "spaeter" gestellte Karten bleiben draussen, wie in der
-// Heute-Ansicht auch. Die Toepfe werden nur GELESEN.
+//   1. HEUTE GEPLANT - Aussenhaus-Termin oder Faelligkeit von heute.
+//   2. IN AUSFUEHRUNG - der Haken am Auftrag (inAusfuehrung, Desktop b863). Bewusst
+//      der HAKEN und nicht die Board-Spalte: die Bretter benennen denselben Zustand
+//      verschieden ("In Arbeit", "Terminiert", "Beauftragt"), der Haken ueberlebt
+//      Umbenennen und Verschieben.
+// ⛔ "ZULETZT DRAN GEWESEN" ist RAUS (war v262-v264). Es schaute nur zurueck und
+//    schleppte Karten mit, an denen laengst nichts mehr ansteht.
+// ⚠ Das Feld ausfuehrungstermin wird weiter abgefragt, obwohl es am 10.09.2026 in
+//   ALLEN 121 Karten leer war (gemessen) - falls es kuenftig gefuellt wird.
+// Archivierte und auf "spaeter" gestellte Karten bleiben draussen. Nur GELESEN.
 function _gtbBaustellen(max){
   const grenze=(typeof max==='number'&&max>0)?max:6;
   const heute=new Date().toISOString().split('T')[0];
@@ -13196,27 +13212,23 @@ function _gtbBaustellen(max){
   heuteListe.forEach(function(x){
     nimm(x.t,x.zeit?('heute '+x.zeit):'heute geplant','heute');
   });
-  // 2. Zuletzt dran gewesen
-  const mitZeit=[];
+  // 2. In Ausfuehrung (der Haken am Auftrag)
+  const inAusf=[];
   alle.forEach(function(t){
     if(gesehen[t.id])return;
-    let letzte=0;
-    (t.timeEntries||[]).forEach(function(e){
-      if(e&&e.start&&e.start>letzte)letzte=e.start;
-    });
-    (t.zeitEntries||[]).forEach(function(e){
-      if(!e||!e.date)return;
-      const ms=new Date(e.date+'T'+((e.von||'08:00'))+':00').getTime();
-      if(!isNaN(ms)&&ms>letzte)letzte=ms;
-    });
-    if(letzte)mitZeit.push({t:t,ms:letzte});
+    if(t.inAusfuehrung===true||t.inAusfuehrung==='true')inAusf.push(t);
   });
-  mitZeit.sort(function(a,b){return b.ms-a.ms;});
-  mitZeit.forEach(function(x){
+  inAusf.forEach(function(t){
     if(raus.length>=grenze)return;
-    nimm(x.t,_gtbWann(x.ms),'zuletzt');
+    const at=(t.ausfuehrungstermin||'').trim();
+    nimm(t,at?('Ausführung '+_gtbDatumKurz(at)):'in Ausführung','ausf');
   });
   return raus.slice(0,grenze);
+}
+// v265: ISO-Datum (2026-09-14) kurz anzeigen: "14.09."
+function _gtbDatumKurz(iso){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso||''));
+  return m?(m[3]+'.'+m[2]+'.'):String(iso||'');
 }
 // Datum in Worten, wie es auf der Karte steht: heute / gestern / 27.08.
 function _gtbWann(ms){
@@ -13232,6 +13244,8 @@ function _gtbWann(ms){
 function _gtbStartLetzte(){
   const bar=document.getElementById('globalTimerBar');
   const id=bar&&bar.dataset?bar.dataset.letzteId:'';
+  // v265: steht nichts an, ist letzteId leer - dann fuehrt Start ins Auswahl-Blatt
+  // mit dem Suchfeld, statt nichts zu tun.
   if(!id){_gtbSheetAuf();return;}
   _gtbStartId(id);
 }
@@ -13257,7 +13271,11 @@ function _gtbSheetZeichnen(){
     return '<div onclick="_gtbStartId(\''+escAttr(b.id)+'\')" style="display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:10px;padding:11px 11px;margin-bottom:7px;cursor:pointer;">'
       +'<div style="flex:1;min-width:0;">'
       +'<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);line-height:1.3;">'+esc(b.unter)+'</div>'
-      +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;">'+esc(b.titel)+'</div>'
+      /* v265, Befund Frank: "wenn es eine lange Baustelle ist, kann ich das nicht
+         erkennen". In der Leiste MUSS es einzeilig bleiben (daneben stehen Start und ▲),
+         im aufgeklappten Blatt ist aber Platz - hier bricht der Name jetzt um, statt
+         abgeschnitten zu werden. Ein zusaetzliches Popup braucht es dafuer nicht. */
+      +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;overflow-wrap:anywhere;">'+esc(b.titel)+'</div>'
       +'</div>'
       +'<span style="flex-shrink:0;background:#3b6d11;color:#fff;border-radius:8px;padding:0 15px;min-height:44px;display:flex;align-items:center;font-size:calc(15px * var(--m-scale,1));font-weight:700;">▶ Start</span>'
       +'</div>';
@@ -13269,16 +13287,18 @@ function _gtbSheetZeichnen(){
   }else{
     const liste=_gtbBaustellen(6);
     const heute=liste.filter(function(b){return b.art==='heute';});
-    const zul=liste.filter(function(b){return b.art==='zuletzt';});
+    const zul=liste.filter(function(b){return b.art==='ausf';});
     if(heute.length){
       html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:0 0 6px 2px;">Heute geplant</div>';
       heute.forEach(function(b){html+=zeile(b);});
     }
     if(zul.length){
-      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:'+(heute.length?'12px':'0')+' 0 6px 2px;">Zuletzt dran gewesen</div>';
+      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:'+(heute.length?'12px':'0')+' 0 6px 2px;">In Ausführung</div>';
       zul.forEach(function(b){html+=zeile(b);});
     }
-    if(!liste.length)html+='<div style="font-size:13px;color:var(--text2);padding:8px 2px;">Noch keine Baustelle bekannt — unten suchen.</div>';
+    // v265: Ohne Haken und ohne heutigen Termin ist die Liste leer - dann fuehrt der
+    // Weg ueber die Suche (Franks Ansage). Der Hinweis sagt auch, WO der Haken sitzt.
+    if(!liste.length)html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);padding:10px 2px;line-height:1.6;">Nichts in Ausführung und kein Termin für heute.<br>Unten suchen — oder am Auftrag den Haken <b>🔨 In Ausführung</b> setzen.</div>';
   }
   el.innerHTML=html;
 }
