@@ -4437,7 +4437,10 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <div id="gtbSheetListe"></div>
     <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:10px;">
       <span style="font-size:15px;flex-shrink:0;">🔍</span>
-      <input type="text" id="gtbSuche" placeholder="andere Baustelle suchen …" autocomplete="off" oninput="_gtbSheetZeichnen()" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;">
+      <!-- ⛔ 16px ist die Untergrenze: Safari auf dem iPhone zoomt beim Antippen in
+           JEDES Eingabefeld hinein, dessen Schrift kleiner als 16px ist. Der Aa-Regler
+           darf hier nach oben wirken, aber nicht darunter. -->
+      <input type="text" id="gtbSuche" placeholder="andere Baustelle suchen …" autocomplete="off" oninput="_gtbSheetZeichnen()" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-size:max(16px, calc(16px * var(--m-scale,1)));">
     </div>
     <button onclick="_gtbSheetZu()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">Schließen</button>
   </div>
@@ -4445,20 +4448,20 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <div id="globalTimerBar" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:8500;background:var(--accent);color:#fff;padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -2px 12px rgba(0,0,0,.4);align-items:center;gap:10px;">
   <div id="gtbLauf" style="display:none;flex:1;min-width:0;align-items:center;gap:10px;">
     <div onclick="_gtbOpenTask()" style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;cursor:pointer;">
-      <span style="font-size:16px;flex-shrink:0;">⏱</span>
-      <span id="gtbTime" style="font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;">00:00:00</span>
-      <span id="gtbTitle" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;opacity:.92;"></span>
+      <span style="font-size:calc(20px * var(--m-scale,1));flex-shrink:0;">⏱</span>
+      <span id="gtbTime" style="font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;font-size:calc(17px * var(--m-scale,1));">00:00:00</span>
+      <span id="gtbTitle" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(14px * var(--m-scale,1));opacity:.92;"></span>
     </div>
-    <button onclick="_gtbStop()" style="flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.55);color:#fff;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;">⏹ Stopp</button>
+    <button onclick="_gtbStop()" style="flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.55);color:#fff;border-radius:9px;padding:0 16px;min-height:48px;font-size:calc(15px * var(--m-scale,1));font-weight:700;cursor:pointer;">⏹ Stopp</button>
   </div>
-  <div id="gtbRuhe" style="display:none;flex:1;min-width:0;align-items:center;gap:9px;">
-    <span style="font-size:16px;flex-shrink:0;opacity:.75;">⏱</span>
-    <div onclick="_gtbSheetAuf()" style="flex:1;min-width:0;cursor:pointer;">
-      <div style="font-size:10.5px;opacity:.7;line-height:1.3;" id="gtbRuheOben">zuletzt dran gewesen</div>
-      <div id="gtbRuheTitel" style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;"></div>
+  <div id="gtbRuhe" style="display:none;flex:1;min-width:0;align-items:center;gap:8px;">
+    <span style="font-size:calc(20px * var(--m-scale,1));flex-shrink:0;opacity:.75;">⏱</span>
+    <div onclick="_gtbSheetAuf()" style="flex:1;min-width:0;cursor:pointer;padding:4px 0;">
+      <div style="font-size:calc(13px * var(--m-scale,1));opacity:.75;line-height:1.3;" id="gtbRuheOben">zuletzt dran gewesen</div>
+      <div id="gtbRuheTitel" style="font-size:calc(16px * var(--m-scale,1));font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;"></div>
     </div>
-    <button onclick="event.stopPropagation();_gtbStartLetzte()" style="flex-shrink:0;background:#3b6d11;border:none;color:#fff;border-radius:8px;padding:8px 14px;font-size:14px;font-weight:700;cursor:pointer;">▶ Start</button>
-    <button onclick="event.stopPropagation();_gtbSheetAuf()" title="Andere Baustelle wählen" style="flex-shrink:0;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:8px 11px;font-size:14px;cursor:pointer;">▲</button>
+    <button onclick="event.stopPropagation();_gtbStartLetzte()" style="flex-shrink:0;background:#3b6d11;border:none;color:#fff;border-radius:9px;padding:0 16px;min-height:48px;font-size:calc(16px * var(--m-scale,1));font-weight:700;cursor:pointer;">▶ Start</button>
+    <button onclick="event.stopPropagation();_gtbSheetAuf()" title="Andere Baustelle wählen" aria-label="Andere Baustelle wählen" style="flex-shrink:0;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:9px;width:48px;height:48px;font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;">▲</button>
   </div>
 </div>
 <div id="quickAddSheet" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.55);" onclick="if(event.target===this)_closeQuickAdd()">
@@ -4652,7 +4655,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v262';
+const MOB_VERSION='v263';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5530,7 +5533,10 @@ function setMobileScale(pct){
   const v=Math.max(70,Math.min(200,parseInt(pct,10)||100));
   const scale=(v/100).toFixed(2);
   // Alle 4 Tab-Bodies bekommen denselben Maßstab
-  ['detailBody','detailBodyBau','detailBodySkizze','detailBodySchnell','detailBodyTagebuch'].forEach(id=>{
+  // v263: die untere Uhr-Leiste und ihr Auswahl-Blatt hoeren jetzt mit auf den Regler.
+  // Sie haengen direkt am body, nicht in einem der Reiter-Koerper - ohne diesen Eintrag
+  // blieben sie bei 100 % stehen, egal wie gross die Schrift gestellt wird.
+  ['detailBody','detailBodyBau','detailBodySkizze','detailBodySchnell','detailBodyTagebuch','globalTimerBar','gtbSheet'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.setProperty('--m-scale',scale);
   });
@@ -10691,6 +10697,12 @@ function renderList(resetScroll){
       else await _fill(t,img);
     }
   })();
+  // v263: Die untere Uhr-Leiste mitziehen. Die Liste wird bei jedem Abgleich, jedem
+  // Board-Wechsel und jeder Suche neu gezeichnet - hier ist der zuverlaessige Ort,
+  // an dem die Leiste erfaehrt, dass es inzwischen Baustellen gibt. Der Aufruf ist
+  // billig (eine Runde ueber die sichtbaren Karten) und aendert nichts, solange eine
+  // Uhr laeuft: dann zeichnet _updateGlobalTimerBar denselben Lauf-Zustand wie zuvor.
+  try{if(typeof _updateGlobalTimerBar==='function')_updateGlobalTimerBar();}catch(e){console.warn('[timer-leiste]',e);}
 }
 function formatDate(iso){try{const d=new Date(iso);if(isNaN(d))return iso;return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});}catch(e){return iso;}}
 
@@ -13042,12 +13054,13 @@ function _updateGlobalTimerBar(){
     // bleibt sie weg - ein leerer Kasten hilft niemandem.
     if(_gtbInterval){clearInterval(_gtbInterval);_gtbInterval=null;}
     const liste=_gtbBaustellen(1);
-    if(!liste.length){bar.style.display='none';return;}
+    if(!liste.length){bar.style.display='none';_gtbFabAusweichen(bar);return;}
     const b=liste[0];
     const ro=document.getElementById('gtbRuheOben');if(ro)ro.textContent=b.unter;
     const rt=document.getElementById('gtbRuheTitel');if(rt)rt.textContent=b.titel;
     bar.dataset.letzteId=b.id;
     bar.style.background='var(--bg3)';
+    _gtbFabAusweichen(bar);
     if(lauf)lauf.style.display='none';
     if(ruhe)ruhe.style.display='flex';
     bar.style.display='flex';
@@ -13060,7 +13073,25 @@ function _updateGlobalTimerBar(){
   if(ruhe)ruhe.style.display='none';
   if(lauf)lauf.style.display='flex';
   bar.style.display='flex';
+  _gtbFabAusweichen(bar);
   if(!_gtbInterval)_gtbInterval=setInterval(_gtbTick,1000);
+}
+// ⛔ v263, Befund Frank 10.09.2026: "wenn das Plus da ist, hab ich den Pfeil auch nicht".
+// Der Plus-Knopf (.fab) sitzt fest auf bottom:20px/right:20px und ist 56 px hoch - genau
+// dort, wo in der Leiste der ▲-Knopf steht. Die Leiste liegt zwar darueber (z-index 8500
+// gegen 20), aber der Plus-Knopf RAGT OBEN HERAUS und faengt die Tipper ab, die dem Pfeil
+// galten: statt der Auswahl ging ein neuer Auftrag auf.
+// Gemessen wird die ECHTE Hoehe der Leiste (offsetHeight), nicht geraten - sie waechst,
+// sobald der Aa-Regler hochgestellt wird.
+function _gtbFabAusweichen(bar){
+  try{
+    const fab=document.getElementById('fabBtn');
+    if(!fab)return;
+    const sichtbar=bar&&bar.style.display!=='none';
+    if(!sichtbar){fab.style.bottom='';return;}
+    const h=bar.offsetHeight||56;
+    fab.style.bottom=(h+14)+'px';
+  }catch(e){console.warn('[timer-leiste]',e);}
 }
 // ── v262: Baustellen fuer die Uhr-Leiste ─────────────────────────────────────
 // Zwei Quellen, in dieser Reihenfolge:
@@ -13163,28 +13194,28 @@ function _gtbSheetZeichnen(){
   const q=((document.getElementById('gtbSuche')||{}).value||'').trim();
   let html='';
   function zeile(b){
-    return '<div onclick="_gtbStartId(\''+escAttr(b.id)+'\')" style="display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:9px;padding:9px 10px;margin-bottom:5px;cursor:pointer;">'
+    return '<div onclick="_gtbStartId(\''+escAttr(b.id)+'\')" style="display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:10px;padding:11px 11px;margin-bottom:7px;cursor:pointer;">'
       +'<div style="flex:1;min-width:0;">'
-      +'<div style="font-size:10.5px;color:var(--text2);line-height:1.3;">'+esc(b.unter)+'</div>'
-      +'<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;">'+esc(b.titel)+'</div>'
+      +'<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);line-height:1.3;">'+esc(b.unter)+'</div>'
+      +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35;">'+esc(b.titel)+'</div>'
       +'</div>'
-      +'<span style="flex-shrink:0;background:#3b6d11;color:#fff;border-radius:6px;padding:6px 11px;font-size:12px;font-weight:700;">▶ Start</span>'
+      +'<span style="flex-shrink:0;background:#3b6d11;color:#fff;border-radius:8px;padding:0 15px;min-height:44px;display:flex;align-items:center;font-size:calc(15px * var(--m-scale,1));font-weight:700;">▶ Start</span>'
       +'</div>';
   }
   if(q){
     const tr=_gtbSuchen(q);
-    html+='<div style="font-size:10.5px;color:var(--text2);margin:0 0 5px 2px;">'+(tr.length?'Gefunden ('+tr.length+')':'Nichts gefunden')+'</div>';
+    html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:0 0 6px 2px;">'+(tr.length?'Gefunden ('+tr.length+')':'Nichts gefunden')+'</div>';
     tr.forEach(function(b){html+=zeile(b);});
   }else{
     const liste=_gtbBaustellen(6);
     const heute=liste.filter(function(b){return b.art==='heute';});
     const zul=liste.filter(function(b){return b.art==='zuletzt';});
     if(heute.length){
-      html+='<div style="font-size:10.5px;color:var(--text2);margin:0 0 5px 2px;">Heute geplant</div>';
+      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:0 0 6px 2px;">Heute geplant</div>';
       heute.forEach(function(b){html+=zeile(b);});
     }
     if(zul.length){
-      html+='<div style="font-size:10.5px;color:var(--text2);margin:'+(heute.length?'10px':'0')+' 0 5px 2px;">Zuletzt dran gewesen</div>';
+      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:'+(heute.length?'12px':'0')+' 0 6px 2px;">Zuletzt dran gewesen</div>';
       zul.forEach(function(b){html+=zeile(b);});
     }
     if(!liste.length)html+='<div style="font-size:13px;color:var(--text2);padding:8px 2px;">Noch keine Baustelle bekannt — unten suchen.</div>';
@@ -13308,7 +13339,15 @@ function _longrunKorrigieren(){
 }
 
 function resumeMobileTimerIfNeeded(){
-  const s=_loadTimerState();if(!s||!s.taskId)return;
+  const s=_loadTimerState();
+  // ⛔ v263 REPARATUR von v262: hier stand `if(!s||!s.taskId)return;` - ein Ausstieg
+  // in Zeile 2. Diese Funktion ist aber die EINZIGE, die die untere Leiste auffrischt,
+  // nachdem die Daten geladen sind (die beiden anderen Aufrufer sind der Start/Stopp
+  // der Uhr selbst und der Sekundentakt der laufenden Uhr). Ohne laufende Uhr wurde
+  // _updateGlobalTimerBar also NIE erreicht - die neue Ruhe-Leiste zeigte sich nur,
+  // wenn man vorher einmal von Hand eine Uhr gestartet und gestoppt hatte.
+  // Die Funktion RECHNETE richtig (89 Pruefungen gruen), sie kam nur nie dran.
+  if(!s||!s.taskId){try{_updateGlobalTimerBar();}catch(e){}return;}
   // Boards noch nicht geladen (z.B. direkt nach App-Start vor Drive-Sync):
   // Timer-State erhalten – nach findOrPickFile() wird diese Funktion erneut aufgerufen.
   if(Object.keys(boards).length===0)return;
