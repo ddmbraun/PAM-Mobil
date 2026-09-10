@@ -116,6 +116,24 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .mnu-ico{flex-shrink:0;width:24px;text-align:center;font-size:18px;line-height:1}
 .mnu-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .mnu-sub{font-size:11.5px;color:var(--text2);font-weight:400}
+/* ── v271: die Uhr-Leiste auf breiten Bildschirmen ──────────────────────────
+   Auf dem Handy soll sie die volle Breite haben. Auf dem Tablet zog das die
+   Knoepfe an die Raender: gemessen 1152 px quer -> 985 px Leere zwischen ▼ und
+   Start. Ab 700 px bekommt sie deshalb eine Hoechstbreite und rutscht in die Mitte;
+   dieselbe Bauart wie .mk-panel, das seit jeher eine max-width fuer breite Schirme hat.
+   ⛔ Die Leiste traegt ihre Position INLINE (left:0;right:0;bottom:0). max-width und
+   margin stehen dort NICHT - deshalb greifen sie von hier aus ohne !important.
+   Der eingeklappte Knopf wandert mit an den linken Rand derselben Box, bleibt aber
+   nie naeher als 16 px am Bildschirmrand. */
+@media (min-width:700px){
+  #globalTimerBar{max-width:640px;margin-left:auto;margin-right:auto;border-radius:14px 14px 0 0}
+  #gtbSheet>div{max-width:640px;margin-left:auto;margin-right:auto}
+  /* ⛔ Beim kleinen Knopf steht left:16px INLINE - Inline schlaegt jede CSS-Regel.
+     Ohne !important blieb er bei 16 px kleben, waehrend die Leiste in die Mitte rueckte
+     (im Browser gemessen, 10.09.2026). Bei der Leiste selbst war das nicht noetig: dort
+     stehen max-width und margin nicht inline. */
+  #gtbMini{left:max(16px, calc(50% - 320px)) !important}
+}
 /* v141: Panel schwebt jetzt ÜBER der Liste (vorher schob es alles nach unten – bei 7 Boards
    wurde der Status-Teil abgeschnitten und Umschalter/Karten klebten darunter, Befund Frank). */
 .mk-panel{display:none;position:absolute;left:8px;right:8px;z-index:900;background:var(--bg2);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.55);padding:12px;max-height:70vh;overflow-y:auto}
@@ -4499,7 +4517,14 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
         <span id="gtbTime" style="font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0;font-size:calc(19px * var(--m-scale,1));">00:00:00</span>
         <span style="flex-shrink:0;font-size:calc(11px * var(--m-scale,1));opacity:.85;border:1px solid rgba(255,255,255,.35);border-radius:4px;padding:1px 6px;white-space:nowrap;">antippen zum Öffnen</span>
       </div>
-      <div id="gtbTitle" style="font-size:calc(13px * var(--m-scale,1));opacity:.95;line-height:1.3;margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;"></div>
+      <!-- ⛔ v272: line-clamp von 2 auf 3. v268 hatte zwei Zeilen erlaubt und ich hatte
+                 daraus geschlossen, die Sache sei erledigt - GEMESSEN hatte ich aber nur die
+                 HOEHE, nicht ob der Text hineinpasst. Frank: "Bei der letzten Version war das
+                 doch noch gar nicht dabei, dass die unterste Zeile die gesamte Anschrift zeigt."
+                 Nachgemessen bei 375 px: 73 Zeichen brauchen 51 px = DREI Zeilen, sichtbar
+                 waren 34 px = zwei. Mit drei Zeilen passen alle echten Auftragsnamen (bis
+                 83 Zeichen geprueft); die Leiste waechst dabei von 86 auf 103 px. -->
+      <div id="gtbTitle" style="font-size:calc(13px * var(--m-scale,1));opacity:.95;line-height:1.3;margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow-wrap:anywhere;"></div>
     </div>
     <!-- v268: Das ▲ kommt im Lauf-Zustand zurueck. Bis v267 gab es hier NUR Stopp -
          Frank: "ich kann nur noch Stopp drücken". Ein Baustellenwechsel zwang also zum
@@ -4721,7 +4746,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v270';
+const MOB_VERSION='v272';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
