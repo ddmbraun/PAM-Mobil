@@ -108,6 +108,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .mk-board .mk-board-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mk-ico{flex-shrink:0;width:44px;height:44px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:17px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .mk-ico.mk-aktiv{border-color:#e8791a;color:#e8791a;background:rgba(232,121,26,.12)}
+/* v267: Eintraege im Kopf-Menue - grosse Tippflaeche (min. 52 px) und Beschriftung,
+   statt ein Symbol raten zu muessen. Farben folgen hell/dunkel (Lehre aus v263/v264). */
+.mnu-eintrag{display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-height:52px;padding:10px 12px;background:transparent;border:none;border-radius:10px;color:var(--text);font-family:inherit;font-size:15px;text-align:left;cursor:pointer}
+.mnu-eintrag:active{background:var(--bg3)}
+.mnu-eintrag+.mnu-eintrag{border-top:0.5px solid var(--border)}
+.mnu-ico{flex-shrink:0;width:24px;text-align:center;font-size:18px;line-height:1}
+.mnu-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.mnu-sub{font-size:11.5px;color:var(--text2);font-weight:400}
 /* v141: Panel schwebt jetzt ÜBER der Liste (vorher schob es alles nach unten – bei 7 Boards
    wurde der Status-Teil abgeschnitten und Umschalter/Karten klebten darunter, Befund Frank). */
 .mk-panel{display:none;position:absolute;left:8px;right:8px;z-index:900;background:var(--bg2);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.55);padding:12px;max-height:70vh;overflow-y:auto}
@@ -4292,10 +4300,29 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
   <div class="hdr">
     <div class="hdr-title">PAM Mobile</div>
     <button class="hdr-btn icon theme-toggle-btn" onclick="toggleTheme()" title="Hell/Dunkel wechseln">☀️</button>
-    <button class="hdr-btn icon" id="refreshBtn" onclick="refreshData()" title="Neu laden – lange drücken = PC-Stand erzwingen">🔄</button>
-    <button class="hdr-btn" onclick="_openStammblattMob()" title="Stammblatt öffnen" style="font-size:12px;font-weight:700">📋</button>
-    <button class="hdr-btn" onclick="toggleAppZoomBar()" title="App-Größe (Zoom)" style="font-weight:700">Aa</button>
-    <button class="hdr-btn icon" onclick="openSettings()" title="Einstellungen">⚙️</button>
+    <!-- v267: Statt vier einzelner Symbole ein Menue. Frank am 10.09.2026: "das sind ja
+         so viele Knöpfe"; Hell/Dunkel wollte er oben behalten, den Rest ins Menue. -->
+    <button class="hdr-btn icon" id="mnuBtn" onclick="_mnuAuf()" title="Weitere Funktionen" aria-label="Weitere Funktionen" style="font-weight:700;letter-spacing:1px;">⋯</button>
+  </div>
+  <!-- ⛔ Das Menue steht FEST hier, es wird NICHT beim Oeffnen gebaut: an refreshBtn
+       haengt seit jeher ein Langdruck-Handler (700 ms → forceReloadFromDrive), der beim
+       App-Start gesetzt wird. Ein erst spaeter erzeugter Knopf bekaeme ihn nie - das
+       Langdruecken waere still verschwunden. -->
+  <div id="mnuBlatt" style="display:none;position:fixed;inset:0;z-index:9300;background:rgba(0,0,0,.45);" onclick="if(event.target===this)_mnuZu()">
+    <div style="position:absolute;top:calc(8px + env(safe-area-inset-top,0px));right:10px;left:auto;width:min(84vw,300px);background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 8px 26px rgba(0,0,0,.4);">
+      <button class="mnu-eintrag" id="refreshBtn" onclick="_mnuZu();refreshData();" title="Neu laden – lange drücken = PC-Stand erzwingen">
+        <span class="mnu-ico">🔄</span><span class="mnu-txt">Neu laden<span class="mnu-sub">lange drücken: PC-Stand holen</span></span>
+      </button>
+      <button class="mnu-eintrag" onclick="_mnuZu();toggleAppZoomBar();" title="App-Größe (Zoom)">
+        <span class="mnu-ico" style="font-weight:700;font-size:15px;">Aa</span><span class="mnu-txt">Textgröße</span>
+      </button>
+      <button class="mnu-eintrag" onclick="_mnuZu();_openStammblattMob();" title="Stammblatt öffnen">
+        <span class="mnu-ico">📋</span><span class="mnu-txt">Stammblatt</span>
+      </button>
+      <button class="mnu-eintrag" onclick="_mnuZu();openSettings();" title="Einstellungen">
+        <span class="mnu-ico">⚙️</span><span class="mnu-txt">Einstellungen</span>
+      </button>
+    </div>
   </div>
   <div class="size-bar" id="appZoomBar">
     <button class="size-bar-step" onclick="setAppZoom(Math.max(80,+(document.getElementById('appZoomSlider').value||100)-10))" title="Kleiner">A−</button>
@@ -4308,7 +4335,10 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
        Tablet/Desktop (>520px) sehen diese Zeile nie und behalten die breiten Leisten. -->
   <div class="mk-row" id="mkRow">
     <button class="mk-board" id="mkBoardBtn" onclick="_mkTogglePanel()">Board wählen ▾</button>
-    <button class="mk-ico" id="mkFilterBtn" onclick="_mkTogglePanel()" title="Board und Status wählen">🏷</button>
+    <!-- v267: Der 🏷-Knopf ist raus. Er rief exakt dieselbe Funktion wie der Board-Knopf
+         links daneben (_mkTogglePanel) - gemessen am 10.09.2026. Seine einzige eigene
+         Leistung war die orange Faerbung bei aktivem Status-Filter; die zeigt jetzt der
+         Board-Knopf selbst an, indem er den Status im Text nennt. -->
     <button class="mk-ico" id="mkSearchBtn" onclick="_mkToggleSearch()" title="Suche ein-/ausblenden">🔍</button>
   </div>
   <div class="mk-panel" id="mkPanel"></div>
@@ -4671,7 +4701,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v266';
+const MOB_VERSION='v267';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10313,10 +10343,23 @@ function _mkUpdate(){
   if(btn){
     const cnt=_mobSichtbar(currentBoard).length; // v219: zählt, was die Liste zeigt
     const bIcon=_bIconTyp(currentBoard); // v205: kannte vorher kein 🏠 Objekt
-    btn.innerHTML='<span>'+bIcon+'</span><span class="mk-board-txt">'+esc(currentBoard||'Board wählen')+' ('+cnt+')</span><span style="color:var(--text2);flex-shrink:0">▾</span>';
+    // v267: Der Status steht jetzt IM Knopf. Vorher zeigte nur die orange Faerbung des
+    // 🏷-Knopfes daneben, dass ueberhaupt gefiltert wird - welcher Status, sah man erst
+    // nach dem Aufklappen. Der 🏷-Knopf ist mit v267 weg, der Platz kommt hierher.
+    const st=(currentStatus||'').trim();
+    btn.innerHTML='<span>'+bIcon+'</span><span class="mk-board-txt">'+esc(currentBoard||'Board wählen')+' ('+cnt+')'
+      +(st?'<span style="color:#e8791a"> · '+esc(st)+'</span>':'')
+      +'</span><span style="color:var(--text2);flex-shrink:0">▾</span>';
+    btn.classList.toggle('mk-aktiv',!!st);
   }
-  const fb=document.getElementById('mkFilterBtn');
-  if(fb)fb.classList.toggle('mk-aktiv',!!(currentStatus&&currentStatus.trim()));
+}
+// ── v267: Kopf-Menue hinter dem ⋯ ───────────────────────────────────────────
+function _mnuAuf(){
+  const b=document.getElementById('mnuBlatt');if(!b)return;
+  b.style.display='block';
+}
+function _mnuZu(){
+  const b=document.getElementById('mnuBlatt');if(b)b.style.display='none';
 }
 function _mkTogglePanel(){
   const p=document.getElementById('mkPanel');if(!p)return;
