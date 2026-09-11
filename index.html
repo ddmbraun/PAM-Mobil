@@ -187,7 +187,11 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 }
 /* ── BAUDOKU TAB-BAR ── */
 .detail-tab-bar{display:flex;background:var(--bg2);border-bottom:2px solid var(--border);flex-shrink:0;}
-.detail-tab-btn{flex:1;padding:11px 8px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;color:var(--text2);border:none;background:transparent;border-bottom:3px solid transparent;margin-bottom:-2px;min-height:44px;}
+/* v276: Symbol oben, Wort darunter – alle vier Reiter gleich gebaut. Bis v275 brachen drei
+   der vier bei 375 px an verschiedenen Stellen um („Task-/Info", „📔/Tagebuch"), die Leiste
+   war dadurch 57 px hoch; jetzt 50 px, alle Wörter einzeilig. */
+.detail-tab-btn{flex:1;padding:6px 2px 5px;font-size:12px;font-weight:600;text-align:center;cursor:pointer;color:var(--text2);border:none;background:transparent;border-bottom:3px solid transparent;margin-bottom:-2px;min-height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;line-height:1.1;white-space:nowrap;}
+.detail-tab-btn .dt-ico{font-size:19px;line-height:1;}
 .detail-tab-btn.active{color:var(--text);border-bottom-color:var(--accent2);}
 /* ── BAUDOKU INHALTE ── */
 .bau-textarea{width:100%;min-height:80px;resize:vertical;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;font-size:calc(15px * var(--m-scale,1));font-family:inherit;box-sizing:border-box;}
@@ -332,6 +336,15 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .m-akt-ico{display:block;font-size:calc(20px * var(--m-scale,1));line-height:1.15}
 .m-akt-lbl{display:block;font-size:calc(11px * var(--m-scale,1));margin-top:3px;font-weight:700}
 .m-akt-sub{display:block;font-size:calc(10px * var(--m-scale,1));margin-top:1px;color:var(--orange);font-family:'SF Mono',Consolas,monospace;font-weight:700}
+/* v276: Adressblock in der Übersicht (siehe _mAdrBlockHtml) – EINMAL die Adresse, umbrechend,
+   antippbar, mit Navigationsknopf; das Erstell-Datum klein darunter. Ersetzt dort das
+   einzeilige Eingabefeld und die graue Zeile unter den Reitern. */
+.m-adr{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;cursor:pointer}
+.m-adr-txt{flex:1;min-width:0;font-size:calc(15px * var(--m-scale,1));font-weight:600;line-height:1.3;overflow-wrap:anywhere;color:var(--text)}
+.m-adr-stift{font-size:calc(12px * var(--m-scale,1));opacity:.55}
+.m-adr-sub{font-size:calc(11.5px * var(--m-scale,1));color:var(--text2);margin-top:3px;font-weight:400}
+.m-adr-nav{flex-shrink:0;width:42px;height:42px;border-radius:9px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:18px;display:flex;align-items:center;justify-content:center;text-decoration:none}
+.m-adr-nav.aus{opacity:.35;pointer-events:none}
 .m-kacheln{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .m-kachel{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:left;color:var(--text);cursor:pointer;font-family:inherit;min-height:60px;display:flex;flex-direction:column;justify-content:space-between}
 /* Leere Bereiche bleiben da und antippbar – sie werden nur leiser, damit die
@@ -445,7 +458,14 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .call-link{background:var(--green);color:white;text-decoration:none;padding:14px 20px;border-radius:10px;font-size:17px;font-weight:700;display:inline-flex;align-items:center;gap:6px;min-height:54px;white-space:nowrap}
 .call-link.disabled{background:var(--bg3);color:var(--text2);pointer-events:none}
 .nav-link{background:var(--accent);color:white;text-decoration:none;padding:14px 20px;border-radius:10px;font-size:17px;font-weight:700;display:inline-flex;align-items:center;gap:6px;min-height:54px;white-space:nowrap}
-.save-indicator{font-size:12px;color:var(--text2);min-width:80px;text-align:right}
+/* v276: keine 80 px Mindestbreite mehr – die nahm dem Titel der Karte ein Viertel der
+   Kopfzeile weg, auch wenn gar nichts anzuzeigen war. Die Anzeige liegt jetzt absolut in
+   der unteren rechten Ecke (der Kopf ist position:sticky, das genügt als Bezug) und wird bei
+   langen Meldungen abgeschnitten statt den Titel zu verdrängen. pointer-events:none, damit
+   sie den Aa-Knopf darüber nie abschirmt. */
+.save-indicator{font-size:12px;color:var(--text2);text-align:right}
+#detailScreen .save-indicator{position:absolute;right:12px;bottom:2px;max-width:calc(100% - 24px);font-size:11px;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+#detailScreen .hdr{padding:10px 12px 9px}
 .save-indicator.saving{color:var(--orange)}
 .save-indicator.saved{color:var(--green)}
 .save-indicator.error{color:var(--red)}
@@ -4405,8 +4425,13 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
   <div class="hdr">
     <button class="hdr-btn icon" onclick="closeDetail()">←</button>
     <div class="hdr-title-block" style="flex:1;min-width:0;overflow:hidden;">
-      <div class="hdr-title" id="detailTitle" onclick="_editTaskTitleMob()" title="Antippen zum Umbenennen" style="font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;"></div>
-      <div id="hdrKstChip" style="font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;"></div>
+      <!-- v276: Der Titel darf zwei Zeilen haben. Bis v275 bekam er bei 375 px nur 145 px
+           (Speicher-Anzeige rechts hielt 80 px frei, auch wenn leer) – von einem Titel mit
+           50 Zeichen waren 15 zu sehen. Die Speicher-Anzeige liegt jetzt absolut unten
+           rechts (CSS .save-indicator), die Reiter darunter wurden 7 px niedriger, Kopf und
+           Reiter zusammen sind also nicht höher als vorher (die Sorge aus v197). -->
+      <div class="hdr-title" id="detailTitle" onclick="_editTaskTitleMob()" title="Antippen zum Umbenennen" style="font-size:16px;font-weight:700;line-height:1.25;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;cursor:pointer;"></div>
+      <div id="hdrKstChip" style="font-size:12px;margin-top:3px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none;"></div>
     </div>
     <button class="hdr-btn" onclick="toggleMSizeBar()" title="Schrift und Helligkeit" style="font-weight:700;flex-shrink:0;">Aa</button>
     <span class="save-indicator" id="saveInd"></span>
@@ -4423,10 +4448,12 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <button class="size-bar-step" onclick="setAppBrightness(100)" title="Helligkeit zurücksetzen" style="font-size:11px;min-width:34px;">↺</button>
   </div>
   <div class="detail-tab-bar" id="detailTabBar">
-    <button class="detail-tab-btn active" id="tabInfoBtn" onclick="switchDetailTab('info')">📋 Task-Info</button>
-    <button class="detail-tab-btn" id="tabTagebuchBtn" onclick="switchDetailTab('tagebuch')">📔 Tagebuch</button>
-    <button class="detail-tab-btn" id="tabBauBtn" onclick="switchDetailTab('bau')">🏗 Baudoku</button>
-    <button class="detail-tab-btn schnell-tab" id="tabSchnellBtn" onclick="switchDetailTab('schnell')">⚡ Schnell</button>
+    <!-- v276: Symbol und Wort getrennt, damit alle vier Reiter gleich umbrechen (Symbol oben,
+         Wort darunter). Bis v275 brachen drei der vier bei 375 px an verschiedenen Stellen. -->
+    <button class="detail-tab-btn active" id="tabInfoBtn" onclick="switchDetailTab('info')"><span class="dt-ico">📋</span><span class="dt-lbl">Task-Info</span></button>
+    <button class="detail-tab-btn" id="tabTagebuchBtn" onclick="switchDetailTab('tagebuch')"><span class="dt-ico">📔</span><span class="dt-lbl">Tagebuch</span></button>
+    <button class="detail-tab-btn" id="tabBauBtn" onclick="switchDetailTab('bau')"><span class="dt-ico">🏗</span><span class="dt-lbl">Baudoku</span></button>
+    <button class="detail-tab-btn schnell-tab" id="tabSchnellBtn" onclick="switchDetailTab('schnell')"><span class="dt-ico">⚡</span><span class="dt-lbl">Schnell</span></button>
   </div>
   <!-- v150: feste Erstellt-Zeile – auf jedem Reiter sichtbar, gefüllt in renderDetail().
        ⛔ v197: Diese Zeile war es, die Frank auf seinem Bildschirmfoto zeigte – die mit dem
@@ -4762,7 +4789,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v275';
+const MOB_VERSION='v276';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5518,7 +5545,13 @@ function _mKopfzeileAnwenden(){
   const zeile=document.getElementById('detailCreatedLine');
   if(!zeile)return;
   const hatInhalt=!!(zeile.textContent||'').trim();
-  zeile.style.display=(hatInhalt&&!_mBereichAktiv)?'block':'none';
+  /* v276: Auf dem Reiter Task-Info steht die Adresse jetzt im eigenen Block (_mAdrBlockHtml),
+     samt Erstell-Datum – die graue Zeile wäre dort genau die Wiederholung, die Frank in v199
+     bemängelt hatte. Sie bleibt auf Tagebuch, Baudoku und Schnell, wo es den Block nicht gibt.
+     Auf den Bereichsseiten war sie schon seit v199 weg; das ist damit mit erledigt.
+     typeof-Abfrage: alte Prüfsuiten führen diese Funktion ohne die Reiter-Variable aus. */
+  const tab=(typeof _currentDetailTab==='string')?_currentDetailTab:'info';
+  zeile.style.display=(hatInhalt&&tab!=='info')?'block':'none';
 }
 function _mBereichOeffnen(key){
   _mBereichAktiv=key||null;
@@ -5574,6 +5607,44 @@ function _mAktionsleiste(t){
 function _mAktNotiz(){
   _mBereichOeffnen('Notizen');
   setTimeout(function(){const ta=document.getElementById('newNotizInput');if(ta)try{ta.focus();}catch(e){}},60);
+}
+/* v276: Der Adressblock in der Übersicht (Reiter Task-Info). Ersetzt dort das einzeilige
+   Eingabefeld und die graue Zeile unter den Reitern. Befund Frank am Foto (11.09.2026):
+   die Adresse stand dreimal auf einem Bildschirm, und das Eingabefeld schnitt hinten ab,
+   ohne „…" – ein input kann grundsätzlich nicht umbrechen (das war schon der Befund von
+   v197). Draußen ist die Adresse die Information: also EINMAL, groß, umbrechend, antippbar.
+   ⛔ Bewusst KEIN Eingabefeld mit der Klasse addr-field: die zwei Sammelstellen für die
+      Adressfelder (_syncAddrField, _adrPopupApply) bleiben unverändert und ziehen diesen
+      Block über _mAdrBlockAktualisieren() nach. Das Eingabefeld gibt es weiter auf der Seite
+      „Objektadresse" (mit Lese-Zeile, v197) und im Reiter Schnell. */
+function _mAdrBlockHtml(t){
+  const adr=((t&&t.adresse)||'').trim();
+  const erst=_taskErstelltText(t,false);
+  return '<div class="m-adr" id="mAdrBlock" onclick="_openAdrPopup(\'task\')" title="Antippen zum Bearbeiten">'
+    +'<div class="m-adr-txt"><span id="mAdrText">'+(adr?'📍 '+esc(adr):'📍 Adresse eintragen …')+'</span> <span class="m-adr-stift">✏️</span>'
+    +(erst?'<div class="m-adr-sub">📅 Erstellt '+esc(erst)+'</div>':'')
+    +'</div>'
+    +'<a id="mAdrNav" class="m-adr-nav'+(adr?'':' aus')+'" href="'+escAttr(_mAdrNavHref(adr))+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Navigation starten">🧭</a>'
+  +'</div>';
+}
+// Dasselbe Ziel wie der Navi-Knopf auf der Seite „Objektadresse" (updateNavBtn).
+function _mAdrNavHref(adr){
+  adr=(adr||'').trim();
+  if(!adr)return '#';
+  let q=adr;
+  try{q=_pamGeoQuery(adr)||adr;}catch(e){}
+  return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(q);
+}
+// Nach dem Bearbeiten (✏️-Blatt oder Feld auf der Seite „Objektadresse") den Block nachziehen,
+// ohne die ganze Karte neu zu zeichnen – dieselbe Idee wie bei den Eingabefeldern (v69).
+function _mAdrBlockAktualisieren(){
+  const t=(typeof currentTask==='function')?currentTask():null;
+  const el=document.getElementById('mAdrText');
+  if(!t||!el)return;
+  const adr=(t.adresse||'').trim();
+  el.textContent=adr?'📍 '+adr:'📍 Adresse eintragen …';
+  const nav=document.getElementById('mAdrNav');
+  if(nav){nav.href=_mAdrNavHref(adr);nav.classList.toggle('aus',!adr);}
 }
 function generateId(){return 't_'+Date.now()+'_'+Math.random().toString(36).substr(2,6);}
 // v150: Erstell-Zeitpunkt eines Tasks ermitteln. Quelle 1: echtes Feld createdAt (ab v150
@@ -10854,6 +10925,9 @@ function switchDetailTab(tab){
   if(isSchnell){const t=currentTask();if(t)renderSchnellTab(t);}
   if(isBau){const t=currentTask();if(t)renderBaudokuTab(t);}
   if(isTagebuch){const t=currentTask();if(t)renderTagebuchTab(t);}
+  // v276: die graue Zeile unter den Reitern hängt jetzt am Reiter (Task-Info: aus, dort
+  // steht der Adressblock; sonst: an). Für 'info' erledigt das renderDetail schon.
+  try{_mKopfzeileAnwenden();}catch(e){}
 }
 
 // ══════════════════════════════════════════════
@@ -12454,9 +12528,11 @@ function renderDetail(t){
       let h='';
       if(!isNotiz){
         const infoOpen=_isInfoBaustelleOpen();
-        const preview=(t.desc||'').replace(/\s+/g,' ').trim();
+        /* v276: nur der erste Absatz (bis zur ersten Leerzeile) – der Import-Block aus der
+           E-Mail, der oft dahinter steht, fraß sonst die Vorschau („… [E-Mail-I…"). */
+        const preview=((t.desc||'').split(/\n[ \t]*\n/).map(s=>s.replace(/\s+/g,' ').trim()).filter(Boolean)[0])||'';
         if(infoOpen){
-          h+='<div style="background:#FFFBF0;border:0.5px solid #EAB308;border-left:3px solid #CA8A04;border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:10px;">'
+          h+='<div style="background:#FFFBF0;border:0.5px solid #EAB308;border-left:4px solid #CA8A04;border-radius:10px;padding:10px 12px;margin-bottom:10px;">'
             +'<div onclick="toggleInfoBaustelle()" style="display:flex;align-items:center;gap:8px;cursor:pointer;">'
               +'<span style="'+fsc(12)+'font-weight:700;color:#633806;text-transform:uppercase;letter-spacing:.06em;flex:1;">'+(isEmail?'📧 Mail-Info':'📋 Info Baustelle')+'</span>'
               +'<span style="color:#633806;font-size:14px;">▾</span>'
@@ -12464,9 +12540,9 @@ function renderDetail(t){
             +'<textarea rows="2" style="width:100%;resize:none;background:transparent;border:none;border-bottom:0.5px solid #EAB308;padding:4px 0;'+fsc(16)+'color:#412402;font-family:inherit;outline:none;margin-top:4px;" placeholder="Dauerhafte Infos zur Baustelle…" oninput="updateField(\'desc\',this.value);this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,200)+\'px\';" onfocus="this.style.borderBottomColor=\'#CA8A04\'" onblur="this.style.borderBottomColor=\'#EAB308\'" autocomplete="off">'+esc(t.desc||'')+'</textarea>'
           +'</div>';
         }else{
-          h+='<div onclick="toggleInfoBaustelle()" style="display:flex;align-items:center;gap:8px;background:#FFFBF0;border:0.5px solid #EAB308;border-left:3px solid #CA8A04;border-radius:0 8px 8px 0;padding:10px 12px;margin-bottom:10px;cursor:pointer;'+(preview?'':'opacity:.75;')+'">'
+          h+='<div onclick="toggleInfoBaustelle()" style="display:flex;align-items:center;gap:8px;background:#FFFBF0;border:0.5px solid #EAB308;border-left:4px solid #CA8A04;border-radius:10px;padding:10px 12px;margin-bottom:10px;cursor:pointer;'+(preview?'':'opacity:.75;')+'">'
             +'<span style="'+fsc(13)+'font-weight:700;color:#633806;white-space:nowrap;">'+(isEmail?'📧 Mail-Info':'📋 Info Baustelle')+'</span>'
-            +'<span style="flex:1;'+fsc(13)+'color:#78350F;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">'+(preview?esc(preview):'Antippen zum Ausfüllen…')+'</span>'
+            +'<span style="flex:1;'+fsc(13)+'color:#78350F;overflow:hidden;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3;">'+(preview?esc(preview):'Antippen zum Ausfüllen…')+'</span>'
             +'<span style="color:#633806;font-size:14px;">▸</span>'
           +'</div>';
         }
@@ -12498,23 +12574,18 @@ function renderDetail(t){
       return h;
     })()
     // ── v62: STANDORT (GPS / Adresse) ──
+    /* v276: EIN Adressblock (_mAdrBlockHtml) statt graue Zeile + Eingabefeld – Befund Frank am
+       Foto vom 11.09.2026: die Adresse stand dreimal auf dem Bildschirm, das Feld schnitt ab.
+       v108/v188 bleiben gewahrt: volle Breite, der Standort-Knopf steht in der Aktionsleiste.
+       Der Koordinaten-Link (Foto-GPS) bleibt unter dem Block. Das ✏️-Blatt (v79) öffnet sich
+       jetzt beim Antippen des ganzen Blocks. */
     +(()=>{
       const hasCoords=t.lat&&t.lon;
       const mapHref=hasCoords?('https://www.google.com/maps/search/?api=1&query='+t.lat+','+t.lon):'';
-      // v108: Standort-Knopf und Adresse in zwei eigene Zeilen (Wunsch Frank – Adresse volle Breite)
-      // v188: „📍 Standort erfassen" steht jetzt in der festen Aktionsleiste ganz
-      // oben – es ist einer der vier Handgriffe, für die man vor Ort das Handy
-      // zückt. Hier bleibt die Adresse, weiter über volle Breite, mit ✏️ daneben.
-      // v69: ein einziges Adress-Datenfeld, live über alle Eingabefelder synchronisiert
-      // (kein voller Re-Render mehr beim Verlassen → kein Fokus-/Cursor-Verlust).
-      let h='<div style="margin-bottom:10px;">'
-        +'<div style="display:flex;align-items:center;gap:8px;">'
-        +'<input type="text" class="addr-field" value="'+escAttr(t.adresse||'')+'" placeholder="Adresse (per 📍 gefüllt – anpassbar)" oninput="_syncAddrField(this)" autocomplete="off" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));">'
-        +'<button onclick="_openAdrPopup(\'task\')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));cursor:pointer;">✏️</button>' // v79
-        +'</div>'
+      return '<div style="margin-bottom:10px;">'
+        +_mAdrBlockHtml(t)
         +(hasCoords?'<a href="'+escAttr(mapHref)+'" target="_blank" style="display:inline-block;margin-top:5px;font-size:12px;color:var(--text2);text-decoration:none;">📍 '+Number(t.lat).toFixed(5)+', '+Number(t.lon).toFixed(5)+' 🗺️</a>':'')
         +'</div>';
-      return h;
     })()
     // ── ZEIT/TERMIN BADGE ──
     +(()=>{
@@ -12524,10 +12595,15 @@ function renderDetail(t){
       const termMin=(t.ausserhausTermine||[]).reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
       const gesMin=zeitMin+termMin;
       if(!zeitMin&&!termMin)return '';
-      return '<div style="display:flex;align-items:stretch;border:0.5px solid #C0DD97;border-radius:8px;overflow:hidden;font-size:calc(12px * var(--m-scale,1));font-weight:600;white-space:nowrap;margin:0 0 8px;">'
-        +(zeitMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#FAEEDA;border-right:0.5px solid #FAC775;"><span style="color:#633806;">⏱ Zeiterf.</span><b style="color:#412402;padding-left:4px;">'+_fmt(zeitMin)+'</b></span>':'')
-        +(termMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#E6F1FB;border-right:0.5px solid #B5D4F4;"><span style="color:#0C447C;">📅 Termine</span><b style="color:#042C53;padding-left:4px;">'+_fmt(termMin)+'</b></span>':'')
-        +(gesMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#EAF3DE;"><span style="color:#27500A;">∑ Gesamt</span><b style="color:#173404;padding-left:4px;">'+_fmt(gesMin)+'</b></span>':'')
+      /* v276: „∑ Gesamt" nur, wenn es wirklich zwei Töpfe gibt – sonst stand dieselbe Zahl
+         zweimal nebeneinander (Befund Frank am Foto, 11.09.2026). Der Rahmen ist nur so breit
+         wie sein Inhalt (width:max-content) statt über die ganze Zeile, und rund wie die
+         übrigen Kästen (10 px). Trennlinien nur dort, wo noch ein Topf folgt. */
+      const zweiToepfe=!!(zeitMin&&termMin);
+      return '<div style="display:flex;width:max-content;max-width:100%;align-items:stretch;border:0.5px solid #C0DD97;border-radius:10px;overflow:hidden;font-size:calc(12px * var(--m-scale,1));font-weight:600;white-space:nowrap;margin:0 0 8px;">'
+        +(zeitMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#FAEEDA;'+(termMin?'border-right:0.5px solid #FAC775;':'')+'"><span style="color:#633806;">⏱ Zeiterf.</span><b style="color:#412402;padding-left:4px;">'+_fmt(zeitMin)+'</b></span>':'')
+        +(termMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#E6F1FB;'+(zweiToepfe?'border-right:0.5px solid #B5D4F4;':'')+'"><span style="color:#0C447C;">📅 Termine</span><b style="color:#042C53;padding-left:4px;">'+_fmt(termMin)+'</b></span>':'')
+        +(zweiToepfe?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#EAF3DE;"><span style="color:#27500A;">∑ Gesamt</span><b style="color:#173404;padding-left:4px;">'+_fmt(gesMin)+'</b></span>':'')
         +'</div>';
     })();
 
@@ -12811,6 +12887,7 @@ function _syncAddrField(el){
   const t=currentTask();if(t){t.adresse=v;scheduleSave();}
   document.querySelectorAll('input.addr-field').forEach(inp=>{ if(inp!==el && inp.value!==v) inp.value=v; });
   try{updateNavBtn();}catch(e){}
+  try{_mAdrBlockAktualisieren();}catch(e){} // v276: Adressblock in der Übersicht
 }
 // v79: Adress-Popup – großes, mehrzeiliges Bearbeitungsfeld (Wunsch: einzeiliges Feld zu klein)
 let _adrPopupMode='task';
@@ -12846,6 +12923,7 @@ function _adrPopupApply(){
   t.adresse=v;scheduleSave();
   document.querySelectorAll('input.addr-field').forEach(i=>{i.value=v;});
   try{updateNavBtn();}catch(e){}
+  try{_mAdrBlockAktualisieren();}catch(e){} // v276: Adressblock in der Übersicht
   toast('✓ Adresse übernommen','success');
 }
 
