@@ -4486,17 +4486,21 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <button id="gtbMini" onclick="_gtbAusklappen()" title="Uhr-Leiste aufklappen" aria-label="Uhr-Leiste aufklappen" style="display:none;position:fixed;left:16px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:8500;min-width:52px;height:52px;padding:0 12px;border-radius:26px;background:var(--bg2);border:1px solid var(--border);color:var(--text);box-shadow:0 3px 12px rgba(0,0,0,.35);cursor:pointer;align-items:center;justify-content:center;gap:6px;font-family:inherit;">
   <span style="font-size:20px;line-height:1;">⏱</span><span id="gtbMiniZeit" style="font-size:calc(14px * var(--m-scale,1));font-weight:700;font-variant-numeric:tabular-nums;display:none;"></span>
 </button>
-<div id="gtbSheet" style="display:none;position:fixed;inset:0;z-index:8400;background:rgba(0,0,0,.55);" onclick="if(event.target===this)_gtbSheetZu()">
+<div id="gtbSheet" style="display:none;position:fixed;inset:0;z-index:8600;background:rgba(0,0,0,.55);" onclick="if(event.target===this)_gtbSheetZu()">
   <div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg2);border-radius:16px 16px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px));max-height:76vh;overflow-y:auto;box-shadow:0 -4px 22px rgba(0,0,0,.45);">
     <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 12px;"></div>
-    <div id="gtbSheetListe"></div>
-    <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:10px;">
+    <!-- ⛔ v274: Die Suche stand UNTER der Liste, und das Blatt lag (z-index 8400) UNTER
+         der Uhr-Leiste (8500) - die Leiste deckte Suchfeld und Schliessen zu. Befund Frank
+         am Bild, 11.09.2026: "wo ist die Suche?". Gemessen: auch in v272 schon verdeckt.
+         Jetzt steht die Suche als Erstes, und das Blatt liegt ueber der Leiste (8600). -->
+    <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:10px;">
       <span style="font-size:15px;flex-shrink:0;">🔍</span>
       <!-- ⛔ 16px ist die Untergrenze: Safari auf dem iPhone zoomt beim Antippen in
            JEDES Eingabefeld hinein, dessen Schrift kleiner als 16px ist. Der Aa-Regler
            darf hier nach oben wirken, aber nicht darunter. -->
       <input type="text" id="gtbSuche" placeholder="andere Baustelle suchen …" autocomplete="off" oninput="_gtbSheetZeichnen()" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-size:max(16px, calc(16px * var(--m-scale,1)));">
     </div>
+    <div id="gtbSheetListe"></div>
     <button onclick="_gtbSheetZu()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">Schließen</button>
   </div>
 </div>
@@ -4752,7 +4756,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v273';
+const MOB_VERSION='v274';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -13152,6 +13156,8 @@ function _stopTimerWithEnd(endMs){
 // Punkt 1: Leiste am unteren Rand – sichtbar in jeder Ansicht, solange die Uhr läuft
 // ── v264: eingeklappt ja/nein wird gemerkt ────────────────────────────────────
 const GTB_ZU_KEY='pam_uhrleiste_zu';
+// v274: die unten gewaehlte Baustelle {id, tag} - gilt heute und nur auf diesem Geraet
+const GTB_WAHL_KEY='pam_uhrleiste_wahl';
 function _gtbIstZu(){try{return localStorage.getItem(GTB_ZU_KEY)==='1';}catch(e){return false;}}
 function _gtbEinklappen(){
   try{localStorage.setItem(GTB_ZU_KEY,'1');}catch(e){}
@@ -13173,7 +13179,7 @@ function _updateGlobalTimerBar(){
   if(_gtbIstZu()){
     bar.style.display='none';
     const laeuft=!!(s&&s.taskId);
-    const gibtsWas=laeuft||_gtbBaustellen(1).length>0;
+    const gibtsWas=laeuft||!!_gtbGewaehlt()||_gtbBaustellen(1).length>0;
     if(mini){
       mini.style.display=gibtsWas?'inline-flex':'none';
       mini.style.background=laeuft?'var(--accent)':'var(--bg2)';
@@ -13194,7 +13200,9 @@ function _updateGlobalTimerBar(){
     // Nur wenn gar keine Baustelle bekannt ist (frisch angemeldet, leeres Board),
     // bleibt sie weg - ein leerer Kasten hilft niemandem.
     if(_gtbInterval){clearInterval(_gtbInterval);_gtbInterval=null;}
-    const liste=_gtbBaustellen(1);
+    // v274: hat Frank im Blatt eine Baustelle gewaehlt, steht DIE unten - nicht der Vorschlag
+    const gew=_gtbGewaehlt();
+    const liste=gew?[gew]:_gtbBaustellen(1);
     // ⛔ v265: Die Leiste verschwindet NICHT mehr, wenn nichts ansteht. Mit der neuen
     // Regel (nur Haken oder heutiger Termin) waere sie sonst die meiste Zeit weg - und
     // damit auch der Weg zur Suche. Sie zeigt dann "Baustelle wählen"; ▲ oeffnet das
@@ -13347,6 +13355,57 @@ function _gtbStartLetzte(){
   if(!id){_gtbSheetAuf();return;}
   _gtbStartId(id);
 }
+// ── v274: Baustelle waehlen, ohne die Uhr zu starten ─────────────────────────
+// Frank: "warum ändert sich die Fußzeile nicht, wenn ich die Baustelle aus der Liste
+// wähle?" - bis v273 gab es kein Waehlen, jeder Tipp startete sofort die Uhr.
+// Die Wahl gilt auf DIESEM Geraet (localStorage, kein Abgleich) und nur HEUTE: am
+// naechsten Morgen gilt wieder der Vorschlag (Termin heute, dann Haken) - so mit Frank
+// abgestimmt am 11.09.2026.
+// ⚠ Lokales Datum, NICHT toISOString(): das ist UTC und liefert zwischen 0 und 2 Uhr
+//   (Sommerzeit) noch den Vortag.
+function _gtbTagLokal(){
+  const d=new Date();
+  const p=function(x){return String(x).padStart(2,'0');};
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
+function _gtbWaehlen(id){
+  try{localStorage.setItem(GTB_WAHL_KEY,JSON.stringify({id:id,tag:_gtbTagLokal()}));}catch(e){}
+}
+function _gtbGewaehlt(){
+  let w=null;
+  try{w=JSON.parse(localStorage.getItem(GTB_WAHL_KEY)||'null');}catch(e){w=null;}
+  if(!w||!w.id||w.tag!==_gtbTagLokal())return null;
+  // bewusst NICHT findTaskById: das schreibt bei jedem Fehlschlag eine Warnung in die
+  // Konsole, und diese Funktion laeuft bei jedem Zeichnen der Leiste
+  let t=null;
+  try{
+    Object.keys(boards||{}).some(function(bn){
+      if(bn.charAt(0)==='_')return false;
+      const f=(boards[bn]||[]).find(function(x){return x&&x.id===w.id;});
+      if(f){t=f;return true;}
+      return false;
+    });
+  }catch(e){return null;}
+  if(!t||t.archiviert)return null;
+  return {id:t.id,titel:t.title||'(ohne Titel)',unter:'gewählt',art:'wahl'};
+}
+function _gtbZeileTipp(id){
+  const s=_loadTimerState();
+  if(s&&s.taskId){
+    // Uhr laeuft: ein Tipp WECHSELT die Uhr dorthin (v268 - sonst muesste Frank erst stoppen).
+    // ⛔ Dieselbe Baustelle: nur schliessen. Bis v273 hat der Tipp die laufende Uhr dabei
+    //    ohne Rueckfrage GESTOPPT (_cardTimerToggle heisst "umschalten") - gemessen 11.09.2026.
+    if(s.taskId===id){_gtbSheetZu();return;}
+    _gtbStartId(id);
+    // die Wahl erst merken, wenn der Wechsel geklappt hat (Rueckfrage abgebrochen?)
+    const n2=_loadTimerState();
+    if(n2&&n2.taskId===id)_gtbWaehlen(id);
+    return;
+  }
+  _gtbWaehlen(id);
+  _gtbSheetZu();
+  _updateGlobalTimerBar();
+}
 function _gtbStartId(id){
   if(!findTaskById(id)){toast('Baustelle nicht gefunden','error');return;}
   _gtbSheetZu();
@@ -13365,17 +13424,24 @@ function _gtbSheetZeichnen(){
   const el=document.getElementById('gtbSheetListe');if(!el)return;
   const q=((document.getElementById('gtbSuche')||{}).value||'').trim();
   let html='';
+  // v274: Was ein Tipp bewirkt, haengt davon ab, ob die Uhr laeuft (siehe _gtbZeileTipp).
+  // Die Baustelle, die gerade unten steht (oder deren Uhr laeuft), bekommt ein ✓.
+  const _st=_loadTimerState();
+  const laeuft=!!(_st&&_st.taskId);
+  const aktivId=laeuft?_st.taskId:(((_gtbGewaehlt()||_gtbBaustellen(1)[0])||{}).id||'');
   function zeile(b){
-    return '<div onclick="_gtbStartId(\''+escAttr(b.id)+'\')" style="display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:10px;padding:11px 11px;margin-bottom:7px;cursor:pointer;">'
+    /* ⛔ v274: Antippen WAEHLT die Baustelle - sie kommt unten in die Leiste, gestartet
+       wird erst mit dem grossen gruenen ▶ Start. Bis v273 startete jeder Tipp sofort die
+       Uhr, ein "nur auswaehlen" gab es nicht. Frank: "warum ändert sich die Fußzeile nicht,
+       wenn ich die Baustelle aus der Liste wähle?" Deshalb kein Start-Knopf mehr in der
+       Zeile. v265 bleibt: der Name bricht um, statt abgeschnitten zu werden. */
+    const an=(b.id===aktivId);
+    return '<div onclick="_gtbZeileTipp(\''+escAttr(b.id)+'\')" style="display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:10px;padding:11px 11px;margin-bottom:7px;min-height:44px;cursor:pointer;'+(an?'box-shadow:inset 0 0 0 2px #3b6d11;':'')+'">'
       +'<div style="flex:1;min-width:0;">'
       +'<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);line-height:1.3;">'+esc(b.unter)+'</div>'
-      /* v265, Befund Frank: "wenn es eine lange Baustelle ist, kann ich das nicht
-         erkennen". In der Leiste MUSS es einzeilig bleiben (daneben stehen Start und ▲),
-         im aufgeklappten Blatt ist aber Platz - hier bricht der Name jetzt um, statt
-         abgeschnitten zu werden. Ein zusaetzliches Popup braucht es dafuer nicht. */
       +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;overflow-wrap:anywhere;">'+esc(b.titel)+'</div>'
       +'</div>'
-      +'<span style="flex-shrink:0;background:#3b6d11;color:#fff;border-radius:8px;padding:0 15px;min-height:44px;display:flex;align-items:center;font-size:calc(15px * var(--m-scale,1));font-weight:700;">▶ Start</span>'
+      +(an?'<span aria-label="gewählt" style="flex-shrink:0;color:#3b6d11;font-size:22px;font-weight:700;line-height:1;">✓</span>':'')
       +'</div>';
   }
   if(q){
@@ -13396,9 +13462,13 @@ function _gtbSheetZeichnen(){
     }
     // v265: Ohne Haken und ohne heutigen Termin ist die Liste leer - dann fuehrt der
     // Weg ueber die Suche (Franks Ansage). Der Hinweis sagt auch, WO der Haken sitzt.
-    if(!liste.length)html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);padding:10px 2px;line-height:1.6;">Nichts in Ausführung und kein Termin für heute.<br>Unten suchen — oder am Auftrag den Haken <b>🔨 In Ausführung</b> setzen.</div>';
+    if(!liste.length)html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);padding:10px 2px;line-height:1.6;">Nichts in Ausführung und kein Termin für heute.<br>Oben suchen — oder am Auftrag den Haken <b>🔨 In Ausführung</b> setzen.</div>';
   }
-  el.innerHTML=html;
+  // v274: sagt, was ein Tipp bewirkt - das ist je nach Zustand verschieden
+  const hinweis='<div id="gtbSheetHinweis" style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:0 0 8px 2px;line-height:1.4;">'
+    +(laeuft?'Antippen: die Uhr wechselt zu dieser Baustelle.':'Antippen: kommt unten in die Leiste. Die Uhr startet erst mit <b>▶ Start</b>.')
+    +'</div>';
+  el.innerHTML=hinweis+html;
 }
 // Sucht ueber ALLE sichtbaren Boards, nach demselben Muster wie die Listensuche
 // (Kleinbuchstaben, Umlaute vereinfacht, alle Woerter muessen vorkommen) - hier
