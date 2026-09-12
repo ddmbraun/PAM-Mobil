@@ -131,6 +131,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 @media (min-width:700px){
   #globalTimerBar{max-width:640px;margin-left:auto;margin-right:auto;border-radius:14px 14px 0 0}
   #gtbSheet>div{max-width:640px;margin-left:auto;margin-right:auto}
+  #anrufBlatt>div{max-width:640px;margin-left:auto;margin-right:auto}
   /* ⛔ Beim kleinen Knopf steht left:16px INLINE - Inline schlaegt jede CSS-Regel.
      Ohne !important blieb er bei 16 px kleben, waehrend die Leiste in die Mitte rueckte
      (im Browser gemessen, 10.09.2026). Bei der Leiste selbst war das nicht noetig: dort
@@ -4356,6 +4357,12 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
       <button class="mnu-eintrag" id="refreshBtn" onclick="_mnuZu();refreshData();" title="Neu laden – lange drücken = PC-Stand erzwingen">
         <span class="mnu-ico">🔄</span><span class="mnu-txt">Neu laden<span class="mnu-sub">lange drücken: PC-Stand holen</span></span>
       </button>
+      <!-- v277: Anrufliste. Steht bewusst direkt unter "Neu laden" - das ist der
+           Handgriff im Arbeitsalltag, Textgroesse/Stammblatt/Einstellungen sind Einrichtung.
+           Die Zahl fuellt _anrufMenuZahl(), gerufen aus _mnuAuf(). -->
+      <button class="mnu-eintrag" onclick="_mnuZu();_anrufBlattAuf();" title="Offene Anrufe über alle Boards">
+        <span class="mnu-ico">📞</span><span class="mnu-txt">Anrufliste <span id="mnuAnrufZahl" style="opacity:.75;font-weight:400;"></span><span class="mnu-sub" id="mnuAnrufSub"></span></span>
+      </button>
       <button class="mnu-eintrag" onclick="_mnuZu();toggleAppZoomBar();" title="App-Größe (Zoom)">
         <span class="mnu-ico" style="font-weight:700;font-size:15px;">Aa</span><span class="mnu-txt">Textgröße</span>
       </button>
@@ -4537,6 +4544,24 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <button onclick="_gtbSheetZu()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">Schließen</button>
   </div>
 </div>
+<!-- v277: 📞 Anrufliste - Blatt von unten, Bauart wie das Baustellen-Blatt (gtbSheet).
+     ⛔ z-index 9400: ueber der Uhr-Leiste (8500), ueber dem Baustellen-Blatt (8600) und
+     ueber dem ⋯-Menue (9300). v274-Lehre: ein Blatt UNTER der Leiste wird von ihr
+     zugedeckt, und genau das hat Frank am Bild gesehen ("wo ist die Suche?").
+     ⛔ Kein Abhaken in diesem Blatt - Begruendung steht bei _anrufSammle(). -->
+<div id="anrufBlatt" style="display:none;position:fixed;inset:0;z-index:9400;background:rgba(0,0,0,.55);" onclick="if(event.target===this)_anrufBlattZu()">
+  <div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg2);border-radius:16px 16px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px));max-height:84vh;overflow-y:auto;box-shadow:0 -4px 22px rgba(0,0,0,.45);">
+    <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 12px;"></div>
+    <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 2px 4px;">
+      <div style="font-size:calc(17px * var(--m-scale,1));font-weight:700;color:var(--text);">📞 Anrufliste</div>
+      <div id="anrufKopfZahl" style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);"></div>
+    </div>
+    <div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:0 2px 10px;line-height:1.45;">Eine Nummer antippen wählt. Der Haken <b>📞 Anruf</b> bleibt stehen — weggenommen wird er am PC.</div>
+    <div id="anrufListe"></div>
+    <button onclick="_anrufBlattZu()" style="width:100%;margin-top:10px;min-height:46px;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">Schließen</button>
+  </div>
+</div>
+
 <div id="globalTimerBar" style="display:none;position:fixed;left:0;right:0;bottom:0;z-index:8500;background:var(--accent);color:#fff;padding:10px 12px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));box-shadow:0 -2px 12px rgba(0,0,0,.4);align-items:center;gap:10px;">
   <div id="gtbLauf" style="display:none;flex:1;min-width:0;align-items:center;gap:10px;">
     <!-- v264: auch bei LAUFENDER Uhr einklappbar. Der Browsertest am 10.09.2026 zeigte:
@@ -4789,7 +4814,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v276';
+const MOB_VERSION='v277';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5714,7 +5739,7 @@ function setMobileScale(pct){
   // v263: die untere Uhr-Leiste und ihr Auswahl-Blatt hoeren jetzt mit auf den Regler.
   // Sie haengen direkt am body, nicht in einem der Reiter-Koerper - ohne diesen Eintrag
   // blieben sie bei 100 % stehen, egal wie gross die Schrift gestellt wird.
-  ['detailBody','detailBodyBau','detailBodySkizze','detailBodySchnell','detailBodyTagebuch','globalTimerBar','gtbSheet'].forEach(id=>{
+  ['detailBody','detailBodyBau','detailBodySkizze','detailBodySchnell','detailBodyTagebuch','globalTimerBar','gtbSheet','anrufBlatt'].forEach(id=>{
     const el=document.getElementById(id);
     if(el)el.style.setProperty('--m-scale',scale);
   });
@@ -10486,8 +10511,175 @@ function _mkUpdate(){
   }
 }
 // ── v267: Kopf-Menue hinter dem ⋯ ───────────────────────────────────────────
+// ── v277: 📞 Anrufliste am Handy ─────────────────────────────────────────────
+// Frank am 12.09.2026, zwei Ansagen aus dem Pruefauftrag:
+//   "Sehe ich auch die Liste, die ich am PC sehe?"
+//   "Der Haken darf nicht automatisch verschwinden ... wir muessen das anders loesen."
+//
+// 1. VOLLSTAENDIG WIE AM PC. Gemessen am 12.09.2026: von den neun offenen Anrufen
+//    kamen am Handy nur SECHS an. "Pruefen" und "Aufgaben_GmbH" stehen nicht in
+//    _mobileBoards, und "Auftraege sonstige KD" gibt dem Handy per
+//    _mobileStatusFilter nur die Spalte "in Arbeit" (die betroffene Karte steht auf
+//    "Terminiert"). Die drei liegen aber im Speicher - in hiddenBoards bzw.
+//    _mobileFilteredOut - und werden hier mitgelesen. Sie sind blass, tragen
+//    "nur am PC" (Wortwahl wie _grauKarte, v256) und lassen sich NICHT oeffnen;
+//    waehlen geht. Franks Freigabeliste und sein Spaltenfilter bleiben unangetastet.
+//
+// 2. ⛔ DIESE LISTE SCHREIBT NICHT. Kein "Anruf erledigt", kein Haken-Wegnehmen -
+//    anders als am PC (b990). Gemessen im Konfliktzweig von saveFile(): hat der PC
+//    zwischenzeitlich gespeichert, ist der PC-Stand die Grundlage, und gerettet wird
+//    NUR die gerade offene Karte (if(_savingTaskId)). Eine Karte aus dieser Liste ist
+//    nicht offen - ein hier entfernter Haken waere nach dem naechsten Laden wieder da.
+//    Genau dieses stille Zurueckkippen wollte Frank nicht. Haken weg macht der PC.
+//    ⛔ Nicht "nachbessern", indem man _savingTaskId von aussen setzt.
+//
+// Quelle des Hakens: anrufOffen (Desktop b990). Nummern: kontakte[].tel und .tel2,
+// der mit anrufKontakt markierte Kontakt zuerst; Ersatz _aufEinenBlick.kontakte[].nr
+// ("aus Mails, ungeprueft"). Alles nur GELESEN.
+const _ANRUF_ROLLE={ag:'Auftraggeber',mieter:'Mieter',eigentuemer:'Eigentümer',hausverwaltung:'Hausverwaltung',privatkunde:'Privatkunde',subunternehmer:'Subunternehmer',sonstiges:''};
+function _anrufRolle(r){
+  r=String(r||'').trim();
+  return Object.prototype.hasOwnProperty.call(_ANRUF_ROLLE,r)?_ANRUF_ROLLE[r]:r;
+}
+// ⛔ Eine aus Mails gelesene Nummer traegt einen Zeilenumbruch im Namen
+// (Firmenname mit Zeilenumbruch mitten drin, gemessen 12.09.2026) - der wuerde
+// die Zeile auseinanderreissen. Alle Leerraeume werden zu EINEM Leerzeichen.
+function _anrufEinzeilig(s){return String(s==null?'':s).replace(/\s+/g,' ').trim();}
+// Gleiche Bereinigung wie der Telefonknopf auf der Karte: nur Ziffern und ein fuehrendes Plus.
+function _anrufTelHref(nr){return 'tel:'+String(nr||'').replace(/[^0-9+]/g,'');}
+// Liefert {quelle:'karte'|'mails'|'keine', liste:[{name,rolle,nr,markiert}]}.
+// Dieselbe Nummer nur einmal - derselbe Mensch steht oft zweimal im Kasten
+// (z. B. als Auftraggeber und als Hausverwaltung).
+function _anrufNummern(t){
+  const liste=[],gesehen={};
+  const nimm=function(name,rolle,nr,markiert){
+    nr=_anrufEinzeilig(nr); if(!nr)return;
+    const k=nr.replace(/[^0-9+]/g,''); if(!k||gesehen[k])return; gesehen[k]=true;
+    liste.push({name:_anrufEinzeilig(name),rolle:_anrufEinzeilig(rolle),nr:nr,markiert:!!markiert});
+  };
+  ((t&&t.kontakte)||[]).forEach(function(k){
+    if(!k)return;
+    nimm(k.name,_anrufRolle(k.rolle),k.tel,k.anrufKontakt);
+    nimm(k.name,_anrufRolle(k.rolle),k.tel2,k.anrufKontakt);
+  });
+  if(liste.length){
+    // der markierte Kontakt nach vorn, die Reihenfolge der anderen bleibt wie im Kasten
+    const vorn=liste.filter(function(e){return e.markiert;});
+    const rest=liste.filter(function(e){return !e.markiert;});
+    return {quelle:'karte',liste:vorn.concat(rest)};
+  }
+  (((t&&t._aufEinenBlick)||{}).kontakte||[]).forEach(function(p){
+    if(!p)return;
+    nimm(p.name,_anrufRolle(p.rolle),p.nr,false);
+  });
+  return {quelle:liste.length?'mails':'keine',liste:liste};
+}
+// Sammelt ueber ALLE Toepfe. Reihenfolge wie am PC: Board, dann Titel.
+// ⚠ Nach einem Konflikt-Abgleich kann boards[bn] den vollen PC-Stand tragen, also auch
+//   Karten, die zusaetzlich in _mobileFilteredOut liegen (v210) - deshalb Dublettenschutz
+//   ueber die Task-ID, und die sichtbaren Toepfe kommen zuerst.
+function _anrufSammle(){
+  const raus=[],gesehen={};
+  const nimm=function(bn,t,nurPc){
+    if(!t||!t.id||gesehen[t.id])return;
+    if(!(t.anrufOffen===true||t.anrufOffen==='true'))return;
+    if(t.archiviert||t.spaeterBearbeiten)return; // wie in jeder anderen Ansicht
+    gesehen[t.id]=1;
+    raus.push({id:t.id,board:bn,status:_anrufEinzeilig(t.status),titel:t.title||'(ohne Titel)',t:t,nurPc:!!nurPc});
+  };
+  const durch=function(topf,nurPc){
+    Object.keys(topf||{}).forEach(function(bn){
+      if(!bn||bn.charAt(0)==='_'||!Array.isArray(topf[bn]))return;
+      topf[bn].forEach(function(t){nimm(bn,t,nurPc);});
+    });
+  };
+  try{
+    durch(boards,false);
+    durch(hiddenBoards,true);        // Board ist fuers Handy nicht freigegeben
+    durch(_mobileFilteredOut,true);  // Board ja, Spalte weggefiltert
+  }catch(e){console.warn('[Anrufliste] Sammeln:',e);return raus;}
+  raus.sort(function(a,b){
+    const ab=(a.board||'').toLowerCase(),bb=(b.board||'').toLowerCase();
+    if(ab!==bb)return ab<bb?-1:1;
+    const at=(a.titel||'').toLowerCase(),bt=(b.titel||'').toLowerCase();
+    return at<bt?-1:at>bt?1:0;
+  });
+  return raus;
+}
+function _anrufZahl(){try{return _anrufSammle().length;}catch(e){return 0;}}
+// Zahl am Menue-Eintrag. Laeuft beim Oeffnen des ⋯-Menues mit (_mnuAuf) - bewusst
+// nicht in render(): das Menue ist fast immer geschlossen, und render() laeuft oft.
+function _anrufMenuZahl(){
+  const n=_anrufZahl();
+  const z=document.getElementById('mnuAnrufZahl');
+  if(z)z.textContent=n?('('+n+')'):'';
+  const s=document.getElementById('mnuAnrufSub');
+  if(s)s.textContent=n?(n===1?'1 offener Anruf':n+' offene Anrufe'):'kein offener Anruf';
+}
+function _anrufBlattAuf(){
+  const b=document.getElementById('anrufBlatt');if(!b)return;
+  b.style.display='block';
+  _anrufZeichnen();
+}
+function _anrufBlattZu(){
+  const b=document.getElementById('anrufBlatt');if(b)b.style.display='none';
+}
+// Der EINZIGE Weg in die Karte. ⛔ Der Tipp auf die Zeile selbst tut bewusst nichts:
+// beim Waehlen soll nicht aus Versehen die Karte aufgehen (wie am PC, b990).
+function _anrufKarteAuf(id){
+  _anrufBlattZu();
+  try{openDetail(id);}catch(e){console.warn('[Anrufliste] Karte oeffnen:',e);}
+}
+function _anrufZeichnen(){
+  const el=document.getElementById('anrufListe');if(!el)return;
+  const liste=_anrufSammle();
+  const kz=document.getElementById('anrufKopfZahl');
+  if(kz)kz.textContent=liste.length?(liste.length===1?'1 offener Anruf':liste.length+' offene Anrufe'):'';
+  if(!liste.length){
+    el.innerHTML='<div style="font-size:calc(13.5px * var(--m-scale,1));color:var(--text2);padding:12px 2px;line-height:1.6;">'
+      +'Kein offener Anruf.<br>Den Haken <b>📞 Anruf</b> setzt du am PC im Kopf der Karte.</div>';
+    return;
+  }
+  const pille=function(e,quelle){
+    const ausMails=(quelle==='mails');
+    const wer=[e.name,e.rolle].filter(Boolean).join(' · ');
+    const stil=e.markiert
+      ?'background:#1a6fc4;color:#fff;border:1px solid #1a6fc4;'
+      :'background:var(--bg2);color:var(--text);border:1px solid var(--border);';
+    return '<a href="'+escAttr(_anrufTelHref(e.nr))+'" onclick="event.stopPropagation()" '
+      +'title="'+escAttr((e.markiert?'Anruf-Kontakt · ':'')+(ausMails?'aus Mails gelesen · ':'')+'wählen: '+e.nr)+'" '
+      +'style="display:flex;align-items:center;gap:10px;min-height:46px;padding:7px 12px;margin-top:7px;border-radius:11px;text-decoration:none;'
+      +stil+(ausMails?'border-style:dashed;':'')+'">'
+      +'<span style="font-size:17px;line-height:1;flex-shrink:0;">📞</span>'
+      +'<span style="min-width:0;">'
+      +'<span style="display:block;font-size:calc(16px * var(--m-scale,1));font-weight:700;line-height:1.25;overflow-wrap:anywhere;">'+esc(e.nr)+'</span>'
+      +((wer||ausMails)
+        ?'<span style="display:block;font-size:calc(12.5px * var(--m-scale,1));line-height:1.3;opacity:.85;overflow-wrap:anywhere;">'
+          +(ausMails?'✉ ':'')+esc(wer||'ohne Namen')+(ausMails?' · aus Mails, ungeprüft':'')+'</span>'
+        :'')
+      +'</span></a>';
+  };
+  el.innerHTML=liste.map(function(z){
+    const n=_anrufNummern(z.t);
+    const kopf=[z.board,z.status].filter(Boolean).map(function(x){return esc(x);}).join(' · ');
+    let h='<div style="background:var(--bg3);border-radius:12px;padding:11px;margin-bottom:9px;'+(z.nurPc?'opacity:.82;':'')+'">'
+      +'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.3;overflow-wrap:anywhere;">'+kopf+'</div>'
+      +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin-top:2px;overflow-wrap:anywhere;">'+esc(z.titel)+'</div>';
+    if(n.liste.length){
+      h+=n.liste.map(function(e){return pille(e,n.quelle);}).join('');
+    }else{
+      h+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin-top:7px;line-height:1.4;">Keine Nummer hinterlegt — weder im Kontakte-Kasten noch aus Mails.</div>';
+    }
+    h+=z.nurPc
+      ? '<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin-top:9px;line-height:1.4;">💻 nur am PC — dieses Board ist fürs Handy nicht freigegeben, wählen geht trotzdem.</div>'
+      : '<button onclick="_anrufKarteAuf(\''+escAttr(z.id)+'\')" style="width:100%;margin-top:9px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>';
+    return h+'</div>';
+  }).join('');
+}
 function _mnuAuf(){
   const b=document.getElementById('mnuBlatt');if(!b)return;
+  // v277: Zahl der offenen Anrufe erst hier rechnen - render() laeuft oft, das Menue selten.
+  try{_anrufMenuZahl();}catch(e){console.warn('[Anrufliste] Zahl:',e);}
   b.style.display='block';
 }
 function _mnuZu(){
