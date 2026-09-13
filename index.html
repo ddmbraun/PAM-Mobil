@@ -4654,6 +4654,10 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
       <div id="anrufKopfZahl" style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);"></div>
     </div>
     <div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:0 2px 10px;line-height:1.45;">Eine Nummer antippen wählt. Der Haken <b>📞 Anruf</b> bleibt stehen — weggenommen wird er am PC.</div>
+    <div id="anrufReiter" style="display:flex;gap:8px;margin:0 2px 10px;">
+      <button id="anrufReiterOffen" onclick="_anrufReiterWahl('offen')" style="flex:1;min-height:42px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-weight:700;font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📞 Offen</button>
+      <button id="anrufReiterGewaehlt" onclick="_anrufReiterWahl('gewaehlt')" style="flex:1;min-height:42px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:400;font-size:calc(14px * var(--m-scale,1));cursor:pointer;">🕘 Gewählt</button>
+    </div>
     <div id="anrufListe"></div>
     <button onclick="_anrufBlattZu()" style="width:100%;margin-top:10px;min-height:46px;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">Schließen</button>
   </div>
@@ -4911,7 +4915,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v281';
+const MOB_VERSION='v282';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5031,6 +5035,7 @@ async function _restoreMobileBackupIfDirty(){
         lt.notizVerlauf=_mergeListByKey(lt.notizVerlauf,bt.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
         lt.zeitEntries=_zeitZeilenMerge(lt.zeitEntries,bt.zeitEntries); // v280: Standort geht nicht verloren
         lt.ausserhausTermine=_mergeListByKey(lt.ausserhausTermine,bt.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+        if(typeof _wahlKennung==='function'&&(Array.isArray(lt.anrufWahlen)||Array.isArray(bt.anrufWahlen)))lt.anrufWahlen=_mergeListByKey(lt.anrufWahlen,bt.anrufWahlen,_wahlKennung); // v282
         const after=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
         mergedCount+=(after-before);
       }
@@ -7697,7 +7702,7 @@ function renderHeuteMobil(){
     var k=(t.kontakte||[]).find(function(c){return c.tel;});
     var adr=(t.adresse||'').trim();
     var telBtn=k
-      ?'<a href="tel:'+encodeURIComponent(k.tel)+'" onclick="event.stopPropagation()" '
+      ?'<a href="tel:'+encodeURIComponent(k.tel)+'" data-wahl-task="'+escAttr(t.id)+'" data-wahl-nr="'+escAttr(k.tel)+'" onclick="event.stopPropagation()" '
         +'style="width:40px;height:40px;border-radius:50%;background:#1a6fc4;display:flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;">'+phoneIcon+'</a>'
       :'';
     var mapsBtn=adr
@@ -8441,6 +8446,10 @@ async function saveFile(){
             {const _schutzAlt=_schutzAltMap();
              if(_schutzAlt.size)for(const _grp of[remoteVisible,remoteHidden])
                for(const _v of Object.values(_grp))for(const _t of _v){if(_t&&_t.id)_schutzFelderUebernehmen(_t,_schutzAlt.get(_t.id));}}
+            // v282: Wahl-Vermerke (anrufWahlen) VOR dem Zusammenführen einsammeln – hier aus allen
+            // drei Töpfen, drüben aus beiden. Zurückgelegt wird unten nach dem Aufräumen (v257).
+            const _wahlHier=(typeof _wahlSammelnAus==='function')?_wahlSammelnAus([boards,hiddenBoards,_mobileFilteredOut]):null;
+            const _wahlDrueben=(typeof _wahlSammelnAus==='function')?_wahlSammelnAus([remoteVisible,remoteHidden]):null;
             // Lokale Änderung der gerade offenen Task in die sichtbaren Remote-Boards mergen
             if(_savingTaskId){
               const localTask=findTaskById(_savingTaskId);
@@ -8469,7 +8478,7 @@ async function saveFile(){
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
                     // COMPAT-FIX: 'anfrageEingangDatum' ergänzt – Desktop-Only-Feld, das Mobile
                     // nie bearbeitet und das bei einem Konflikt-Merge sonst überschrieben würde.
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum','freieTermine','msMessageId','msConversationId','msThreadMessages']; // Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum','freieTermine','msMessageId','msConversationId','msThreadMessages','anrufWahlenAusgeblendetBis']; // v282: Ausblenden setzt nur der PC · Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
@@ -8552,6 +8561,8 @@ async function saveFile(){
               // v257: Lösch-Merker aufräumen, deren Löschung Drive schon kennt (Auftrag drüben weg).
               // Steht bewusst HINTER den v198/v199-Aufrufen – deren Suiten messen die 320 Zeichen nach boards=merged.
               try{const _alleRemote=new Set();for(const _g of [remoteVisible,remoteHidden])for(const _v of Object.values(_g||{}))for(const _t of (_v||[]))if(_t&&_t.id)_alleRemote.add(_t.id);_mobDeletedAufraeumen(_alleRemote);}catch(e){console.warn('[v257] Merker:',e);}
+              // v282: Wahl-Vermerke beider Seiten in JEDE Karte zurücklegen (nur anhängen – nichts kommt zurück).
+              try{if(_wahlHier&&_wahlDrueben)_wahlToepfeVereinigen([boards,hiddenBoards,_mobileFilteredOut],[_wahlDrueben,_wahlHier]);}catch(e){console.warn('[v282] Wahl-Vermerke:',e);}
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
@@ -10629,6 +10640,9 @@ function _mkUpdate(){
 //    nicht offen - ein hier entfernter Haken waere nach dem naechsten Laden wieder da.
 //    Genau dieses stille Zurueckkippen wollte Frank nicht. Haken weg macht der PC.
 //    ⛔ Nicht "nachbessern", indem man _savingTaskId von aussen setzt.
+//    v282: Einzige Ausnahme ist der Wahl-Vermerk (anrufWahlen). Er wird NICHT in diesem
+//    Bauteil geschrieben, sondern vom Horcher _wahlHorcher ueber _wahlMerken; saveFile legt
+//    die Vermerke aller Karten beim Konflikt zusammen (_wahlToepfeVereinigen). Der Haken bleibt tabu.
 //
 // Quelle des Hakens: anrufOffen (Desktop b990). Nummern: kontakte[].tel und .tel2,
 // der mit anrufKontakt markierte Kontakt zuerst; Ersatz _aufEinenBlick.kontakte[].nr
@@ -10729,6 +10743,10 @@ function _anrufKarteAuf(id){
 }
 function _anrufZeichnen(){
   const el=document.getElementById('anrufListe');if(!el)return;
+  // v282: zwei Reiter. typeof, weil test_v277 _anrufZeichnen allein ausführt.
+  const _gew=(typeof _anrufReiter!=='undefined'&&_anrufReiter==='gewaehlt'&&typeof _wahlZeichnen==='function');
+  if(typeof _anrufReiterKnoepfe==='function')_anrufReiterKnoepfe(_gew);
+  if(_gew){_wahlZeichnen(el);return;}
   const liste=_anrufSammle();
   const kz=document.getElementById('anrufKopfZahl');
   if(kz)kz.textContent=liste.length?(liste.length===1?'1 offener Anruf':liste.length+' offene Anrufe'):'';
@@ -10737,13 +10755,13 @@ function _anrufZeichnen(){
       +'Kein offener Anruf.<br>Den Haken <b>📞 Anruf</b> setzt du am PC im Kopf der Karte.</div>';
     return;
   }
-  const pille=function(e,quelle){
+  const pille=function(e,quelle,z){
     const ausMails=(quelle==='mails');
     const wer=[e.name,e.rolle].filter(Boolean).join(' · ');
     const stil=e.markiert
       ?'background:#1a6fc4;color:#fff;border:1px solid #1a6fc4;'
       :'background:var(--bg2);color:var(--text);border:1px solid var(--border);';
-    return '<a href="'+escAttr(_anrufTelHref(e.nr))+'" onclick="event.stopPropagation()" '
+    return '<a href="'+escAttr(_anrufTelHref(e.nr))+'"'+(z?' data-wahl-task="'+escAttr(z.id)+'" data-wahl-nr="'+escAttr(e.nr)+'"':'')+' onclick="event.stopPropagation()" '
       +'title="'+escAttr((e.markiert?'Anruf-Kontakt · ':'')+(ausMails?'aus Mails gelesen · ':'')+'wählen: '+e.nr)+'" '
       +'style="display:flex;align-items:center;gap:10px;min-height:46px;padding:7px 12px;margin-top:7px;border-radius:11px;text-decoration:none;'
       +stil+(ausMails?'border-style:dashed;':'')+'">'
@@ -10754,6 +10772,7 @@ function _anrufZeichnen(){
         ?'<span style="display:block;font-size:calc(12.5px * var(--m-scale,1));line-height:1.3;opacity:.85;overflow-wrap:anywhere;">'
           +(ausMails?'✉ ':'')+esc(wer||'ohne Namen')+(ausMails?' · aus Mails, ungeprüft':'')+'</span>'
         :'')
+      +((z&&typeof _wahlLetzte==='function'&&_wahlLetzte(z.t,e.nr))?'<span class="wahl-zuletzt" style="display:block;font-size:calc(12px * var(--m-scale,1));line-height:1.3;opacity:.8;margin-top:1px;">zuletzt gewählt '+esc(_wahlLetzte(z.t,e.nr))+'</span>':'')
       +'</span></a>';
   };
   el.innerHTML=liste.map(function(z){
@@ -10763,7 +10782,7 @@ function _anrufZeichnen(){
       +'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.3;overflow-wrap:anywhere;">'+kopf+'</div>'
       +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin-top:2px;overflow-wrap:anywhere;">'+esc(z.titel)+'</div>';
     if(n.liste.length){
-      h+=n.liste.map(function(e){return pille(e,n.quelle);}).join('');
+      h+=n.liste.map(function(e){return pille(e,n.quelle,z);}).join('');
     }else{
       h+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin-top:7px;line-height:1.4;">Keine Nummer hinterlegt — weder im Kontakte-Kasten noch aus Mails.</div>';
     }
@@ -10781,6 +10800,219 @@ function _mnuAuf(){
 }
 function _mnuZu(){
   const b=document.getElementById('mnuBlatt');if(b)b.style.display='none';
+}
+// ══ v282: WAHL-VERMERK AM HANDY (Gegenstück PC b996–b998) ═══════════════════════
+/* Wunsch Frank 13.09.2026: sehen, wann eine Nummer gewählt wurde – auch unterwegs.
+   Feld und Form wie am PC: t.anrufWahlen=[{ts,nr,name}] – der PC zeigt Handy-Wahlen ohne Änderung.
+   ⛔ PAM sieht nur den Tipp, nicht das Gespräch – deshalb überall „gewählt".
+   ⛔ EIN Horcher in der Einfang-Phase für alle Wähl-Links: die Links tragen
+      event.stopPropagation() (der Tipp soll keine Karte öffnen, test_v277 wacht darüber) –
+      ein Horcher weiter oben bekäme den Tipp nie. Die Links selbst bleiben, wie sie sind.
+   ⛔ Speichern: der Konfliktzweig von saveFile rettet sonst nur die OFFENE Karte. Ein Vermerk aus
+      Anrufliste, Heute oder Liste ginge verloren, sobald der PC dazwischen gespeichert hat.
+      Deshalb sammelt saveFile vorher die Vermerke beider Seiten ein und legt sie danach in jede
+      Karte zurück (_wahlSammelnAus / _wahlToepfeVereinigen). Nur anhängen, nie löschen.
+   ⛔ Ausblenden (anrufWahlenAusgeblendetBis) setzt nur der PC; das Handy liest es nur (_pcOnly). */
+let _anrufReiter='offen';
+let _wahlOffen={};
+function _wahlNorm(nr){return String(nr==null?'':nr).replace(/[^0-9+]/g,'');}
+function _wahlKennung(w){return w?((w.ts||'')+'|'+_wahlNorm(w.nr)):'';}
+function _wahlZeit(ts,kurz){
+  const d=new Date(ts);
+  if(!ts||isNaN(d.getTime()))return '';
+  const z=function(n){return String(n).padStart(2,'0');};
+  return z(d.getDate())+'.'+z(d.getMonth()+1)+'.'+(kurz?'':String(d.getFullYear()))+' '+z(d.getHours())+':'+z(d.getMinutes());
+}
+// Karte in ALLEN Töpfen – auch „nur am PC" (findTaskById kennt nur boards).
+function _wahlKarte(id){
+  if(!id)return null;
+  try{return (typeof _fotoTaskById==='function')?_fotoTaskById(id):null;}catch(e){return null;}
+}
+function _wahlMerken(taskId,nr,name){
+  try{
+    const k=_wahlNorm(nr); if(!k)return false;
+    const t=_wahlKarte(taskId); if(!t)return false;
+    if(!Array.isArray(t.anrufWahlen))t.anrufWahlen=[];
+    const jetzt=Date.now();
+    // Doppeltipp: dieselbe Nummer an derselben Karte innerhalb von 10 s nur einmal
+    const letzte=t.anrufWahlen[t.anrufWahlen.length-1];
+    if(letzte&&_wahlNorm(letzte.nr)===k&&Math.abs(jetzt-Date.parse(letzte.ts))<10000)return false;
+    let wer=String(name==null?'':name).trim();
+    if(!wer){
+      (t.kontakte||[]).forEach(function(c){if(!wer&&c&&(_wahlNorm(c.tel)===k||_wahlNorm(c.tel2)===k))wer=String(c.name||'').trim();});
+      (((t._aufEinenBlick||{}).kontakte)||[]).forEach(function(p){if(!wer&&p&&_wahlNorm(p.nr)===k)wer=String(p.name||'').trim();});
+    }
+    t.anrufWahlen.push({ts:new Date(jetzt).toISOString(),nr:String(nr).trim(),name:wer});
+    if(typeof scheduleSave==='function')scheduleSave();
+    setTimeout(function(){
+      try{
+        if(typeof currentTaskId!=='undefined'&&currentTaskId===t.id&&typeof _wahlKontakteAuffrischen==='function')_wahlKontakteAuffrischen();
+        const b=document.getElementById('anrufBlatt');
+        if(b&&b.style.display==='block'&&typeof _anrufZeichnen==='function')_anrufZeichnen();
+      }catch(e){}
+    },300);
+    return true;
+  }catch(e){console.warn('[v282] Wahl-Vermerk:',e);return false;}
+}
+function _wahlHorcher(ev){
+  try{
+    const ziel=ev&&ev.target;
+    const a=(ziel&&ziel.closest)?ziel.closest('a[data-wahl-task],a[data-wahl-kontakt]'):null;
+    if(!a)return;
+    if(a.hasAttribute('data-wahl-kontakt')){
+      const t=(typeof currentTask==='function')?currentTask():null; if(!t)return;
+      const k=(t.kontakte||[])[Number(a.getAttribute('data-wahl-kontakt'))]; if(!k)return;
+      _wahlMerken(t.id,k.tel,k.name);
+      return;
+    }
+    _wahlMerken(a.getAttribute('data-wahl-task'),a.getAttribute('data-wahl-nr'));
+  }catch(e){console.warn('[v282] Horcher:',e);}
+}
+document.addEventListener('click',_wahlHorcher,true);
+// Wahlen einer Karte, die neueste zuerst (ISO-Zeiten lassen sich als Text sortieren).
+function _wahlenListe(t){
+  return ((t&&Array.isArray(t.anrufWahlen))?t.anrufWahlen:[]).filter(function(w){return w&&w.ts;})
+    .slice().sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
+}
+function _wahlLetzte(t,nr){
+  const k=_wahlNorm(nr); if(!k)return '';
+  const w=_wahlenListe(t).find(function(x){return _wahlNorm(x.nr)===k;});
+  return w?_wahlZeit(w.ts,true):'';
+}
+// Unter dem Kontakt: drei neueste; hat der Kontakt zwei Nummern, steht dabei, welche.
+function _wahlKontaktText(t,k){
+  if(!t||!k)return '';
+  const nT=_wahlNorm(k.tel),nT2=_wahlNorm(k.tel2);
+  const beide=!!(nT&&nT2&&nT!==nT2);
+  const seine=_wahlenListe(t).filter(function(w){const n=_wahlNorm(w.nr);return !!n&&(n===nT||n===nT2);});
+  if(!seine.length)return '';
+  return '📞 gewählt: '+seine.slice(0,3).map(function(w){return _wahlZeit(w.ts,false)+(beide?(_wahlNorm(w.nr)===nT2?' (Tel. 2)':' (Telefon)'):'');}).join(' · ')
+    +(seine.length>3?' · + '+(seine.length-3)+' weitere':'');
+}
+function _wahlKontaktZeile(k,i){
+  let txt='';
+  try{txt=_wahlKontaktText((typeof currentTask==='function')?currentTask():null,k);}catch(e){txt='';}
+  return '<div class="kontakt-wahl" data-kontakt="'+i+'" style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:2px 0 8px;line-height:1.4;'+(txt?'':'display:none;')+'">'+esc(txt)+'</div>';
+}
+function _wahlKontakteAuffrischen(){
+  const t=(typeof currentTask==='function')?currentTask():null; if(!t)return;
+  Array.prototype.forEach.call(document.querySelectorAll('.kontakt-wahl[data-kontakt]'),function(el){
+    const k=(t.kontakte||[])[Number(el.getAttribute('data-kontakt'))];
+    const txt=_wahlKontaktText(t,k);
+    el.textContent=txt;
+    el.style.display=txt?'':'none';
+  });
+}
+// Für saveFile: Kennung -> vereinigte Vermerke je Karte aus den übergebenen Töpfen.
+function _wahlSammelnAus(toepfe){
+  const m=new Map();
+  (toepfe||[]).forEach(function(topf){
+    Object.keys(topf||{}).forEach(function(bn){
+      const arr=topf[bn]; if(!Array.isArray(arr))return;
+      arr.forEach(function(t){
+        if(!t||!t.id||!Array.isArray(t.anrufWahlen)||!t.anrufWahlen.length)return;
+        const alt=m.get(t.id);
+        m.set(t.id,alt?_mergeListByKey(alt,t.anrufWahlen,_wahlKennung):t.anrufWahlen.slice());
+      });
+    });
+  });
+  return m;
+}
+function _wahlToepfeVereinigen(toepfe,listen){
+  (toepfe||[]).forEach(function(topf){
+    Object.keys(topf||{}).forEach(function(bn){
+      const arr=topf[bn]; if(!Array.isArray(arr))return;
+      arr.forEach(function(t){
+        if(!t||!t.id)return;
+        let out=Array.isArray(t.anrufWahlen)?t.anrufWahlen:null;
+        (listen||[]).forEach(function(m){const l=m&&m.get(t.id);if(l)out=_mergeListByKey(out,l,_wahlKennung);});
+        if(out)t.anrufWahlen=out;
+      });
+    });
+  });
+}
+function _anrufReiterWahl(r){
+  _anrufReiter=(r==='gewaehlt')?'gewaehlt':'offen';
+  _anrufZeichnen();
+}
+function _anrufReiterKnoepfe(gew){
+  [['anrufReiterOffen',!gew],['anrufReiterGewaehlt',!!gew]].forEach(function(p){
+    const b=document.getElementById(p[0]); if(!b||!b.style)return;
+    b.style.background=p[1]?'var(--bg3)':'transparent';
+    b.style.color=p[1]?'var(--text)':'var(--text2)';
+    b.style.fontWeight=p[1]?'700':'400';
+  });
+}
+function _wahlAufklappen(id){
+  _wahlOffen[id]=!_wahlOffen[id];
+  _anrufZeichnen();
+}
+// Reiter „Gewählt": je Karte, Karte mit der neuesten Wahl oben, Archiv am Ende. Nur lesen.
+function _wahlGruppen(){
+  const reihe=[],gesehen={};
+  let ausgeblendet=0;
+  const nimm=function(t,board,art){
+    if(!t||!t.id||gesehen[t.id])return;
+    gesehen[t.id]=1;
+    if(!Array.isArray(t.anrufWahlen)||!t.anrufWahlen.length)return;
+    const bis=t.anrufWahlenAusgeblendetBis;
+    const alle=t.anrufWahlen.filter(function(x){return x&&x.ts;});
+    const w=alle.filter(function(x){return !bis||String(x.ts)>String(bis);})
+      .sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
+    if(w.length<alle.length)ausgeblendet++;
+    if(!w.length)return;
+    reihe.push({t:t,board:board,art:art,wahlen:w,neueste:String(w[0].ts)});
+  };
+  const durch=function(topf,art){
+    Object.keys(topf||{}).forEach(function(bn){
+      if(!bn||bn.charAt(0)==='_'||!Array.isArray(topf[bn]))return;
+      topf[bn].forEach(function(t){nimm(t,bn,art);});
+    });
+  };
+  try{
+    durch(boards,'karte');
+    durch(hiddenBoards,'pc');
+    durch(_mobileFilteredOut,'pc');
+    ((typeof _remoteArchivedTasks!=='undefined'&&Array.isArray(_remoteArchivedTasks))?_remoteArchivedTasks:[]).forEach(function(t){nimm(t,'','archiv');});
+  }catch(e){console.warn('[v282] Gewählt sammeln:',e);}
+  reihe.sort(function(a,b){
+    if((a.art==='archiv')!==(b.art==='archiv'))return a.art==='archiv'?1:-1;
+    return a.neueste<b.neueste?1:(a.neueste>b.neueste?-1:0);
+  });
+  reihe.ausgeblendet=ausgeblendet;
+  return reihe;
+}
+function _wahlZeichnen(el){
+  const g=_wahlGruppen();
+  let n=0; g.forEach(function(x){n+=x.wahlen.length;});
+  const kz=document.getElementById('anrufKopfZahl');
+  if(kz)kz.textContent=n?(n===1?'1 Wahl':n+' Wahlen'):'';
+  const klein='font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.4;';
+  let h='';
+  if(g.ausgeblendet)h+='<div style="'+klein+'margin:0 2px 8px;">'+(g.ausgeblendet===1?'1 Karte':g.ausgeblendet+' Karten')+' am PC ausgeblendet – in der Karte stehen die Zeiten weiter.</div>';
+  if(!g.length){
+    el.innerHTML=h+'<div style="font-size:calc(13.5px * var(--m-scale,1));color:var(--text2);padding:12px 2px;line-height:1.6;">'
+      +'Noch keine Nummer aus PAM gewählt.<br>Ab jetzt steht hier jede Wahl mit Datum und Uhrzeit, je Karte – vom Handy und vom PC.</div>';
+    return;
+  }
+  h+=g.map(function(x){
+    const t=x.t,offen=!!_wahlOffen[t.id];
+    const kopf=(x.art==='archiv')?'📦 im Archiv':[x.board,_anrufEinzeilig(t.status)].filter(Boolean).map(function(s){return esc(s);}).join(' · ');
+    const zeig=offen?x.wahlen:x.wahlen.slice(0,3);
+    let s='<div class="wahl-karte" style="background:var(--bg3);border-radius:12px;padding:11px;margin-bottom:10px;'+(x.art==='karte'?'':'opacity:.82;')+'">'
+      +'<div style="'+klein+'overflow-wrap:anywhere;">'+kopf+'</div>'
+      +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin:2px 0 6px;overflow-wrap:anywhere;">'+esc(t.title||'(ohne Titel)')+'</div>';
+    s+=zeig.map(function(w){
+      return '<div class="wahl-zeile" style="font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.4;padding:4px 0;border-top:1px solid var(--border);">'
+        +'<b>'+esc(_wahlZeit(w.ts,false))+'</b><br><span style="color:var(--text2);">📞 '+(w.name?esc(_anrufEinzeilig(w.name))+' · ':'')+esc(w.nr||'')+'</span></div>';
+    }).join('');
+    if(x.wahlen.length>3)s+='<button class="wahl-mehr" onclick="_wahlAufklappen(\''+escAttr(t.id)+'\')" style="background:none;border:none;color:#1a6fc4;font-size:calc(13.5px * var(--m-scale,1));padding:8px 0 2px;cursor:pointer;">'+(offen?'weniger':'+ '+(x.wahlen.length-3)+' weitere')+'</button>';
+    s+=(x.art==='karte')
+      ?'<button onclick="_anrufKarteAuf(\''+escAttr(t.id)+'\')" style="width:100%;margin-top:8px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>'
+      :((x.art==='pc')?'<div style="'+klein+'margin-top:8px;">💻 nur am PC – hier nicht zu öffnen.</div>':'');
+    return s+'</div>';
+  }).join('');
+  el.innerHTML=h;
 }
 function _mkTogglePanel(){
   const p=document.getElementById('mkPanel');if(!p)return;
@@ -10996,7 +11228,7 @@ function renderList(resetScroll){
     // v138: class="card-akt" → am iPhone (≤520px) werden die Rundknöpfe ruhiges Grau
     // (Farbregel „nur Farbe mit Bedeutung"); Tablet behält Blau/Grün.
     const cardTelBtn=cardTelK
-      ?'<a href="tel:'+encodeURIComponent(cardTelK.tel)+'" class="card-akt" onclick="event.stopPropagation()" '
+      ?'<a href="tel:'+encodeURIComponent(cardTelK.tel)+'" data-wahl-task="'+escAttr(t.id)+'" data-wahl-nr="'+escAttr(cardTelK.tel)+'" class="card-akt" onclick="event.stopPropagation()" '
         +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:#1a6fc4;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">'+_SVG_PHONE+'</a>'
       :'';
     const cardMapsBtn=cardAdr
@@ -13290,7 +13522,8 @@ function renderKontakt(k,i){
     +'<div class="kontakt-entry-head"><select onchange="updateKontakt('+i+',\'rolle\',this.value)">'+rolleOpts+'</select>'
     +'<button class="rm-btn" onclick="removeKontakt('+i+')">✕</button></div>'
     +'<div class="field"><label>Name</label><input type="text" value="'+escAttr(k.name||'')+'" oninput="updateKontakt('+i+',\'name\',this.value)" autocomplete="off"></div>'
-    +'<div class="field"><label>Telefon</label><div class="field-row" style="gap:6px"><input type="tel" value="'+escAttr(k.tel||'')+'" oninput="updateKontakt('+i+',\'tel\',this.value)" autocomplete="off"><a class="call-link'+(k.tel?'':' disabled')+'" href="'+telHref+'">📞</a></div></div>'
+    +'<div class="field"><label>Telefon</label><div class="field-row" style="gap:6px"><input type="tel" value="'+escAttr(k.tel||'')+'" oninput="updateKontakt('+i+',\'tel\',this.value)" autocomplete="off"><a class="call-link'+(k.tel?'':' disabled')+'" href="'+telHref+'" data-wahl-kontakt="'+i+'">📞</a></div></div>'
+    +((typeof _wahlKontaktZeile==='function')?_wahlKontaktZeile(k,i):'') // v282: „📞 gewählt: …"
     +'<div class="field"><label>E-Mail</label><input type="email" value="'+escAttr(k.email||'')+'" oninput="updateKontakt('+i+',\'email\',this.value)" autocomplete="off"></div>'
     +'</div>';
 }
