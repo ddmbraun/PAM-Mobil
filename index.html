@@ -450,6 +450,16 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .row-times input[type=time]{flex:1;min-width:0}
 .row-desc{display:flex;gap:6px;align-items:center}
 .row-desc input[type=text]{flex:1;min-width:0}
+/* v278: schmales Art-Feld – nur das Zeichen, damit auf 375 px nichts umbricht.
+   ⛔ Randbreite MIT schreiben: nur border-style laesst Chrome auf „medium" (3 px)
+   springen, die Zeile wuerde 6 px hoeher als die anderen (am Desktop gemessen). */
+/* ⛔ Hoehe gemessen, nicht geschaetzt: mit padding 9px war das Feld 40 px hoch, die
+   Nachbarn in derselben Zeile sind 20-22 px - die Zeile wuchs dadurch von 70 auf 88 px.
+   Mit 5 px Polster sind es ~30 px: noch gut mit dem Daumen zu treffen (Baustelle,
+   Handschuhe), aber nur noch ~8 px teurer statt 18. */
+.zeit-art{flex:0 0 auto;width:52px;background:var(--bg);border:1px solid var(--border);
+          color:var(--text);border-radius:6px;font-size:16px;padding:5px 4px;text-align:center;}
+.zeit-art.ohne{border:1px dashed var(--border);color:var(--text2);}
 .termin-row input,.zeit-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-size:15px;width:100%;box-sizing:border-box}
 .rm-btn{background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;height:44px;min-width:44px;cursor:pointer;font-size:18px;flex-shrink:0}
 .add-btn{width:100%;background:transparent;border:1px dashed var(--border);color:var(--accent2);padding:14px;border-radius:10px;margin-top:8px;cursor:pointer;font-size:16px}
@@ -4814,7 +4824,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v277';
+const MOB_VERSION='v278';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11986,12 +11996,34 @@ function stopBauTimer(){
 }
 
 // ── Baudoku: Neuen Zeiteintrag hinzufügen ──
+// ══ v278: ART und HERKUNFT je Zeitzeile – zieht Desktop b995 nach ════════════
+// Bis v277 legten alle fuenf Schreibwege hier nur {date,von,bis,beschreibung} an.
+// Der Desktop kann die Zeilen seit b995 nach ART trennen (Arbeit/Fahrt/Ruesten/Buero)
+// und zeigt die HERKUNFT (Handy/Stoppuhr/von Hand) blass daneben – vom Handy kamen
+// die Zeilen aber ohne beides an. Das ist hier behoben.
+//
+// ⛔ Die Werte muessen WORTGLEICH mit dem Desktop sein: 'arbeit' klein, ohne Leerzeichen
+//    und Umlaute. Ein 'Arbeit' oder 'ruesten zeit' bricht den Vergleich still.
+// ⛔ Von Hand angelegte Zeilen bekommen KEINE Art angedichtet – was darin getan wurde,
+//    weiss nur Frank. Sie zeigen am Desktop '— Art', bis er eine waehlt.
+const ZEIT_ART_ARBEIT='arbeit';
+// v278: dieselben vier Werte wie im Desktop (b995). Am Handy steht nur das ZEICHEN im
+// Feld – auf 375 px ist fuer „🔨 Arbeit" kein Platz, und das Zeichen allein ist eindeutig.
+// Das Wort steht im title, also beim langen Antippen.
+const ZEIT_ARTEN_MOB=[
+  {wert:'arbeit',sym:'🔨',text:'Arbeit'},
+  {wert:'fahrt', sym:'🚗',text:'Fahrt'},
+  {wert:'ruesten',sym:'📦',text:'Rüsten'},
+  {wert:'buero', sym:'📋',text:'Büro'}
+];
+const ZEIT_QUELLE_HANDY='handy';
 function addBauZeitEintrag(){
   const t=currentTask();if(!t)return;
   const jetzt=new Date();
   const hm=h=>String(h).padStart(2,'0');
   const von=hm(jetzt.getHours())+':'+hm(jetzt.getMinutes());
-  const entry={date:jetzt.toISOString().slice(0,10),von,bis:'',beschreibung:'',mitarbeiter:''};
+  // v278: von Hand angelegt – Herkunft ja, Art NICHT (die weiss nur Frank)
+  const entry={date:jetzt.toISOString().slice(0,10),von,bis:'',beschreibung:'',mitarbeiter:'',art:'',quelle:ZEIT_QUELLE_HANDY};
   if(!t.zeitEntries)t.zeitEntries=[];
   t.zeitEntries.push(entry);
   scheduleSave();
@@ -13331,7 +13363,10 @@ function toggleMobileTimer(taskId){
       date:d1.toISOString().split('T')[0],
       von:pad(d1.getHours())+':'+pad(d1.getMinutes()),
       bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),
-      beschreibung
+      beschreibung,
+      // v278: die Uhr laeuft waehrend der Arbeit auf der Baustelle. Am Desktop aenderbar.
+      art:ZEIT_ART_ARBEIT,
+      quelle:ZEIT_QUELLE_HANDY
     };
     if(!t.zeitEntries)t.zeitEntries=[];
     t.zeitEntries.push(entry);
@@ -13368,7 +13403,7 @@ function toggleMobileTimer(taskId){
         if(open)open.end=endMs;else other.timeEntries.push({start:startMs,end:endMs});
         const d1=new Date(startMs),d2=new Date(endMs);const pad=n=>String(n).padStart(2,'0');
         if(!other.zeitEntries)other.zeitEntries=[];
-        other.zeitEntries.push({date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung:(s.beschreibung||'Stoppuhr')+' (auto-gestoppt)'});
+        other.zeitEntries.push({date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung:(s.beschreibung||'Stoppuhr')+' (auto-gestoppt)',art:ZEIT_ART_ARBEIT,quelle:ZEIT_QUELLE_HANDY});
       }
     }
     const now=Date.now();
@@ -13419,7 +13454,8 @@ function _stopTimerWithEnd(endMs){
   if(open){open.end=endMs;}else{t.timeEntries.push({start:startMs,end:endMs});}
   const d1=new Date(startMs),d2=new Date(endMs);
   const pad=n=>String(n).padStart(2,'0');
-  const entry={date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung};
+  // v278: gleicher Fall wie oben – die Uhr lief waehrend der Arbeit
+  const entry={date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung,art:ZEIT_ART_ARBEIT,quelle:ZEIT_QUELLE_HANDY};
   if(!t.zeitEntries)t.zeitEntries=[];
   t.zeitEntries.push(entry);
   _saveTimerState(null);_stopTickLoop();
@@ -13979,6 +14015,12 @@ function renderZeitenRows(list){
       +'</div>'
       +'<div class="row-desc">'
         +'<input type="text" placeholder="Beschreibung" value="'+escAttr(z.beschreibung||'')+'" oninput="updateZeit('+i+',\'beschreibung\',this.value)" autocomplete="off">'
+        // v278: Art aendern – die Uhr setzt 🔨, eine Fahrt muss Frank hier umstellen koennen.
+        // value = gespeicherter Wert, Anzeige = Zeichen (Lehre Desktop b992).
+        +'<select class="zeit-art'+(z.art?'':' ohne')+'" title="Was wurde in dieser Zeit getan?" onchange="updateZeit('+i+',\'art\',this.value)">'
+          +'<option value=""'+(z.art?'':' selected')+'>—</option>'
+          +ZEIT_ARTEN_MOB.map(a=>'<option value="'+a.wert+'"'+(z.art===a.wert?' selected':'')+'>'+a.sym+'</option>').join('')
+        +'</select>'
         +calBtn
         +outlookBtn
         +'<button class="rm-btn" onclick="removeZeit('+i+')">✕</button>'
@@ -14008,7 +14050,8 @@ function addZeit(){
   const t=currentTask();if(!t)return;
   if(!t.zeitEntries)t.zeitEntries=[];
   const today=new Date().toISOString().split('T')[0];
-  t.zeitEntries.push({date:today,von:'',bis:'',beschreibung:''});
+  // v278: von Hand angelegt – Herkunft ja, Art NICHT
+  t.zeitEntries.push({date:today,von:'',bis:'',beschreibung:'',art:'',quelle:ZEIT_QUELLE_HANDY});
   _mOpenSections['Zeiterfassung']=true;
   _mBereichZeigenWennUebersicht('Zeiterfassung'); // v188
   _mOpenSections['bau_Aufwand']=true; // v188: Sammelkasten mit aufmachen
