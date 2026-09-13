@@ -4915,7 +4915,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v283';
+const MOB_VERSION='v285';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -8353,6 +8353,13 @@ function _dachplanKonfliktMerge(remoteDp,localDp){
     }
     return out;
   };
+  // 🔴 v285 (Frank 13.09.: „die Pinnummer wie kann ich die ändern"; PC b1002): Nummer von Hand
+  // und „Neu nummerieren" stempeln `nrTs`. Die JÜNGERE Nummerierung gewinnt – wie base/layer.
+  // Ohne diese Regel holte ein Gerät mit altem Stand die alte Nummer zurück (lokal gewinnt),
+  // und `nextNr` sprang wieder auf das alte Maximum. Ohne Stempel auf beiden Seiten: wie bisher.
+  // ⛔ Zwei Schrägstriche, kein Blockkommentar – test_v211 misst hier mit ohneKommentare.
+  const _nrR=String(remoteDp.nrTs||''),_nrL=String(localDp.nrTs||'');
+  const _nrRemoteNeuer=_nrR>_nrL,_nrLokalNeuer=_nrL>_nrR;
   const rPins=Array.isArray(remoteDp.pins)?remoteDp.pins:[];
   const lPins=Array.isArray(localDp.pins)?localDp.pins:[];
   const out=[];const seen=new Set();
@@ -8363,6 +8370,7 @@ function _dachplanKonfliktMerge(remoteDp,localDp){
     const lp=lPins.find(x=>x&&String(x.id)===String(rp.id));
     if(!lp){out.push(rp);continue;}
     const mp=Object.assign({},rp,lp);
+    if(_nrRemoteNeuer&&rp.nr!=null)mp.nr=rp.nr; // v285: sonst gewänne die lokale (alte) Nummer
     // v245: Foto-Löschliste beider Seiten vereinigen. ⛔ MUSS nach dem Object.assign
     // stehen - das heißt "lokal gewinnt" und würfe die Foto-Löschungen des anderen
     // Geräts sonst still weg. Dieselbe Falle wie bei m.weg in v244.
@@ -8381,7 +8389,26 @@ function _dachplanKonfliktMerge(remoteDp,localDp){
   m.pins=out;
   if(Object.keys(_wegAlle).length)m.weg=_wegAlle; // v244: die Liste selbst muss den Merge überleben
   let maxNr=0;for(const p of out){const n=Number(p&&p.nr);if(isFinite(n)&&n>maxNr)maxNr=n;}
-  m.nextNr=Math.max(Number(remoteDp.nextNr)||1,Number(localDp.nextNr)||1,maxNr+1);
+  if(_nrRemoteNeuer||_nrLokalNeuer){
+    // v285: Pins, die nur die Seite mit der ÄLTEREN Nummerierung kennt (dort unterwegs neu
+    // gesetzt), behalten ihre Nummer – außer sie ist in der neuen Nummerierung schon vergeben.
+    // Dann bekommen SIE die nächste freie, nie der umnummerierte Pin.
+    const _nurAlt=new Set();
+    // ⛔ Laufvariable bewusst `y`, nicht rp/lp: test_v244 (9a) baut die beiden Loesch-Filter der
+    // Schleifen oben per Textsuche aus und prueft, dass danach keiner mehr im Code steht.
+    if(_nrLokalNeuer)for(const y of rPins){if(y&&y.id!=null&&!_istWeg(y.id)&&!lPins.some(x=>x&&String(x.id)===String(y.id)))_nurAlt.add(y);}
+    if(_nrRemoteNeuer)for(const y of lPins){if(y&&y.id!=null&&!_istWeg(y.id)&&!seen.has(String(y.id)))_nurAlt.add(y);}
+    const _belegt=new Set();
+    out.forEach(p=>{if(p&&!_nurAlt.has(p))_belegt.add(String(p.nr));});
+    for(let i=0;i<out.length;i++){
+      const p=out[i];if(!p||!_nurAlt.has(p))continue;
+      if(_belegt.has(String(p.nr))){maxNr++;out[i]=Object.assign({},p,{nr:maxNr});}
+      _belegt.add(String(out[i].nr));
+    }
+    m.nrTs=_nrRemoteNeuer?_nrR:_nrL;
+    // Der Zähler der älteren Seite zählt nicht mehr – er stammt aus der alten Nummerierung.
+    m.nextNr=Math.max(Number((_nrRemoteNeuer?remoteDp:localDp).nextNr)||1,maxNr+1);
+  }else m.nextNr=Math.max(Number(remoteDp.nextNr)||1,Number(localDp.nextNr)||1,maxNr+1);
   return m;
 }
 async function saveFile(){
@@ -13969,15 +13996,29 @@ function _gtbBaustellen(max){
     raus.push({id:t.id,titel:t.title||'(ohne Titel)',unter:unter,art:art});
   }
   let alle=[];
+  const brettVon={}; // v284: Board je Karte - fuer die Art des Boards (allgemein = notiz)
   try{
     Object.keys(boards||{}).forEach(function(bn){
       if(bn.charAt(0)==='_')return;
       (boards[bn]||[]).forEach(function(t){
         if(!t||!t.id||t.archiviert||t.spaeterBearbeiten)return;
-        alle.push(t);
+        alle.push(t);brettVon[t.id]=bn;
       });
     });
   }catch(e){return raus;}
+  // 0. v284: ALLGEMEINE Karten mit Haken zuerst. Frank, 13.09.2026: "Mein Tagesablauf"
+  // (Schnellnotizen, Board-Typ notiz, Haken seit Desktop b999) soll an erster Stelle stehen -
+  // dann steht sie morgens von selbst unten in der Leiste. Bis v283 folgten Haken-Karten der
+  // Board-Reihenfolge der Datei, und die Auftrags-Boards stehen dort vor den Schnellnotizen.
+  // ⛔ Bewusst VOR den Terminen von heute ("an erster Stelle"). Allgemein = Board-Typ notiz.
+  // ⛔ Fehlt boardTypes, bleibt die Liste wie bisher (Fehlerfang statt Absturz).
+  let _typen={};
+  try{_typen=boardTypes||{};}catch(e){_typen={};}
+  alle.forEach(function(t){
+    if(t.inAusfuehrung!==true&&t.inAusfuehrung!=='true')return;
+    if(_typen[brettVon[t.id]]!=='notiz')return;
+    nimm(t,'allgemein · in Ausführung','allg');
+  });
   // 1. Heute geplant
   const heuteListe=[];
   alle.forEach(function(t){
@@ -14137,14 +14178,20 @@ function _gtbSheetZeichnen(){
     tr.forEach(function(b){html+=zeile(b);});
   }else{
     const liste=_gtbBaustellen(6);
+    // v284: allgemeine Karten (Board-Typ notiz mit Haken) stehen oben, eigene Ueberschrift
+    const allg=liste.filter(function(b){return b.art==='allg';});
     const heute=liste.filter(function(b){return b.art==='heute';});
     const zul=liste.filter(function(b){return b.art==='ausf';});
+    if(allg.length){
+      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:0 0 6px 2px;">Allgemein</div>';
+      allg.forEach(function(b){html+=zeile(b);});
+    }
     if(heute.length){
-      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:0 0 6px 2px;">Heute geplant</div>';
+      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:'+(allg.length?'12px':'0')+' 0 6px 2px;">Heute geplant</div>';
       heute.forEach(function(b){html+=zeile(b);});
     }
     if(zul.length){
-      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:'+(heute.length?'12px':'0')+' 0 6px 2px;">In Ausführung</div>';
+      html+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:'+((heute.length||allg.length)?'12px':'0')+' 0 6px 2px;">In Ausführung</div>';
       zul.forEach(function(b){html+=zeile(b);});
     }
     // v265: Ohne Haken und ohne heutigen Termin ist die Liste leer - dann fuehrt der
@@ -22551,6 +22598,7 @@ window.Dachplan=(function(){
         +'<button data-s="gelb" style="background:#f5a623">Prüfen</button>'
         +'<button data-s="gruen" style="background:#30a46c">OK</button></div>'
       +'<div class="dpf">Titel</div><input id="dpTitle" placeholder="z. B. Ziegel gerissen, First">'
+      +'<div class="dpf">Nummer</div><div id="dpNrZeile" style="display:flex;gap:8px;align-items:center"><input id="dpNr" type="number" min="1" max="9999" step="1" inputmode="numeric" style="width:96px;flex:0 0 96px"><button class="dpb" id="dpNrOk">✓ Übernehmen</button></div>' // v285
       +'<div class="dpf">Notiz</div><textarea id="dpNote" rows="2" placeholder="Beschreibung, Maß, Empfehlung…"></textarea>'
       +'<div class="dpf">Fotos</div><div class="dprow"><button class="dpb primary" id="dpPhotoBtn">📸 Kamera</button><button class="dpb" id="dpGalBtn">🖼️ Galerie</button></div>'
       +'<input type="file" id="dpPhotoInput" accept="image/*" capture="environment" multiple style="display:none">'
@@ -22623,6 +22671,12 @@ window.Dachplan=(function(){
     q('#dpFilter').onclick=()=>{filter=filter==='alle'?'schaden':'alle';_syncFilterBtn();renderPins();}; // v212: Text zentral in _syncFilterBtn
     q('#dpStat').querySelectorAll('button').forEach(b=>b.onclick=()=>{const p=cur();if(!p)return;p.status=b.dataset.s;markStat(p);renderPins();save();});
     q('#dpTitle').oninput=e=>{const p=cur();if(p){p.title=e.target.value;save();}};
+    // v285: Nummer erst mit „✓" oder Enter – nicht je Tastendruck, sonst hieße der Pin beim Tippen von „12" kurz 1.
+    q('#dpNrOk').onclick=()=>_dpNrAusFeld();
+    q('#dpNr').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();_dpNrAusFeld();}});
+    // b1002/v285 (Browser-Gegenprobe 13.09.): Klick ins Feld MARKIERT die alte Nummer. Sonst hängt das Tippen
+    // an – aus „26" und „1" wurde „261", und das ist eine gültige Nummer, PAM hätte sie still übernommen.
+    q('#dpNr').addEventListener('focus',ev=>{try{ev.target.select();}catch(_){}});
     q('#dpNote').oninput=e=>{const p=cur();if(p){p.note=e.target.value;save();}};
     q('#dpPhotoBtn').onclick=()=>q('#dpPhotoInput').click();
     /* v209: die Herkunft wird als Aufrufwert weitergereicht, NICHT über das globale
@@ -22962,6 +23016,7 @@ window.Dachplan=(function(){
   function openSheet(p){
     E.sheet.querySelector('#dpSheetTitle').textContent='Pin '+_tpNr(p)+' · '+(LBL[p.status]||''); // v224: Gliederungsnummer
     E.sheet.querySelector('#dpTitle').value=p.title||'';
+    {const _nf=E.sheet.querySelector('#dpNr');if(_nf)_nf.value=(p.nr!=null?String(p.nr):'');} // v285
     E.sheet.querySelector('#dpNote').value=p.note||'';
     /* v224: Im Teilplan selbst gibt es den Knopf nicht – Teilpläne werden bewusst
        NICHT geschachtelt (eine Ebene; alles andere wäre genau die Unübersichtlichkeit,
@@ -22973,6 +23028,59 @@ window.Dachplan=(function(){
         tb.textContent=_tpHatPlan(p)?('🔍 Teilplan öffnen'+(n?(' ('+n+' Pin'+(n!==1?'s':'')+')'):'')):'🔍 Teilbereich als Plan';}
     }}catch(_){}
     setCoord(p);markStat(p);drawThumbs(p);pinBtnHide();E.sheet.classList.add('show');} // v129: Knopf weg, sobald das Fenster offen ist
+  /* ══ v285: Pin-NUMMER ändern (PC b1002). Frank 13.09.2026: „Die Pinnummer wie kann ich die
+     ändern … jetzt ist es halt Nummer 26 – als einzelner Pin". Bis v284 zählte `dp.nextNr` nur
+     hoch, Löschen senkte ihn nie, und einen Weg zum Ändern gab es nicht.
+     · _dpNrSetzen: eine Nummer von Hand. Schon vergeben → Hinweis, NICHTS wird überschrieben.
+     · _dpNeuNummerieren: alle Pins DIESER Ebene 1, 2, 3 … in ihrer bisherigen Reihenfolge.
+     Beide stempeln `nrTs` und setzen `nextNr` auf höchste Nummer + 1. Den Stempel braucht
+     _dachplanKonfliktMerge: die jüngere Nummerierung gewinnt, sonst holte das andere Gerät die
+     alte Nummer zurück (am PC dieselbe Regel).
+     Im Teilplan zeigt `dp` auf p.plan – beides wirkt dann nur dort. ══ */
+  function _dpNrStempel(){
+    dp.nrTs=new Date().toISOString();
+    let mx=0;(dp.pins||[]).forEach(p=>{const n=Number(p&&p.nr);if(isFinite(n)&&n>mx)mx=n;});
+    dp.nextNr=mx+1;
+  }
+  function _dpUeberAlt(){return dp.ovDriveId?' – am PC 🖼 Übersicht neu speichern, dort steht noch die alte Nummer':'';}
+  function _dpNrSetzen(p,wert){
+    if(!p)return false;
+    const roh=String(wert==null?'':wert).trim();
+    const n=Number(roh);
+    if(!roh||!Number.isInteger(n)||n<1||n>9999){say('Bitte eine ganze Zahl ab 1 eintragen');return false;}
+    if(Number(p.nr)===n)return false;
+    const belegt=(dp.pins||[]).find(x=>x&&x!==p&&Number(x.nr)===n);
+    if(belegt){say('Nummer '+n+' hat schon ein anderer Pin'+(belegt.title?(' („'+String(belegt.title).trim()+'")'):'')+' – den erst umnummerieren oder in ☰ Liste „🔢 Neu nummerieren"');return false;}
+    const alt=p.nr;
+    p.nr=n;_dpNrStempel();renderPins();save();
+    say('Pin '+alt+' hat jetzt die Nummer '+n+_dpUeberAlt());
+    return true;
+  }
+  function _dpNrAusFeld(){
+    const p=cur();if(!p)return;
+    const f=E.sheet.querySelector('#dpNr');if(!f)return;
+    if(_dpNrSetzen(p,f.value))openSheet(p);
+    else f.value=(p.nr!=null?String(p.nr):'');
+  }
+  function _dpNeuNummerieren(){
+    const arr=(dp.pins||[]).map((p,i)=>({p:p,i:i})).filter(x=>x.p)
+      .sort((a,b)=>((Number(a.p.nr)||0)-(Number(b.p.nr)||0))||(a.i-b.i)).map(x=>x.p);
+    if(!arr.length){say('Keine Pins vorhanden');return false;}
+    const plan=arr.map((p,i)=>({p:p,alt:p.nr,neu:i+1})).filter(x=>Number(x.alt)!==x.neu);
+    if(!plan.length){say('Die Pins tragen schon die Nummern 1 bis '+arr.length);return false;}
+    const bildModus=dp.base==='bild';
+    const unsichtbar=arr.filter(p=>bildModus?(p.nx==null):(p.lat==null)).length;
+    const liste=plan.slice(0,15).map(x=>x.alt+' → '+x.neu).join(', ')+(plan.length>15?', …':'');
+    const txt='Pins neu nummerieren?\n\n'+liste
+      +(unsichtbar?('\n\n⚠ '+unsichtbar+' davon '+(unsichtbar===1?'ist':'sind')+' in dieser Ansicht nicht zu sehen ('+(bildModus?'Pins auf der Karte':'Pins auf dem eigenen Bild')+') – sie werden mitgezählt.'):'')
+      +(dp.ovDriveId?'\n\nDie gespeicherte Übersicht (am PC) zeigt danach noch die alten Nummern – dort neu speichern.':'');
+    if(!confirm(txt))return false;
+    plan.forEach(x=>{x.p.nr=x.neu;});
+    _dpNrStempel();renderPins();save();
+    const s=cur();if(s&&E.sheet.classList.contains('show'))openSheet(s);
+    say('Pins neu nummeriert: 1 bis '+arr.length+_dpUeberAlt());
+    return true;
+  }
   function closeSheet(){E.sheet.classList.remove('show');}
 
   async function addPhotos(files,vonKamera){
@@ -23344,7 +23452,8 @@ window.Dachplan=(function(){
     let h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>'+_kopf+'('+arr.length+(filter==='schaden'?' von '+all.length:'')+')</b><button class="dpb" id="dpListClose" style="background:#2b4fc4;border-color:#2b4fc4;color:#fff">✕ Schließen</button></div>';
     h+='<div style="display:flex;gap:6px;margin-bottom:10px">'
       +'<button class="dpb" id="dpLiFAlle" style="border-radius:20px'+(filter==='alle'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Alle</button>'
-      +'<button class="dpb" id="dpLiFSchad" style="border-radius:20px'+(filter==='schaden'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Nur Schaden</button></div>';
+      +'<button class="dpb" id="dpLiFSchad" style="border-radius:20px'+(filter==='schaden'?';background:#2b4fc4;border-color:#2b4fc4;color:#fff':'')+'">Nur Schaden</button>'
+      +(all.length?'<button class="dpb" id="dpListNeuNr" style="margin-left:auto">🔢 Neu nummerieren</button>':'')+'</div>'; // v285
     if(!arr.length)h+='<div style="color:var(--text2);line-height:1.5">'+(all.length?'Keine Schaden-Pins vorhanden.':'Noch keine Pins. „➕ Pin" aktivieren und auf die Karte tippen.')+'</div>';
     // v116: Titel → sonst Notiz als Hauptzeile; Notiz zusätzlich als zweite Zeile (Wunsch Frank – Notizen waren in der Liste unsichtbar)
     arr.forEach(p=>{const _e=s=>String(s||'').replace(/</g,'&lt;');
@@ -23358,6 +23467,7 @@ window.Dachplan=(function(){
       h+='<div class="dpLi" data-id="'+p.id+'"><div class="b" style="background:'+COL[p.status||'rot']+'">'+p.nr+'</div><div class="tx"><b>'+ti+'</b>'+sub+'<span>'+(LBL[p.status]||'')+' · '+((p.fotos||[]).length)+' Foto(s)'+_tm+'</span></div></div>';});
     panel.innerHTML=h;panel.classList.remove('dp-hidden');
     panel.querySelector('#dpListClose').onclick=()=>panel.classList.add('dp-hidden');
+    {const _nb=panel.querySelector('#dpListNeuNr');if(_nb)_nb.onclick=()=>{if(_dpNeuNummerieren())openList();};} // v285
     // v135: Filter-Chips – Zustand mit dem Leisten-Knopf synchron halten
     panel.querySelector('#dpLiFAlle').onclick=()=>{filter='alle';_syncFilterBtn();renderPins();openList();};
     panel.querySelector('#dpLiFSchad').onclick=()=>{filter='schaden';_syncFilterBtn();renderPins();openList();};
