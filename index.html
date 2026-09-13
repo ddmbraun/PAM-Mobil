@@ -4915,7 +4915,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v282';
+const MOB_VERSION='v283';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -8450,6 +8450,8 @@ async function saveFile(){
             // drei Töpfen, drüben aus beiden. Zurückgelegt wird unten nach dem Aufräumen (v257).
             const _wahlHier=(typeof _wahlSammelnAus==='function')?_wahlSammelnAus([boards,hiddenBoards,_mobileFilteredOut]):null;
             const _wahlDrueben=(typeof _wahlSammelnAus==='function')?_wahlSammelnAus([remoteVisible,remoteHidden]):null;
+            // v283: Uhr-Zeilen und Standorte an NICHT offenen Karten einsammeln (nur was seit dem letzten Abgleich neu ist)
+            const _uhrHier=(typeof _uhrHierSammeln==='function')?_uhrHierSammeln([boards,hiddenBoards,_mobileFilteredOut],_savingTaskId):null;
             // Lokale Änderung der gerade offenen Task in die sichtbaren Remote-Boards mergen
             if(_savingTaskId){
               const localTask=findTaskById(_savingTaskId);
@@ -8563,6 +8565,8 @@ async function saveFile(){
               try{const _alleRemote=new Set();for(const _g of [remoteVisible,remoteHidden])for(const _v of Object.values(_g||{}))for(const _t of (_v||[]))if(_t&&_t.id)_alleRemote.add(_t.id);_mobDeletedAufraeumen(_alleRemote);}catch(e){console.warn('[v257] Merker:',e);}
               // v282: Wahl-Vermerke beider Seiten in JEDE Karte zurücklegen (nur anhängen – nichts kommt zurück).
               try{if(_wahlHier&&_wahlDrueben)_wahlToepfeVereinigen([boards,hiddenBoards,_mobileFilteredOut],[_wahlDrueben,_wahlHier]);}catch(e){console.warn('[v282] Wahl-Vermerke:',e);}
+              // v283: dazu die Uhr-Zeilen – neue anhängen, Standorte nachtragen, am PC Gelöschtes bleibt weg.
+              try{if(_uhrHier)_uhrZuruecklegen([boards,hiddenBoards,_mobileFilteredOut],_uhrHier);}catch(e){console.warn('[v283] Uhr-Zeilen:',e);}
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
@@ -14594,6 +14598,71 @@ function _zeitZeilenMerge(erste,zweite){
     });
     if(r.uhrStart==null&&g.uhrStart!=null){if(r===z)r=Object.assign({},z);r.uhrStart=g.uhrStart;}
     return r;
+  });
+}
+// ══ v283: UHR-ZEILEN AN NICHT OFFENEN KARTEN BEIM SPEICHERKONFLIKT ═════════════
+/* Befund 13.09.2026 (Code gelesen): Stopp ueber die Uhr-Leiste (_stopTimerWithEnd) haengt die
+   Zeitzeile an eine Karte, die meist NICHT offen ist; der Standort kommt Sekunden spaeter
+   (_ortAblegen). Hatte der PC dazwischen gespeichert, nahm der Konfliktzweig von saveFile den
+   Drive-Stand – gerettet wurde nur die offene Karte.
+   ⛔ Uebernommen wird NUR, was seit dem letzten Abgleich (Momentaufnahme _mobSnap) am Handy neu
+      ist: neue Zeilen und geaenderte Standorte. Die ganze Liste zu vereinigen holte am PC
+      geloeschte Zeilen zurueck (Verlust-Muster, v257).
+   ⛔ Ohne Momentaufnahme fuer die Karte (neu am Handy) nichts tun – sie kommt als „lokal neu" ganz.
+   ⛔ Die offene Karte bleibt beim bisherigen Weg (_zeitZeilenMerge im Konfliktzweig).
+   Zeilen-Kennung: uhrStart (v280), sonst Datum|von|bis|Beschreibung. */
+function _uhrZeileKennung(e){
+  if(!e)return '';
+  return (e.uhrStart!=null)?('u'+e.uhrStart):((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||''));
+}
+function _uhrHierSammeln(toepfe,ausser){
+  const m=new Map(),gesehen={};
+  const gleich=function(a,b){return JSON.stringify(a==null?null:a)===JSON.stringify(b==null?null:b);};
+  (toepfe||[]).forEach(function(topf){
+    Object.keys(topf||{}).forEach(function(bn){
+      const arr=topf[bn]; if(!Array.isArray(arr))return;
+      arr.forEach(function(t){
+        if(!t||!t.id||gesehen[t.id])return;
+        gesehen[t.id]=1;
+        if(t.id===ausser||!Array.isArray(t.zeitEntries)||!t.zeitEntries.length)return;
+        const snap=_mobSnapListe(t.id,'zeitEntries');
+        if(!Array.isArray(snap))return;
+        const alt=new Map();
+        snap.forEach(function(e){if(e)alt.set(_uhrZeileKennung(e),e);});
+        const neu=[],ort=[];
+        t.zeitEntries.forEach(function(e){
+          if(!e)return;
+          const s=alt.get(_uhrZeileKennung(e));
+          if(!s){neu.push(e);return;}
+          if(!gleich(e.ortStart,s.ortStart)||!gleich(e.ortStopp,s.ortStopp))ort.push(e);
+        });
+        if(neu.length||ort.length)m.set(t.id,{neu:neu,ort:ort});
+      });
+    });
+  });
+  return m;
+}
+function _uhrZuruecklegen(toepfe,m){
+  if(!m||!m.size)return;
+  (toepfe||[]).forEach(function(topf){
+    Object.keys(topf||{}).forEach(function(bn){
+      const arr=topf[bn]; if(!Array.isArray(arr))return;
+      arr.forEach(function(t){
+        if(!t||!t.id||!m.has(t.id))return;
+        const x=m.get(t.id);
+        const L=Array.isArray(t.zeitEntries)?t.zeitEntries.slice():[];
+        const pos=new Map();
+        L.forEach(function(e,i){if(e)pos.set(_uhrZeileKennung(e),i);});
+        x.neu.forEach(function(e){const k=_uhrZeileKennung(e);if(pos.has(k))return;L.push(e);pos.set(k,L.length-1);});
+        x.ort.forEach(function(e){
+          const i=pos.get(_uhrZeileKennung(e)); if(i==null)return; // am PC geloescht: bleibt weg
+          const z=L[i]; let r=z;
+          ['ortStart','ortStopp'].forEach(function(f){const n=_ortNeuer(z[f],e[f]);if(n!==z[f]){if(r===z)r=Object.assign({},z);r[f]=n;}});
+          L[i]=r;
+        });
+        t.zeitEntries=L;
+      });
+    });
   });
 }
 // ── Blatt "📍 Standort anpassen" ──
