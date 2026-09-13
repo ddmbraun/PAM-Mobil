@@ -460,6 +460,17 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .zeit-art{flex:0 0 auto;width:52px;background:var(--bg);border:1px solid var(--border);
           color:var(--text);border-radius:6px;font-size:16px;padding:5px 4px;text-align:center;}
 .zeit-art.ohne{border:1px dashed var(--border);color:var(--text2);}
+/* v280: Standort unter der Zeitzeile. Klein gesetzt, damit die Zeile nur so viel waechst,
+   wie der Inhalt braucht. ⛔ Rand als Kurzform MIT Breite (Lehre v278: nur border-style
+   springt auf 3 px). ⛔ ✎ mindestens 44 px breit (Baustelle, Handschuhe - Lehre v263). */
+.zeit-ort{margin-top:6px;border-top:1px dashed var(--border);padding-top:4px;font-size:calc(12.5px * var(--m-scale,1));line-height:1.35;color:var(--text2);}
+.zo-z{display:flex;align-items:center;gap:6px;min-height:40px;}
+.zo-pin{flex-shrink:0;color:var(--accent2);text-decoration:none;font-weight:600;white-space:nowrap;}
+.zo-adr{flex:1;min-width:0;color:var(--text);overflow-wrap:anywhere;}
+.zo-acc{color:var(--text2);white-space:nowrap;}
+.zo-edit{flex-shrink:0;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:6px;min-width:44px;height:36px;font-size:16px;cursor:pointer;}
+.zo-ohne{font-style:italic;}
+.zo-hand,.zo-passt{padding:0 0 3px 4px;}
 .termin-row input,.zeit-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px;border-radius:6px;font-size:15px;width:100%;box-sizing:border-box}
 .rm-btn{background:transparent;border:1px solid var(--red);color:var(--red);border-radius:6px;height:44px;min-width:44px;cursor:pointer;font-size:18px;flex-shrink:0}
 .add-btn{width:100%;background:transparent;border:1px dashed var(--border);color:var(--accent2);padding:14px;border-radius:10px;margin-top:8px;cursor:pointer;font-size:16px}
@@ -4554,6 +4565,29 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <button onclick="_gtbSheetZu()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">Schließen</button>
   </div>
 </div>
+<!-- v280: 📍 Standort einer Zeitzeile anpassen - Bauart wie das Anruf-Blatt.
+     ⛔ Der gemessene Punkt (Koordinaten, Genauigkeit, Messzeit) hat hier KEIN Eingabefeld -
+     er ist der Beleg. Aenderbar sind nur die Adresse als Text und "passt zu".
+     ⛔ z-index 9450: ueber Anruf-Blatt (9400) und Kopf-Menue (9300), unter der Nachfrage
+     "Stoppuhr läuft seit …" (9500). -->
+<div id="ortBlatt" style="display:none;position:fixed;inset:0;z-index:9450;background:rgba(0,0,0,.55);" onclick="if(event.target===this)_ortBlattZu()">
+  <div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg2);border-radius:16px 16px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px));max-height:84vh;overflow-y:auto;box-shadow:0 -4px 22px rgba(0,0,0,.45);">
+    <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 12px;"></div>
+    <div style="font-size:calc(16px * var(--m-scale,1));font-weight:700;color:var(--text);margin-bottom:6px;">📍 Standort anpassen</div>
+    <div id="ortBlattGemessen" style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);line-height:1.5;margin-bottom:12px;"></div>
+    <label for="ortAdresse" style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);">Adresse</label>
+    <input type="text" id="ortAdresse" autocomplete="off" oninput="_ortAdresseTippt()" style="width:100%;box-sizing:border-box;margin:4px 0 6px;padding:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:max(16px, calc(16px * var(--m-scale,1)));">
+    <button onclick="_ortGemessenZurueck()" style="background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:9px;min-height:40px;padding:0 12px;font-size:14px;cursor:pointer;">↺ gemessene Adresse</button>
+    <div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin:14px 0 4px;">Passt zu</div>
+    <div id="ortPasstAktuell"></div>
+    <input type="text" id="ortSuche" placeholder="andere Karte suchen …" autocomplete="off" oninput="_ortSucheZeichnen()" style="width:100%;box-sizing:border-box;margin:8px 0 6px;padding:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:max(16px, calc(16px * var(--m-scale,1)));">
+    <div id="ortSucheListe"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button onclick="_ortBlattZu()" style="flex:1;min-height:48px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;">Abbrechen</button>
+      <button onclick="_ortSpeichern()" style="flex:1;min-height:48px;border-radius:10px;border:none;background:#3b6d11;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">Speichern</button>
+    </div>
+  </div>
+</div>
 <!-- v277: 📞 Anrufliste - Blatt von unten, Bauart wie das Baustellen-Blatt (gtbSheet).
      ⛔ z-index 9400: ueber der Uhr-Leiste (8500), ueber dem Baustellen-Blatt (8600) und
      ueber dem ⋯-Menue (9300). v274-Lehre: ein Blatt UNTER der Leiste wird von ihr
@@ -4824,7 +4858,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v279';
+const MOB_VERSION='v280';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -4942,7 +4976,7 @@ async function _restoreMobileBackupIfDirty(){
         }
         const before=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
         lt.notizVerlauf=_mergeListByKey(lt.notizVerlauf,bt.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
-        lt.zeitEntries=_mergeListByKey(lt.zeitEntries,bt.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+        lt.zeitEntries=_zeitZeilenMerge(lt.zeitEntries,bt.zeitEntries); // v280: Standort geht nicht verloren
         lt.ausserhausTermine=_mergeListByKey(lt.ausserhausTermine,bt.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
         const after=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
         mergedCount+=(after-before);
@@ -8388,7 +8422,7 @@ async function saveFile(){
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
                     mergedTask.pruefberichte=_mergeListByKey(rt.pruefberichte,localTask.pruefberichte,b=>(b.id||((b.titel||'')+'|'+(b.datum||''))));
                     mergedTask.notizVerlauf=_mergeListByKey(rt.notizVerlauf,localTask.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
-                    mergedTask.zeitEntries=_mergeListByKey(rt.zeitEntries,localTask.zeitEntries,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+                    mergedTask.zeitEntries=_zeitZeilenMerge(rt.zeitEntries,localTask.zeitEntries); // v280: Standort geht nicht verloren
                     mergedTask.ausserhausTermine=_mergeListByKey(rt.ausserhausTermine,localTask.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
                     // v257: GERICHTET statt vereinigt (Desktop b771) – ein hier entferntes Foto kam über die
                     // Vereinigung aus dem PC-Stand zurück; ein drüben entferntes ebenso aus dem hiesigen.
@@ -13368,9 +13402,12 @@ function toggleMobileTimer(taskId){
       art:ZEIT_ART_ARBEIT,
       quelle:ZEIT_QUELLE_HANDY
     };
+    // v280: Start-Standort und Kennung an die Zeile - die GPS-Messung darf die Uhr nie aufhalten
+    try{_ortAnZeile(entry,s,startMs,false);}catch(e){console.warn('[Ort] Zeile',e);}
     if(!t.zeitEntries)t.zeitEntries=[];
     t.zeitEntries.push(entry);
     _saveTimerState(null);_stopTickLoop();
+    try{_ortStoppMessen(t.id,startMs);}catch(e){console.warn('[Ort] Stopp',e);}
     clearTimeout(_bauTimerInterval);_bauTimerInterval=null;
     _mOpenSections['Zeiterfassung']=true;
     _mBereichZeigenWennUebersicht('Zeiterfassung'); // v188
@@ -13393,6 +13430,7 @@ function toggleMobileTimer(taskId){
     const _dBau=document.getElementById('bauTimerDesc');
     const _dAktiv=(_currentDetailTab==='bau')?_dBau:_dInfo;
     const beschreibung=_wert(_dAktiv)||_wert(_dBau)||_wert(_dInfo)||'';
+    let _ortVorher=null; // v280: auto-gestoppte Uhr - ihr Stopp-Ort ist der Ort dieses Starts
     // Alten Timer (andere Task) automatisch beenden
     if(s&&s.taskId&&s.taskId!==taskId){
       const other=findTaskById(s.taskId);
@@ -13404,12 +13442,14 @@ function toggleMobileTimer(taskId){
         const d1=new Date(startMs),d2=new Date(endMs);const pad=n=>String(n).padStart(2,'0');
         if(!other.zeitEntries)other.zeitEntries=[];
         other.zeitEntries.push({date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung:(s.beschreibung||'Stoppuhr')+' (auto-gestoppt)',art:ZEIT_ART_ARBEIT,quelle:ZEIT_QUELLE_HANDY});
+        try{_ortAnZeile(other.zeitEntries[other.zeitEntries.length-1],s,startMs,false);_ortVorher={taskId:other.id,startMs:startMs};}catch(e){console.warn('[Ort] auto-gestoppt',e);}
       }
     }
     const now=Date.now();
     if(!t.timeEntries)t.timeEntries=[];
     t.timeEntries.push({start:now,end:null});
     _saveTimerState({taskId,startMs:now,beschreibung});
+    try{_ortStartMessen(taskId,now,_ortVorher);}catch(e){console.warn('[Ort] Start',e);}
     _startTickLoop();
     forceSave();
     _afterTimerToggle(t); // v130
@@ -13442,7 +13482,8 @@ let _longRunAsked=false;                 // Punkt 3: nur einmal pro App-Sitzung 
 const TIMER_LONGRUN_MS=2*60*60*1000;     // Punkt 3: Nachfrage beim App-Start ab 2 Std.
 function _fmtDauer(ms){const m=Math.floor(ms/60000);const h=Math.floor(m/60);return h>0?h+' Std. '+(m%60)+' Min.':m+' Min.';}
 // Stoppuhr mit (ggf. korrigierter) Endzeit beenden – gleiche Logik wie toggleMobileTimer/STOPPEN
-function _stopTimerWithEnd(endMs){
+// v280: nachgetragen=true bei der Nachfrage "Stoppuhr läuft seit …" - dann KEINE Stopp-Messung
+function _stopTimerWithEnd(endMs,nachgetragen){
   const s=_loadTimerState();if(!s||!s.taskId)return false;
   const t=findTaskById(s.taskId);
   if(!t){_saveTimerState(null);_stopTickLoop();return false;}
@@ -13456,9 +13497,11 @@ function _stopTimerWithEnd(endMs){
   const pad=n=>String(n).padStart(2,'0');
   // v278: gleicher Fall wie oben – die Uhr lief waehrend der Arbeit
   const entry={date:d1.toISOString().split('T')[0],von:pad(d1.getHours())+':'+pad(d1.getMinutes()),bis:pad(d2.getHours())+':'+pad(d2.getMinutes()),beschreibung,art:ZEIT_ART_ARBEIT,quelle:ZEIT_QUELLE_HANDY};
+  try{_ortAnZeile(entry,s,startMs,!!nachgetragen);}catch(e){console.warn('[Ort] Zeile',e);}
   if(!t.zeitEntries)t.zeitEntries=[];
   t.zeitEntries.push(entry);
   _saveTimerState(null);_stopTickLoop();
+  if(!nachgetragen){try{_ortStoppMessen(t.id,startMs);}catch(e){console.warn('[Ort] Stopp',e);}}
   try{clearTimeout(_bauTimerInterval);_bauTimerInterval=null;}catch(e){}
   forceSave();
   try{if(currentTaskId===t.id)renderDetail(t);else renderList();}catch(e){}
@@ -13919,7 +13962,8 @@ function _longrunWeiter(){
 }
 function _longrunStopNow(){
   const ov=document.getElementById('timerLongrunOverlay');if(ov)ov.remove();
-  _stopTimerWithEnd(Date.now());
+  // v280: nachgetragen - wer die Uhr erst beim App-Start stoppt, ist nicht mehr dort, wo die Arbeit endete
+  _stopTimerWithEnd(Date.now(),true);
 }
 function _longrunKorrigieren(){
   const s=_loadTimerState();if(!s){_longrunWeiter();return;}
@@ -13933,7 +13977,7 @@ function _longrunKorrigieren(){
   const end=new Date(d);end.setHours(+m[1],+m[2],0,0);
   if(end.getTime()<s.startMs)end.setDate(end.getDate()+1); // über Mitternacht
   const ov=document.getElementById('timerLongrunOverlay');if(ov)ov.remove();
-  _stopTimerWithEnd(end.getTime());
+  _stopTimerWithEnd(end.getTime(),true); // v280: nachgetragen, keine Stopp-Messung
 }
 
 function resumeMobileTimerIfNeeded(){
@@ -14045,6 +14089,7 @@ function renderZeitenRows(list){
         +outlookBtn
         +'<button class="rm-btn" onclick="removeZeit('+i+')">✕</button>'
       +'</div>'
+      +_ortZeile(z,i) // v280: 📍 Start/Stopp - leer, wenn die Zeile keinen Standort hat
     +'</div>';
   }).join('');
 }
@@ -14088,6 +14133,271 @@ function updateZeit(i,f,v){
   const t=currentTask();if(!t)return;
   if(!t.zeitEntries||!t.zeitEntries[i])return;
   t.zeitEntries[i][f]=v;scheduleSave();
+}
+
+// ══ v280: STANDORT bei Start und Stopp der Uhr ═══════════════════════════════
+// Frank, 13.09.2026 ("ja 1 und 2"): beim Druck auf Start und auf Stopp misst PAM selbst,
+// wo er ist - als eigene Dokumentation, dass er wirklich auf der Baustelle war. Kein
+// Extra-Knopf. Dazu die Adresse und "passt zu: <Karte>", beides von Hand anpassbar.
+//
+// ⛔ Die Uhr wartet NIE auf das GPS. Sie startet/stoppt sofort; die Messung (bis 12 s,
+//    Ziel ±30 m ueber _getAccuratePosition) kommt hinterher an:
+//    Start, Uhr laeuft noch -> in den Uhr-Zustand (s.ortStart), beim Stoppen an die Zeile
+//    Start, schon gestoppt  -> direkt an die Zeile (gefunden ueber uhrStart)
+//    Stopp                  -> an die Zeile (uhrStart)
+// ⛔ Der MESSPUNKT (lat/lon/acc/zeit) ist nirgends aenderbar - er ist der Beleg.
+// ⛔ "passt zu" vergleicht NUR auf dem Geraet mit den Karten-Adressen. An fremde Dienste
+//    (_reverseGeocode: Photon, dann Nominatim) gehen allein die eigenen Koordinaten.
+// ⛔ Nachfrage "Stoppuhr läuft seit …": KEINE Stopp-Messung (nachgetragen) - der Ort beim
+//    Nachtragen ist nicht der Ort, an dem die Arbeit endete.
+const ORT_ZIEL_M=30, ORT_WARTEN_MS=12000;
+let _ortVerweigertGemeldet=false;
+const _ortLaeuft={}; // 'taskId|startMs|feld' -> 1, solange eine Messung unterwegs ist
+function _ortSchluessel(taskId,startMs,feld){return String(taskId)+'|'+String(startMs)+'|'+feld;}
+function _ortFehlerText(err){
+  const c=err&&err.code;
+  return c===1?'Zugriff verweigert':(c===3?'Zeitüberschreitung':'nicht verfügbar');
+}
+// Liefert IMMER ein Objekt und wirft nie: {lat,lon,acc,zeit[,adresse,adresseGemessen]} oder {fehler,zeit}
+async function _ortMessen(zeitMs){
+  const zeit=new Date(zeitMs||Date.now()).toISOString();
+  if(typeof navigator==='undefined'||!navigator.geolocation)return {fehler:'kein GPS',zeit:zeit};
+  let pos=null;
+  try{pos=await _getAccuratePosition(ORT_ZIEL_M,ORT_WARTEN_MS);}
+  catch(err){
+    if(err&&err.code===1&&!_ortVerweigertGemeldet){
+      _ortVerweigertGemeldet=true;
+      try{toast('📍 Standort-Zugriff verweigert – die Zeiten werden ohne Ort gespeichert','info',5000);}catch(e){}
+    }
+    return {fehler:_ortFehlerText(err),zeit:zeit};
+  }
+  if(!pos||!pos.coords)return {fehler:'nicht verfügbar',zeit:zeit};
+  const o={lat:Math.round(pos.coords.latitude*1e6)/1e6,lon:Math.round(pos.coords.longitude*1e6)/1e6,
+    acc:Math.round(pos.coords.accuracy||0),zeit:zeit};
+  let adr='';
+  try{adr=await _reverseGeocode(o.lat,o.lon);}catch(e){adr='';}
+  if(adr){o.adresse=adr;o.adresseGemessen=adr;}
+  return o;
+}
+// Strasse+Hausnummer vergleichbar machen - dieselbe Regel wie _pamFlach ("Str." = "Straße")
+function _ortStrasse(adr){return _pamFlach(String(adr||'').split(',')[0]);}
+function _ortPlz(adr){const m=/\b(\d{5})\b/.exec(String(adr||''));return m?m[1]:'';}
+function _ortPasstZu(adresse,taskId){
+  const str=_ortStrasse(adresse);
+  // ohne Hausnummer keine Zuordnung - eine Strasse allein passt auf zu viele Karten
+  if(!str||!/\d/.test(str))return null;
+  const plz=_ortPlz(adresse);
+  const treffer=[];
+  try{
+    Object.keys(boards||{}).forEach(function(bn){
+      if(bn.charAt(0)==='_')return;
+      (boards[bn]||[]).forEach(function(k){
+        if(!k||!k.id||k.archiviert||!k.adresse)return;
+        if(_ortStrasse(k.adresse)!==str)return;
+        const kp=_ortPlz(k.adresse);
+        if(plz&&kp&&plz!==kp)return;
+        const typ=(boardTypes&&boardTypes[bn])||'baustelle';
+        // Vorrang: die Karte, auf der die Uhr lief · dann Auftraege · dann Objekte
+        treffer.push({k:k,rang:(k.id===taskId)?0:(typ==='baustelle'?1:(typ==='immobilie'?2:3))});
+      });
+    });
+  }catch(e){return null;}
+  if(!treffer.length)return null;
+  treffer.sort(function(a,b){return a.rang-b.rang;});
+  return {id:treffer[0].k.id,titel:treffer[0].k.title||'(ohne Titel)'};
+}
+function _ortAnZeile(entry,s,startMs,nachgetragen){
+  if(!entry||!s)return;
+  entry.uhrStart=startMs;
+  if(s.ortStart)entry.ortStart=s.ortStart;
+  else if(!_ortLaeuft[_ortSchluessel(s.taskId,startMs,'ortStart')])
+    entry.ortStart={fehler:'nicht gemessen',zeit:new Date(startMs).toISOString()};
+  if(nachgetragen)entry.ortStopp={fehler:'nachträglich gestoppt',zeit:new Date().toISOString()};
+}
+function _ortAblegen(taskId,startMs,feld,o){
+  delete _ortLaeuft[_ortSchluessel(taskId,startMs,feld)];
+  if(!o)return false;
+  if(!o.fehler&&o.adresse)o.passtZu=_ortPasstZu(o.adresse,taskId);
+  if(feld==='ortStart'){
+    const s=_loadTimerState();
+    if(s&&s.taskId===taskId&&s.startMs===startMs){s.ortStart=o;_saveTimerState(s);return true;}
+  }
+  const t=findTaskById(taskId);if(!t)return false;
+  const z=(t.zeitEntries||[]).find(function(e){return e&&e.uhrStart===startMs;});
+  if(!z)return false;
+  z[feld]=o;
+  scheduleSave();
+  _ortNeuZeichnen(t,z);
+  return true;
+}
+function _ortStartMessen(taskId,startMs,vorher){
+  _ortLaeuft[_ortSchluessel(taskId,startMs,'ortStart')]=1;
+  if(vorher)_ortLaeuft[_ortSchluessel(vorher.taskId,vorher.startMs,'ortStopp')]=1;
+  return _ortMessen(startMs).then(function(o){
+    _ortAblegen(taskId,startMs,'ortStart',o);
+    // der Wechsel-Druck ist zugleich das Stopp der vorigen Baustelle - derselbe Ort, eigene Kopie
+    if(vorher)_ortAblegen(vorher.taskId,vorher.startMs,'ortStopp',Object.assign({},o));
+  }).catch(function(e){console.warn('[Ort] Start',e);});
+}
+function _ortStoppMessen(taskId,startMs){
+  _ortLaeuft[_ortSchluessel(taskId,startMs,'ortStopp')]=1;
+  return _ortMessen(Date.now()).then(function(o){_ortAblegen(taskId,startMs,'ortStopp',o);})
+    .catch(function(e){console.warn('[Ort] Stopp',e);});
+}
+// Nur die eine Standort-Zeile im Bild austauschen - kein Neuaufbau der Karte (kein Springen,
+// kein Fokusverlust, wenn Frank gerade in einem Feld tippt)
+function _ortNeuZeichnen(t,z){
+  try{
+    if(typeof currentTaskId==='undefined'||currentTaskId!==t.id)return;
+    const i=(t.zeitEntries||[]).indexOf(z);if(i<0)return;
+    document.querySelectorAll('#zeitenList').forEach(function(L){
+      const row=L.querySelectorAll('.zeit-row')[i];if(!row)return;
+      const alt=row.querySelector('.zeit-ort');
+      const tmp=document.createElement('div');tmp.innerHTML=_ortZeile(z,i);
+      const neu=tmp.firstElementChild;
+      if(alt&&neu)alt.replaceWith(neu);else if(alt)alt.remove();else if(neu)row.appendChild(neu);
+    });
+  }catch(e){console.warn('[Ort] Zeichnen',e);}
+}
+function _ortTeil(o,wort,i,feld,accText){
+  if(o.fehler)return '<div class="zo-z zo-ohne">📍 '+esc(wort)+': ohne Standort ('+esc(o.fehler)+')</div>';
+  const url='https://www.google.com/maps/search/?api=1&query='+Number(o.lat)+','+Number(o.lon);
+  return '<div class="zo-z">'
+    +'<a class="zo-pin" href="'+escAttr(url)+'" target="_blank" rel="noopener" title="Gemessenen Punkt in Google Maps zeigen">📍 '+esc(wort)+'</a>'
+    +'<span class="zo-adr">'+esc(o.adresse||'Adresse nicht gefunden')+' <span class="zo-acc">'+esc(accText||('±'+o.acc+' m'))+'</span></span>'
+    +'<button class="zo-edit" onclick="_ortBearbeiten('+i+',\''+feld+'\')" title="Adresse oder Zuordnung anpassen" aria-label="Standort anpassen">✎</button>'
+    +'</div>'
+    +(o.vonHand?'<div class="zo-hand">von Hand geändert · gemessen: '+esc(o.adresseGemessen||'keine Adresse')+'</div>':'')
+    +(o.passtZu&&o.passtZu.id?'<div class="zo-passt">↳ passt zu: '+esc(o.passtZu.titel||'')+'</div>':'');
+}
+function _ortZeile(z,i){
+  try{
+    const a=z&&z.ortStart,b=z&&z.ortStopp;
+    if(!a&&!b)return '';
+    // Start und Stopp am selben Ort: EINE Zeile statt zwei (spart Hoehe auf 375 px)
+    const gleich=a&&b&&!a.fehler&&!b.fehler&&(a.adresse||'')===(b.adresse||'')
+      &&((a.passtZu&&a.passtZu.id)||'')===((b.passtZu&&b.passtZu.id)||'')&&!!a.vonHand===!!b.vonHand;
+    let h='';
+    if(gleich)h=_ortTeil(a,'Start + Stopp',i,'beide','±'+a.acc+' / ±'+b.acc+' m');
+    else{if(a)h+=_ortTeil(a,'Start',i,'ortStart');if(b)h+=_ortTeil(b,'Stopp',i,'ortStopp');}
+    return '<div class="zeit-ort">'+h+'</div>';
+  }catch(e){return '';}
+}
+// Beim Abgleich gewinnt bei gleichem Schluessel (Datum|von|bis|Beschreibung) die ERSTE Liste
+// ganz - ein Standort, der erst Sekunden nach dem Stoppen ankam, oder eine von Hand
+// geaenderte Adresse der ZWEITEN Liste ginge still verloren. Deshalb je Standort das Bessere.
+function _ortNeuer(a,b){
+  if(!b)return a;if(!a)return b;
+  if(a.fehler&&!b.fehler)return b;
+  if(!a.fehler&&b.fehler)return a;
+  return (Number(b.geaendert)||0)>(Number(a.geaendert)||0)?b:a;
+}
+function _zeitZeilenMerge(erste,zweite){
+  const key=function(e){return (e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'');};
+  const out=_mergeListByKey(erste,zweite,key);
+  const b=Array.isArray(zweite)?zweite:[];
+  return out.map(function(z){
+    if(!z)return z;
+    const k=key(z);
+    const g=b.find(function(x){return x&&x!==z&&key(x)===k;});
+    if(!g)return z;
+    let r=z;
+    ['ortStart','ortStopp'].forEach(function(f){
+      const neu=_ortNeuer(z[f],g[f]);
+      if(neu!==z[f]){if(r===z)r=Object.assign({},z);r[f]=neu;}
+    });
+    if(r.uhrStart==null&&g.uhrStart!=null){if(r===z)r=Object.assign({},z);r.uhrStart=g.uhrStart;}
+    return r;
+  });
+}
+// ── Blatt "📍 Standort anpassen" ──
+let _ortEdit=null;
+function _ortZeileFinden(t,e){
+  const L=t.zeitEntries||[];
+  if(e.uhrStart!=null){const z=L.find(function(x){return x&&x.uhrStart===e.uhrStart;});if(z)return z;}
+  return L[e.i]||null;
+}
+function _ortBearbeiten(i,feld){
+  const t=currentTask();if(!t)return;
+  const z=(t.zeitEntries||[])[i];if(!z)return;
+  const felder=(feld==='beide')?['ortStart','ortStopp']:[feld];
+  const o=z[felder[0]];
+  if(!o||o.fehler)return; // ohne Messung gibt es nichts anzupassen
+  _ortEdit={taskId:t.id,i:i,uhrStart:z.uhrStart,felder:felder,passt:o.passtZu||null,
+    passtVonHand:!!o.passtZuVonHand,gemessen:o.adresseGemessen||''};
+  const d=new Date(o.zeit||Date.now());const p=function(n){return String(n).padStart(2,'0');};
+  const url='https://www.google.com/maps/search/?api=1&query='+Number(o.lat)+','+Number(o.lon);
+  const g=document.getElementById('ortBlattGemessen');
+  if(g)g.innerHTML='Gemessen am '+p(d.getDate())+'.'+p(d.getMonth()+1)+'. um '+p(d.getHours())+':'+p(d.getMinutes())+' Uhr · ±'+Number(o.acc)+' m<br>'
+    +esc(o.adresseGemessen||'keine Adresse gefunden')+' · <a href="'+escAttr(url)+'" target="_blank" rel="noopener">in Google zeigen</a>';
+  const inp=document.getElementById('ortAdresse');if(inp)inp.value=o.adresse||'';
+  const su=document.getElementById('ortSuche');if(su)su.value='';
+  _ortPasstZeichnen();_ortSucheZeichnen();
+  const bl=document.getElementById('ortBlatt');if(bl)bl.style.display='block';
+}
+function _ortBlattZu(){const bl=document.getElementById('ortBlatt');if(bl)bl.style.display='none';_ortEdit=null;}
+function _ortAdresseTippt(){
+  if(!_ortEdit||_ortEdit.passtVonHand)return; // von Hand gewaehlte Karte bleibt stehen
+  const inp=document.getElementById('ortAdresse');
+  _ortEdit.passt=_ortPasstZu(inp?inp.value:'',_ortEdit.taskId);
+  _ortPasstZeichnen();
+}
+function _ortGemessenZurueck(){
+  if(!_ortEdit)return;
+  const inp=document.getElementById('ortAdresse');if(inp)inp.value=_ortEdit.gemessen;
+  _ortEdit.passtVonHand=false; // zurueck auf "automatisch nach Adresse"
+  _ortAdresseTippt();
+}
+function _ortPasstZeichnen(){
+  const el=document.getElementById('ortPasstAktuell');if(!el||!_ortEdit)return;
+  const p=_ortEdit.passt;
+  el.innerHTML=(p&&p.id
+    ?'<div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border-radius:10px;padding:6px 6px 6px 10px;">'
+      +'<span style="flex:1;min-width:0;font-size:calc(15px * var(--m-scale,1));color:var(--text);overflow-wrap:anywhere;">↳ '+esc(p.titel||'')+'</span>'
+      +'<button onclick="_ortPasstLoesen()" aria-label="Zuordnung entfernen" style="flex-shrink:0;min-width:44px;height:40px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text2);font-size:16px;cursor:pointer;">✕</button></div>'
+    :'<div style="font-size:calc(14px * var(--m-scale,1));color:var(--text2);padding:6px 2px;">keine Karte zugeordnet</div>')
+    +'<div style="font-size:calc(12px * var(--m-scale,1));color:var(--text2);margin:3px 2px 0;">'+(_ortEdit.passtVonHand?'von Hand gewählt':'automatisch nach Adresse')+'</div>';
+}
+function _ortPasstLoesen(){if(!_ortEdit)return;_ortEdit.passt=null;_ortEdit.passtVonHand=true;_ortPasstZeichnen();}
+function _ortPasstWaehlen(id){
+  if(!_ortEdit)return;
+  const k=findTaskById(id);if(!k)return;
+  _ortEdit.passt={id:k.id,titel:k.title||'(ohne Titel)'};_ortEdit.passtVonHand=true;
+  const su=document.getElementById('ortSuche');if(su)su.value='';
+  _ortPasstZeichnen();_ortSucheZeichnen();
+}
+function _ortSucheZeichnen(){
+  const el=document.getElementById('ortSucheListe');if(!el)return;
+  const q=((document.getElementById('ortSuche')||{}).value||'').trim();
+  if(!q){el.innerHTML='';return;}
+  const tr=_gtbSuchen(q).slice(0,8);
+  el.innerHTML=tr.length?tr.map(function(b){
+    return '<div onclick="_ortPasstWaehlen(\''+escAttr(b.id)+'\')" style="background:var(--bg3);border-radius:10px;padding:9px 11px;margin-bottom:6px;min-height:44px;box-sizing:border-box;cursor:pointer;">'
+      +'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);">'+esc(b.unter)+'</div>'
+      +'<div style="font-size:calc(15px * var(--m-scale,1));color:var(--text);font-weight:600;overflow-wrap:anywhere;">'+esc(b.titel)+'</div></div>';
+  }).join(''):'<div style="font-size:13px;color:var(--text2);padding:6px 2px;">Nichts gefunden</div>';
+}
+function _ortSpeichern(){
+  const e=_ortEdit;if(!e)return;
+  const t=findTaskById(e.taskId);if(!t){_ortBlattZu();return;}
+  const z=_ortZeileFinden(t,e);if(!z){toast('Zeitzeile nicht mehr gefunden','error');_ortBlattZu();return;}
+  const adr=((document.getElementById('ortAdresse')||{}).value||'').trim();
+  const jetzt=Date.now();
+  e.felder.forEach(function(f){
+    const o=z[f];if(!o||o.fehler)return;
+    // ⛔ Kopie: lat/lon/acc/zeit bleiben wie gemessen - nur Text und Zuordnung aendern sich
+    const neu=Object.assign({},o);
+    neu.adresse=adr;
+    neu.vonHand=(adr!==(o.adresseGemessen||''));
+    neu.passtZu=e.passt?{id:e.passt.id,titel:e.passt.titel}:null;
+    neu.passtZuVonHand=!!e.passtVonHand;
+    neu.geaendert=jetzt;
+    z[f]=neu;
+  });
+  forceSave();
+  _ortBlattZu();
+  _ortNeuZeichnen(t,z);
+  toast('📍 Standort angepasst','success');
 }
 
 // ══ NOTIZEN (chronologisch) ══
