@@ -116,6 +116,35 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .mnu-eintrag{display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;min-height:52px;padding:10px 12px;background:transparent;border:none;border-radius:10px;color:var(--text);font-family:inherit;font-size:15px;text-align:left;cursor:pointer}
 .mnu-eintrag:active{background:var(--bg3)}
 .mnu-eintrag+.mnu-eintrag{border-top:0.5px solid var(--border)}
+/* v281: 🗺 Mein Tag. ⛔ Kopf sticky UEBER den Leaflet-Bedienelementen (die liegen bei 1000).
+   ⛔ Farben Start/Stopp wie die Knoepfe der Uhr-Leiste (gruen #3b6d11 / rot #a32d2d). */
+.tag-oben{position:sticky;top:0;z-index:1001;background:var(--bg2);border-bottom:1px solid var(--border);padding:calc(8px + env(safe-area-inset-top,0px)) 10px 8px;}
+.tag-reihe{display:flex;align-items:center;gap:8px;}
+.tag-kb{flex-shrink:0;min-width:48px;height:48px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:18px;cursor:pointer;font-family:inherit;}
+.tag-titel{flex:1;min-width:0;font-size:calc(17px * var(--m-scale,1));font-weight:700;color:var(--text);}
+.tag-datum-txt{flex:1;min-width:0;text-align:center;font-size:calc(16px * var(--m-scale,1));font-weight:600;color:var(--text);}
+.tag-karte{height:42vh;min-height:220px;margin:10px;border-radius:12px;overflow:hidden;border:1px solid var(--border);}
+.tag-hinweis{margin:0 12px 6px;font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.4;}
+.tag-route{display:flex;align-items:center;justify-content:center;margin:4px 10px 8px;min-height:44px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--accent2);text-decoration:none;font-size:15px;font-weight:600;}
+.tag-liste{padding:0 10px calc(24px + env(safe-area-inset-bottom,0px));}
+.tag-leer{padding:18px 6px;text-align:center;font-size:calc(14px * var(--m-scale,1));color:var(--text2);line-height:1.5;}
+.tag-summe{margin:6px 2px 8px;font-size:calc(14px * var(--m-scale,1));color:var(--text2);}
+.tag-zeile{display:flex;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:9px 10px;margin-bottom:7px;cursor:pointer;}
+.tag-nr{flex-shrink:0;min-width:30px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;}
+.tag-start{background:#3b6d11;}
+.tag-stopp{background:#a32d2d;}
+.tag-ohne{cursor:default;}
+.tag-ohne .tag-nr{background:transparent;border:1px dashed var(--border);color:var(--text2);}
+.tag-text{flex:1;min-width:0;}
+.tag-kopf{font-size:calc(14px * var(--m-scale,1));font-weight:600;color:var(--text);overflow-wrap:anywhere;line-height:1.35;}
+.tag-adr{font-size:calc(13.5px * var(--m-scale,1));color:var(--text);overflow-wrap:anywhere;line-height:1.35;margin-top:2px;}
+.tag-ohne .tag-adr{color:var(--text2);font-style:italic;}
+.tag-klein{font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.35;}
+.tag-knoepfe{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
+.tag-chip{display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:14px;text-decoration:none;cursor:pointer;font-family:inherit;}
+.tag-pin{display:flex;align-items:center;justify-content:center;width:100%;height:30px;box-sizing:border-box;border-radius:15px;border:2px solid #fff;color:#fff;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.45);white-space:nowrap;}
+.tag-pop{font-size:13px;line-height:1.45;min-width:190px;}
+.tag-pop-z+.tag-pop-z{margin-top:6px;padding-top:6px;border-top:1px solid #ddd;}
 .mnu-ico{flex-shrink:0;width:24px;text-align:center;font-size:18px;line-height:1}
 .mnu-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .mnu-sub{font-size:11.5px;color:var(--text2);font-weight:400}
@@ -4384,6 +4413,10 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
       <button class="mnu-eintrag" onclick="_mnuZu();_anrufBlattAuf();" title="Offene Anrufe über alle Boards">
         <span class="mnu-ico">📞</span><span class="mnu-txt">Anrufliste <span id="mnuAnrufZahl" style="opacity:.75;font-weight:400;"></span><span class="mnu-sub" id="mnuAnrufSub"></span></span>
       </button>
+      <!-- v281: Mein Tag - Start/Stopp-Standorte eines Tages auf der Karte (Wunsch Frank). -->
+      <button class="mnu-eintrag" onclick="_mnuZu();_tagAuf();" title="Wo war ich wann – Start und Stopp auf der Karte">
+        <span class="mnu-ico">🗺</span><span class="mnu-txt">Mein Tag<span class="mnu-sub">Start und Stopp auf der Karte</span></span>
+      </button>
       <button class="mnu-eintrag" onclick="_mnuZu();toggleAppZoomBar();" title="App-Größe (Zoom)">
         <span class="mnu-ico" style="font-weight:700;font-size:15px;">Aa</span><span class="mnu-txt">Textgröße</span>
       </button>
@@ -4564,6 +4597,26 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <div id="gtbSheetListe"></div>
     <button onclick="_gtbSheetZu()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">Schließen</button>
   </div>
+</div>
+<!-- v281: 🗺 Mein Tag - Start/Stopp-Standorte eines Tages, ganzseitig.
+     ⛔ z-index 9420: ueber Anruf-Blatt (9400) und Kopf-Menue (9300), UNTER dem Standort-
+     Blatt (9450) - ✎ aus der Liste oeffnet jenes ueber dieser Seite. -->
+<div id="tagBlatt" style="display:none;position:fixed;inset:0;z-index:9420;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;">
+  <div class="tag-oben">
+    <div class="tag-reihe">
+      <button class="tag-kb" onclick="_tagZu()" aria-label="Mein Tag schließen">✕</button>
+      <div class="tag-titel">🗺 Mein Tag</div>
+    </div>
+    <div class="tag-reihe" style="margin-top:8px;">
+      <button class="tag-kb" onclick="_tagVerschieben(-1)" aria-label="Vorheriger Tag">◀</button>
+      <div id="tagDatum" class="tag-datum-txt"></div>
+      <button class="tag-kb" id="tagWeiter" onclick="_tagVerschieben(1)" aria-label="Nächster Tag">▶</button>
+    </div>
+  </div>
+  <div id="tagKarte" class="tag-karte"></div>
+  <div id="tagHinweis" class="tag-hinweis">Die gestrichelte Linie verbindet nur die Orte der Reihe nach – sie ist nicht der Fahrweg.</div>
+  <div id="tagRoute"></div>
+  <div id="tagListe" class="tag-liste"></div>
 </div>
 <!-- v280: 📍 Standort einer Zeitzeile anpassen - Bauart wie das Anruf-Blatt.
      ⛔ Der gemessene Punkt (Koordinaten, Genauigkeit, Messzeit) hat hier KEIN Eingabefeld -
@@ -4858,7 +4911,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v280';
+const MOB_VERSION='v281';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -14319,6 +14372,10 @@ function _ortZeileFinden(t,e){
 }
 function _ortBearbeiten(i,feld){
   const t=currentTask();if(!t)return;
+  _ortBearbeitenFuer(t,i,feld);
+}
+// v281: auch aus "Mein Tag" - dort ist keine Karte geoeffnet, currentTask() waere falsch
+function _ortBearbeitenFuer(t,i,feld){
   const z=(t.zeitEntries||[])[i];if(!z)return;
   const felder=(feld==='beide')?['ortStart','ortStopp']:[feld];
   const o=z[felder[0]];
@@ -14397,7 +14454,225 @@ function _ortSpeichern(){
   forceSave();
   _ortBlattZu();
   _ortNeuZeichnen(t,z);
+  try{_tagNeuZeichnen();}catch(e){} // v281: offene Tageskarte zeigt die neue Adresse sofort
   toast('📍 Standort angepasst','success');
+}
+
+// ══ v281: 🗺 MEIN TAG – Start/Stopp-Standorte eines Tages auf der Karte ══════════════
+// Frank, 13.09.2026 ("ja 3 bauen"): abends sehen, wo er wann war. Gesammelt wird NACH DATUM
+// ueber alle Karten - egal, auf welcher die Uhr lief. Grundlage: die Standorte aus v280.
+// ⛔ Der Tag ist das ORTSDATUM der Messzeit (o.zeit), NICHT z.date - das entsteht ueber
+//    toISOString (Weltzeit) und liegt zwischen 0 und 2 Uhr noch auf dem Vortag.
+// ⛔ Auch Karten, die am Handy nicht sichtbar sind (weggefiltert, archiviert, nur am PC),
+//    liefern ihre Punkte: wandert ein Auftrag nach der Arbeit in eine andere Spalte, darf
+//    der Tag nicht still Punkte verlieren. Oeffnen und ✎ gibt es dort nicht.
+// ⛔ Start und Stopp am selben Ort (unter TAG_GLEICH_M) werden EINE Nadel "1·2" - sonst
+//    laege Nadel 1 unsichtbar unter Nadel 2 (der haeufigste Fall).
+// ⛔ Die Linie verbindet nur die Orte der Reihe nach - sie ist NICHT der Fahrweg.
+// ⛔ Google-Route nur bis TAG_GOOGLE_MAX Orte: Google erlaubt im Handy-Browser 3 Zwischen-
+//    stopps (Maps-URLs-Doku, nachgesehen 13.09.2026).
+const TAG_GOOGLE_MAX=5, TAG_GLEICH_M=25;
+let _tagIso='', _tagMap=null, _tagEbene=null, _tagMarker=[], _tagAktuell=[];
+function _tagP2(n){return String(n).padStart(2,'0');}
+function _tagLokal(ms){const d=new Date(ms);return d.getFullYear()+'-'+_tagP2(d.getMonth()+1)+'-'+_tagP2(d.getDate());}
+function _tagZeitHm(ms){const d=new Date(ms);return _tagP2(d.getHours())+':'+_tagP2(d.getMinutes());}
+function _tagDauer(min){const h=Math.floor(min/60),m=min%60;return h?(h+' Std. '+m+' Min.'):(m+' Min.');}
+function _tagPunkte(tagIso){
+  const raus=[];
+  [[boards,true],[_mobileFilteredOut,false],[hiddenBoards,false]].forEach(function(q){
+    const topf=q[0]||{};
+    Object.keys(topf).forEach(function(bn){
+      if(bn.charAt(0)==='_')return;
+      (topf[bn]||[]).forEach(function(t){
+        if(!t||!t.id)return;
+        (t.zeitEntries||[]).forEach(function(z){
+          if(!z)return;
+          ['ortStart','ortStopp'].forEach(function(f){
+            const o=z[f];if(!o||!o.zeit)return;
+            const ms=Date.parse(o.zeit);
+            if(!isFinite(ms)||_tagLokal(ms)!==tagIso)return;
+            raus.push({ms:ms,feld:f,art:(f==='ortStart'?'Start':'Stopp'),o:o,z:z,t:t,board:bn,
+              sichtbar:q[1]&&!t.archiviert,
+              mitOrt:!o.fehler&&isFinite(parseFloat(o.lat))&&isFinite(parseFloat(o.lon))});
+          });
+        });
+      });
+    });
+  });
+  raus.sort(function(a,b){return (a.ms-b.ms)||(a.feld==='ortStart'?-1:1);});
+  let nr=0;
+  raus.forEach(function(p){p.nr=p.mitOrt?++nr:0;});
+  return raus;
+}
+function _tagSumme(punkte){
+  const zeilen=[],karten={};
+  punkte.forEach(function(p){if(zeilen.indexOf(p.z)<0)zeilen.push(p.z);karten[p.t.id]=1;});
+  const min=zeilen.reduce(function(s,z){return s+parseMinutes(z.von,z.bis);},0);
+  return {min:min,zeiten:zeilen.length,karten:Object.keys(karten).length};
+}
+function _tagMeter(a,b){
+  const r=Math.PI/180,dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r;
+  const x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*6371000*Math.asin(Math.sqrt(x));
+}
+// Aufeinanderfolgende Punkte am selben Ort -> eine Nadel. Nur AUFEINANDERFOLGENDE: wer
+// mittags zur ersten Baustelle zurueckkehrt, bekommt dort eine eigene, spaetere Nadel.
+function _tagGruppen(punkte){
+  const gr=[];
+  punkte.forEach(function(p,idx){
+    if(!p.mitOrt)return;
+    const pos={lat:parseFloat(p.o.lat),lon:parseFloat(p.o.lon)};
+    const letzte=gr[gr.length-1];
+    if(letzte&&_tagMeter(letzte.pos,pos)<TAG_GLEICH_M)letzte.idx.push(idx);
+    else gr.push({pos:pos,idx:[idx]});
+  });
+  return gr;
+}
+function _tagLabel(g,punkte){
+  const n=g.idx.map(function(i){return punkte[i].nr;});
+  return n.length>2?(n[0]+'–'+n[n.length-1]):n.join('·');
+}
+function _tagGoogleRoute(punkte){
+  const gr=_tagGruppen(punkte);
+  if(gr.length<2||gr.length>TAG_GOOGLE_MAX)return '';
+  const ll=function(g){return g.pos.lat+','+g.pos.lon;};
+  let u='https://www.google.com/maps/dir/?api=1&origin='+ll(gr[0])+'&destination='+ll(gr[gr.length-1]);
+  if(gr.length>2)u+='&waypoints='+gr.slice(1,-1).map(ll).join('%7C');
+  return u+'&travelmode=driving';
+}
+function _tagTitel(tagIso){
+  const t=tagIso.split('-').map(Number);
+  const dt=new Date(t[0],t[1]-1,t[2]);
+  const g=new Date();g.setDate(g.getDate()-1);
+  const vor=(tagIso===_tagLokal(Date.now()))?'Heute, ':(tagIso===_tagLokal(g.getTime())?'Gestern, ':'');
+  return vor+['So','Mo','Di','Mi','Do','Fr','Sa'][dt.getDay()]+' '+_tagP2(t[2])+'.'+_tagP2(t[1])+'.'+t[0];
+}
+// 'beide', wenn die Karte Start und Stopp als EINE Zeile zeigt - dieselbe Regel wie _ortZeile
+function _tagFeld(p){
+  const a=p.z.ortStart,b=p.z.ortStopp;
+  const gleich=a&&b&&!a.fehler&&!b.fehler&&(a.adresse||'')===(b.adresse||'')
+    &&((a.passtZu&&a.passtZu.id)||'')===((b.passtZu&&b.passtZu.id)||'')&&!!a.vonHand===!!b.vonHand;
+  return gleich?'beide':p.feld;
+}
+function _tagKnoepfe(p,idx){
+  let h='';
+  if(p.sichtbar)h+='<button class="tag-chip" onclick="event.stopPropagation();_tagKarteOeffnen('+idx+')">📄 Karte</button>';
+  if(p.sichtbar&&p.mitOrt)h+='<button class="tag-chip" onclick="event.stopPropagation();_tagBearbeiten('+idx+')">✎ Adresse</button>';
+  if(p.mitOrt)h+='<a class="tag-chip" href="'+escAttr('https://www.google.com/maps/search/?api=1&query='+parseFloat(p.o.lat)+','+parseFloat(p.o.lon))+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ Google</a>';
+  return h?'<div class="tag-knoepfe">'+h+'</div>':'';
+}
+function _tagListeHtml(punkte){
+  if(!punkte.length)return '<div class="tag-leer">An diesem Tag gibt es keine Start- oder Stopp-Standorte.<br>Standorte werden seit dem 13.09.2026 gespeichert.</div>';
+  const s=_tagSumme(punkte);
+  let h='<div class="tag-summe">'+s.zeiten+' '+(s.zeiten===1?'Zeit':'Zeiten')+' · '+_tagDauer(s.min)+' · '+s.karten+' '+(s.karten===1?'Karte':'Karten')+'</div>';
+  punkte.forEach(function(p,idx){
+    h+='<div class="tag-zeile'+(p.mitOrt?'':' tag-ohne')+'"'+(p.mitOrt?' onclick="_tagZeigen('+idx+')"':'')+'>'
+      +'<span class="tag-nr tag-'+(p.feld==='ortStart'?'start':'stopp')+'">'+(p.mitOrt?p.nr:'–')+'</span>'
+      +'<div class="tag-text">'
+      +'<div class="tag-kopf">'+_tagZeitHm(p.ms)+' '+p.art+' · '+esc(p.t.title||'(ohne Titel)')+'</div>'
+      +(p.sichtbar?'':'<div class="tag-klein">💻 nur am PC</div>')
+      +'<div class="tag-adr">'+(p.mitOrt
+        ?(esc(p.o.adresse||'Adresse nicht gefunden')+' <span class="tag-klein">±'+Number(p.o.acc)+' m</span>')
+        :('ohne Standort ('+esc(p.o.fehler||'')+')'))+'</div>'
+      +(p.mitOrt&&p.o.vonHand?'<div class="tag-klein">von Hand geändert · gemessen: '+esc(p.o.adresseGemessen||'keine Adresse')+'</div>':'')
+      +(p.mitOrt&&p.o.passtZu&&p.o.passtZu.id?'<div class="tag-klein">↳ passt zu: '+esc(p.o.passtZu.titel||'')+'</div>':'')
+      +_tagKnoepfe(p,idx)
+      +'</div></div>';
+  });
+  return h;
+}
+function _tagPopupHtml(punkte,idxListe){
+  return '<div class="tag-pop">'+idxListe.map(function(idx){
+    const p=punkte[idx];
+    return '<div class="tag-pop-z"><b>'+p.nr+'</b> · '+_tagZeitHm(p.ms)+' '+p.art+' · '+esc(p.t.title||'(ohne Titel)')
+      +'<br>'+esc(p.o.adresse||'Adresse nicht gefunden')+' ±'+Number(p.o.acc)+' m</div>';
+  }).join('')+_tagKnoepfe(punkte[idxListe[0]],idxListe[0])+'</div>';
+}
+function _tagKarteZeichnen(punkte){
+  const el=document.getElementById('tagKarte');if(!el)return;
+  const gr=_tagGruppen(punkte);
+  _tagMarker=[];
+  el.style.display=gr.length?'block':'none';
+  if(!gr.length)return;
+  if(typeof L==='undefined'){el.innerHTML='<div class="tag-leer">Karte nicht verfügbar – die Liste unten gilt trotzdem.</div>';return;}
+  if(!_tagMap){
+    _tagMap=L.map(el,{zoomControl:true});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(_tagMap);
+    _tagEbene=L.layerGroup().addTo(_tagMap);
+  }
+  _tagEbene.clearLayers();
+  const ll=gr.map(function(g){return [g.pos.lat,g.pos.lon];});
+  if(ll.length>1)L.polyline(ll,{color:'#2b5fd0',weight:3,dashArray:'6 6',interactive:false}).addTo(_tagEbene);
+  gr.forEach(function(g){
+    const erster=punkte[g.idx[0]], lab=_tagLabel(g,punkte);
+    const breite=Math.max(30,14+String(lab).length*9);
+    const mk=L.marker([g.pos.lat,g.pos.lon],{icon:L.divIcon({className:'',
+      html:'<div class="tag-pin tag-'+(erster.feld==='ortStart'?'start':'stopp')+'">'+esc(lab)+'</div>',
+      iconSize:[breite,30],iconAnchor:[breite/2,15]})});
+    mk.bindPopup(_tagPopupHtml(punkte,g.idx));
+    mk.addTo(_tagEbene);
+    g.idx.forEach(function(i){_tagMarker[i]=mk;});
+  });
+  // erst nach dem Einblenden messen - Leaflet kennt sonst die Groesse des Kastens nicht
+  setTimeout(function(){try{
+    _tagMap.invalidateSize();
+    if(ll.length===1)_tagMap.setView(ll[0],17);else _tagMap.fitBounds(ll,{padding:[30,30],maxZoom:17});
+  }catch(e){console.warn('[Mein Tag] Karte',e);}},60);
+}
+function _tagOffen(){const bl=document.getElementById('tagBlatt');return !!(bl&&bl.style.display==='block');}
+function _tagAuf(){
+  const bl=document.getElementById('tagBlatt');if(!bl)return;
+  _tagIso=_tagLokal(Date.now());
+  bl.style.display='block';bl.scrollTop=0;
+  _tagNeuZeichnen();
+}
+function _tagZu(){const bl=document.getElementById('tagBlatt');if(bl)bl.style.display='none';}
+function _tagVerschieben(tage){
+  if(tage>0&&_tagIso>=_tagLokal(Date.now()))return; // keine Tage in der Zukunft
+  const t=_tagIso.split('-').map(Number);
+  _tagIso=_tagLokal(new Date(t[0],t[1]-1,t[2]+tage).getTime());
+  _tagNeuZeichnen();
+}
+function _tagNeuZeichnen(){
+  if(!_tagOffen())return;
+  const punkte=_tagPunkte(_tagIso);
+  _tagAktuell=punkte;
+  const dt=document.getElementById('tagDatum');if(dt)dt.textContent=_tagTitel(_tagIso);
+  const wb=document.getElementById('tagWeiter');if(wb)wb.style.visibility=(_tagIso>=_tagLokal(Date.now()))?'hidden':'visible';
+  const gr=_tagGruppen(punkte);
+  const hw=document.getElementById('tagHinweis');if(hw)hw.style.display=gr.length>1?'block':'none';
+  const ro=document.getElementById('tagRoute');
+  if(ro){
+    const u=_tagGoogleRoute(punkte);
+    ro.innerHTML=u?'<a class="tag-route" href="'+escAttr(u)+'" target="_blank" rel="noopener">↗ Route in Google Maps</a>'
+      :(gr.length>TAG_GOOGLE_MAX?'<div class="tag-hinweis">Für eine Google-Route sind es zu viele Orte ('+gr.length+', höchstens '+TAG_GOOGLE_MAX+').</div>':'');
+  }
+  const li=document.getElementById('tagListe');if(li)li.innerHTML=_tagListeHtml(punkte);
+  _tagKarteZeichnen(punkte);
+}
+function _tagZeigen(idx){
+  const mk=_tagMarker[idx];if(!mk||!_tagMap)return;
+  try{
+    _tagMap.setView(mk.getLatLng(),Math.max(_tagMap.getZoom(),16));
+    mk.openPopup();
+    const bl=document.getElementById('tagBlatt');if(bl)bl.scrollTop=0;
+  }catch(e){console.warn('[Mein Tag] zeigen',e);}
+}
+function _tagKarteOeffnen(idx){
+  const p=_tagAktuell[idx];if(!p||!p.sichtbar)return;
+  if(!findTaskById(p.t.id))return;
+  _tagZu();
+  openDetail(p.t.id);
+}
+function _tagBearbeiten(idx){
+  const p=_tagAktuell[idx];if(!p||!p.sichtbar||!p.mitOrt)return;
+  const t=findTaskById(p.t.id);if(!t)return;
+  const liste=t.zeitEntries||[];
+  let i=liste.indexOf(p.z);
+  // nach einem Abgleich kann die Zeile ein neues Objekt sein - dann ueber die Kennung
+  if(i<0&&p.z.uhrStart!=null)i=liste.findIndex(function(z){return z&&z.uhrStart===p.z.uhrStart;});
+  if(i<0)return;
+  _ortBearbeitenFuer(t,i,_tagFeld(p));
 }
 
 // ══ NOTIZEN (chronologisch) ══
