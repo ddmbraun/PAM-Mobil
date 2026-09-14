@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v292';
+const MOB_VERSION='v293';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11076,13 +11076,13 @@ async function _fsMobPdf(bericht,task){
    Die App speichert Werte (JSON, .tjf – öffentliches testo-Format) und Foto GETRENNT; das Foto zeigt
    weder Werte noch Laserpunkt. Deshalb: aus dem festen Drive-Ordner „testo-Eingang" lesen, je Datei
    eine Messstelle anlegen, die Werte ins Foto zeichnen (Messbild), den Messpunkt antippen lassen und
-   die Rohdateien danach in den Auftragsordner verschieben.
+   Kopien der Rohdateien in den Auftragsordner legen (v293 – Verschieben verweigerte Google).
    ⛔ Geprüft an echten Dateien: Thermometer beim Speichern aus (kein SurfaceTemperature-Kanal),
      fest eingestellte Luftwerte (MoldManualAirTemp/MoldManualHumidity), Foto nicht mitgeteilt.
      Alle drei Fälle werden als Hinweis an der Messstelle gezeigt, nie still übergangen.
    ⛔ Die Oberflächenfeuchte rechnet PAM selbst (Luft aus derselben Messung); testos Wert steht nur daneben.
-   ⛔ Verschoben wird erst NACH dem Anlegen der Stelle – schlägt das Verschieben fehl, bleibt die Datei im
-     Eingang und ist als „schon eingelesen" markiert. */
+   ⛔ Kopiert wird erst NACH dem Anlegen der Stelle. Die Originale bleiben im Eingang und sind als
+     „schon eingelesen" markiert – über alle Karten (v293). */
 const FS_TESTO_ORDNER='testo-Eingang';
 
 function _fsZeitText(ms){
@@ -11186,12 +11186,36 @@ async function _fsTestoListe(ordnerId){
 }
 async function _fsDriveText(id){return await (await _fsDriveGet('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?alt=media')).text();}
 async function _fsDriveBlob(id){return await (await _fsDriveGet('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?alt=media')).blob();}
-// Datei in Drive umhängen (Kennung bleibt) – nur mit beiden Ordnern
-async function _fsDriveVerschieben(id,vonId,nachId){
-  if(!id||!vonId||!nachId||vonId===nachId)return false;
-  const r=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?addParents='+encodeURIComponent(nachId)+'&removeParents='+encodeURIComponent(vonId)+'&fields=id,parents',
-    {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:'{}'});
-  return r.ok;
+// v293: KOPIE als neue Datei hochladen. Verschieben ging nicht – PAM Mobil darf Dateien, die die Drive-App angelegt hat,
+//   nur LESEN (Befund 14.09.2026 an einer echten Messung, Anmelde-Rechte drive.file + drive.readonly). Eigene Dateien sind erlaubt.
+async function _fsDriveKopieHochladen(inhalt,name,mime,ordnerId){
+  if(inhalt===null||inhalt===undefined||!name||!ordnerId)return null;
+  const blob=(inhalt instanceof Blob)?inhalt:new Blob([String(inhalt)],{type:mime||'application/octet-stream'});
+  const r=await _uploadMitGeduld(signal=>{
+    const form=new FormData();
+    form.append('metadata',new Blob([JSON.stringify({name:name,parents:[ordnerId],mimeType:mime||blob.type||'application/octet-stream'})],{type:'application/json'}));
+    form.append('file',blob);
+    return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form,signal:signal});
+  },{bytes:blob.size,name:name,folderId:ordnerId});
+  const j=await r.json();
+  return (j&&j.id)||null;
+}
+// v293: Wurde die testo-Datei schon an IRGENDEINER Karte eingelesen? (Originale bleiben im Eingang liegen)
+function _fsTestoEingelesenIn(listen,dateiName){
+  if(!dateiName)return null;
+  for(const arr of (listen||[])){
+    for(const k of (arr||[])){
+      if(!k||!Array.isArray(k.pruefberichte))continue;
+      for(const pb of k.pruefberichte){
+        if(pb&&pb.vorlage==='feuchte'&&_fsTestoSchonDa(pb,dateiName))return {id:k.id,titel:k.title||''};
+      }
+    }
+  }
+  return null;
+}
+// v293: noch nicht eingelesene zuerst, jeweils nach Messzeit
+function _fsTestoSortieren(liste){
+  return liste.sort((a,b)=>((a.schonDa?1:0)-(b.schonDa?1:0))||((a.zeit||0)-(b.zeit||0)));
 }
 
 // Messbild: Werte wie in der Kamera-Ansicht der testo-App ins Foto zeichnen, dazu der angetippte Messpunkt
@@ -11318,7 +11342,7 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
   const jsons=dateien.filter(f=>/\.(tjf|json)$/i.test(f.name||''));
   const bilder=dateien.filter(f=>/\.(jpe?g|png)$/i.test(f.name||''));
   const csvs=dateien.filter(f=>/\.csv$/i.test(f.name||'')).length;
-  const csvText=csvs?' '+csvs+' CSV-Datei'+(csvs===1?'':'en')+' im Ordner werden nicht eingelesen – in der testo-App bitte als JSON speichern.':'';
+  const csvText=csvs?' '+csvs+' CSV-Datei'+(csvs===1?' im Ordner wird':'en im Ordner werden')+' nicht eingelesen – in der testo-App bitte als JSON speichern.':'';
   if(!jsons.length){info('Keine testo-Messungen im Ordner. In der testo-App: Speichern → Teilen → Google Drive → „'+FS_TESTO_ORDNER+'".'+csvText);return;}
   info('Lese '+jsons.length+' Messung'+(jsons.length===1?'':'en')+' …');
 
@@ -11326,15 +11350,17 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
   const messungen=[];
   for(const f of jsons.slice(0,40)){
     try{
-      const m=_fsTestoLesen(await _fsDriveText(f.id),bildNamen);
+      const text=await _fsDriveText(f.id);
+      const m=_fsTestoLesen(text,bildNamen);
       if(!m.ok){messungen.push({fehler:m.fehler,datei:f.name});continue;}
-      m.datei=f.name;m.dateiId=f.id;
+      m.datei=f.name;m.dateiId=f.id;m.text=text;
       m.bildDatei=bilder.find(b=>b.name===m.bild)||null;
       m.schonDa=_fsTestoSchonDa(bericht,f.name);
+      if(!m.schonDa){const woanders=_fsTestoEingelesenIn(typeof _alleTaskListen==='function'?_alleTaskListen():[],f.name);if(woanders){m.schonDa=true;m.schonDaKarte=(t&&woanders.id===t.id)?'':woanders.titel;}} // v293
       messungen.push(m);
     }catch(e){messungen.push({fehler:String((e&&e.message)||e),datei:f.name});}
   }
-  messungen.sort((a,b)=>(a.zeit||0)-(b.zeit||0));
+  _fsTestoSortieren(messungen); // v293: noch nicht eingelesene zuerst
 
   const gewaehlt=new Set();
   const raumLab=document.createElement('label');raumLab.style.cssText='font-size:13px;color:var(--text2);';raumLab.textContent='Raum für die neuen Messstellen';
@@ -11363,14 +11389,14 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
 
   inhalt.innerHTML='';
   const hinweis=document.createElement('div');hinweis.style.cssText='font-size:13px;color:var(--text2);margin:0 0 8px;line-height:1.45;';
-  hinweis.textContent='Ordner „'+FS_TESTO_ORDNER+'" · Messungen antippen. Nach dem Einlesen kommen die Dateien in den Ordner des Auftrags.'+csvText;
+  hinweis.textContent='Ordner „'+FS_TESTO_ORDNER+'" · Messungen antippen. PAM legt beim Einlesen eine Kopie in den Ordner des Auftrags – die Originale hier kannst du später in Drive löschen.'+csvText;
   inhalt.appendChild(hinweis);
   messungen.forEach((m,i)=>{
     const row=document.createElement('button');row.type='button';row.setAttribute('data-fs-testo',String(i));
     row.style.cssText='display:block;width:100%;text-align:left;margin:0 0 8px;padding:12px;border-radius:10px;border:2px solid var(--border);background:var(--bg2);color:var(--text);font-family:inherit;cursor:pointer;';
     if(m.fehler){row.disabled=true;row.textContent='⛔ '+m.datei+': '+m.fehler;inhalt.appendChild(row);return;}
     const z1=document.createElement('div');z1.style.cssText='font-size:16px;font-weight:700;';
-    z1.textContent=(m.zeit?_fsZeitText(m.zeit):m.datei)+(m.schonDa?' · schon eingelesen':'');
+    z1.textContent=(m.zeit?_fsZeitText(m.zeit):m.datei)+(m.schonDa?' · schon eingelesen'+(m.schonDaKarte?' ('+m.schonDaKarte+')':''):'');
     const z2=document.createElement('div');z2.style.cssText='font-size:14px;margin-top:3px;';
     z2.textContent='Luft '+(m.luftT===null?'–':_fsEins(m.luftT)+' °C')+' · '+(m.luftRf===null?'–':_fsEins(m.luftRf)+' %')
       +' · Oberfläche '+(m.ts===null?'–':_fsEins(m.ts)+' °C')+' · '+(m.bildDatei?'📷 Foto':'ohne Foto');
@@ -11395,7 +11421,7 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
     const ziel=_extractFolderIdMob((t&&t.dokOrdner)||'')||_extractFolderIdMob((t&&t.gdrive)||'')||_extractFolderIdMob((t&&t.gdriveOrdner)||'');
     const raumName=raumSel.value==='__neu'?'':raumSel.value;
     const liste=[...gewaehlt].sort((a,b)=>a-b);
-    let n=0,bildN=0,verschoben=0,fehler=0;
+    let n=0,bildN=0,kopiert=0,fehler=0;
     for(const i of liste){
       const m=messungen[i];
       knopf.textContent='⏳ '+(n+fehler+1)+' von '+liste.length+' …';
@@ -11409,6 +11435,7 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
         if(m.bildDatei){
           try{
             const blob=await _fsDriveBlob(m.bildDatei.id);
+            m.bildBlob=blob;
             const bu=URL.createObjectURL(blob);
             ov.style.display='none';
             const punkt=await _fsMesspunktWaehlen(bu,'Stelle '+nr);
@@ -11445,10 +11472,13 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
             }else st.testo.warnungen.push('Messbild konnte nicht erstellt werden');
           }catch(e){console.warn('[testo] Messbild:',e);ov.style.display='flex';st.testo.warnungen.push('Messbild konnte nicht erstellt werden');}
         }
+        // v293: KOPIE in den Auftragsordner – das Umhängen fremder Dateien verweigerte Google
         if(ziel){
-          for(const id of [m.dateiId].concat(m.bildDatei?[m.bildDatei.id]:[])){
-            try{if(await _fsDriveVerschieben(id,ordnerId,ziel))verschoben++;}catch(e){console.warn('[testo] Verschieben:',e);}
+          try{const kid=await _fsDriveKopieHochladen(m.text,m.datei,'application/json',ziel);if(kid){st.testo.kopieId=kid;kopiert++;}}catch(e){console.warn('[testo] Kopie Datei:',e);}
+          if(m.bildDatei){
+            try{const bb=m.bildBlob||await _fsDriveBlob(m.bildDatei.id);const fid=await _fsDriveKopieHochladen(bb,m.bildDatei.name,'image/jpeg',ziel);if(fid){st.testo.fotoKopieId=fid;kopiert++;}}catch(e){console.warn('[testo] Kopie Foto:',e);}
           }
+          scheduleSave();
         }
       }catch(e){fehler++;console.warn('[testo] Einlesen:',e);}
     }
@@ -11459,7 +11489,7 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
     if(bericht.fotos.some(f=>f&&f.localKey&&!f.driveId)&&typeof _mobRetryPendingUploads==='function'){try{_mobRetryPendingUploads();}catch(e){console.warn('[testo] Upload:',e);}}
     toast('✓ '+n+' Messung'+(n===1?'':'en')+' eingelesen'
       +(bildN?' · '+bildN+' Messbild'+(bildN===1?'':'er'):'')
-      +(ziel?(verschoben?' · Dateien im Auftragsordner':''):' · ⚠ kein Drive-Ordner an der Karte – Dateien bleiben im Eingang')
+      +(ziel?(kopiert?' · Kopie im Auftragsordner':''):' · ⚠ kein Drive-Ordner an der Karte – keine Kopie beim Auftrag')
       +(fehler?' · '+fehler+' Fehler':''),fehler?'error':'success',6000);
   };
 }
