@@ -4915,7 +4915,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v286';
+const MOB_VERSION='v287';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -13705,7 +13705,7 @@ function toggleMobileTimer(taskId){
     const endMs=Date.now();
     const beschreibung=(s.beschreibung||'').trim()||'Stoppuhr';
     if(!t.timeEntries)t.timeEntries=[];
-    const open=t.timeEntries.find(e=>!e.end);
+    const open=t.timeEntries.find(e=>!e.end&&e.start===startMs)||t.timeEntries.slice().reverse().find(e=>!e.end); // v287: die Zeile DIESER Uhr, sonst die juengste – nie ein alter Rest
     if(open){open.end=endMs;}
     else{t.timeEntries.push({start:startMs,end:endMs});}
     const d1=new Date(startMs),d2=new Date(endMs);
@@ -13754,7 +13754,7 @@ function toggleMobileTimer(taskId){
       if(other){
         const startMs=s.startMs||Date.now();const endMs=Date.now();
         if(!other.timeEntries)other.timeEntries=[];
-        const open=other.timeEntries.find(e=>!e.end);
+        const open=other.timeEntries.find(e=>!e.end&&e.start===startMs)||other.timeEntries.slice().reverse().find(e=>!e.end); // v287: wie beim Stoppen
         if(open)open.end=endMs;else other.timeEntries.push({start:startMs,end:endMs});
         const d1=new Date(startMs),d2=new Date(endMs);const pad=n=>String(n).padStart(2,'0');
         if(!other.zeitEntries)other.zeitEntries=[];
@@ -13808,7 +13808,7 @@ function _stopTimerWithEnd(endMs,nachgetragen){
   endMs=Math.min(Math.max(startMs,endMs||Date.now()),Date.now());
   const beschreibung=(s.beschreibung||'').trim()||'Stoppuhr';
   if(!t.timeEntries)t.timeEntries=[];
-  const open=t.timeEntries.find(e=>!e.end);
+  const open=t.timeEntries.find(e=>!e.end&&e.start===startMs)||t.timeEntries.slice().reverse().find(e=>!e.end); // v287: die Zeile DIESER Uhr, sonst die juengste – nie ein alter Rest
   if(open){open.end=endMs;}else{t.timeEntries.push({start:startMs,end:endMs});}
   const d1=new Date(startMs),d2=new Date(endMs);
   const pad=n=>String(n).padStart(2,'0');
