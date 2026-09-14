@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v293';
+const MOB_VERSION='v294';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10382,7 +10382,7 @@ const FS_BEWERTUNGEN=[
   {k:'C',text:'beides'}
 ];
 const FS_LEGENDE='Taupunkt nach Magnus-Formel aus Raumtemperatur und Luftfeuchte. Abstand = Oberflächentemperatur minus Taupunkt. '
-  +'Oberflächenfeuchte = Luftfeuchte, umgerechnet auf die gemessene Oberflächentemperatur: unter 70 % grün, 70 bis unter 80 % gelb, ab 80 % rot (Schimmelgefahr). '
+  +'Oberflächenfeuchte = Luftfeuchte, umgerechnet auf die gemessene Oberflächentemperatur: unter 60 % grün, 60 bis unter 80 % gelb, ab 80 % rot (Schimmelgefahr, Grenze nach DIN 4108-2). '
   +'Bauteilfeuchte in Digits: Vergleichswerte, keine Masse-%. Temperaturfaktor nur bei mindestens 10 K zwischen innen und außen; Mindestwert 0,70 nach DIN 4108-2.';
 const _fsPdfBlobs={}; // zuletzt erstelltes PDF je Bericht – bewusst NICHT am Bericht (würde mitgespeichert)
 
@@ -10407,7 +10407,7 @@ function _fsOberflaechenFeuchte(T,rf,ts){
 }
 function _fsAmpel(ofRf){
   if(ofRf===null||ofRf===undefined)return '';
-  return ofRf<70?'gruen':ofRf<80?'gelb':'rot';
+  return ofRf<60?'gruen':ofRf<80?'gelb':'rot'; // v294: gelb ab 60 % (Franks Entscheidung), rot ab 80 % (DIN 4108-2)
 }
 function _fsEins(n){
   if(n===null||n===undefined||!isFinite(n))return '–';
@@ -10421,6 +10421,9 @@ function _fsStelleWerte(bericht,st){
   const td=(T!==null&&rf!==null)?_fsTaupunkt(T,rf):null;
   const abstand=(td!==null&&ts!==null)?ts-td:null;
   const ofRf=(T!==null&&rf!==null&&ts!==null)?_fsOberflaechenFeuchte(T,rf,ts):null;
+  let grenzeTs=null; // v294: Schimmelgrenze = Oberflächentemperatur, bei der die Oberfläche 80 % erreicht
+  if(T!==null&&rf!==null&&rf>0&&rf<=100){const ga=Math.log(rf/80)+17.62*T/(243.12+T);grenzeTs=243.12*ga/(17.62-ga);}
+  const reserve=(grenzeTs!==null&&ts!==null)?ts-grenzeTs:null;
   const ta=_fsZahl(bericht&&bericht.kopf&&bericht.kopf.aussenT);
   const frsi=(T!==null&&ta!==null&&ts!==null&&(T-ta)>=10)?(ts-ta)/(T-ta):null;
   const mf=_fsZahl(st&&st.mf),mv=_fsZahl(st&&st.mfVergleich);
@@ -10432,16 +10435,15 @@ function _fsStelleWerte(bericht,st){
     hinweise.push('Feucht, obwohl 3 K oder mehr über dem Taupunkt – spricht gegen Tauwasser: Wasser von außen/oben prüfen');
   if(abstand!==null&&abstand<=1)hinweise.push('Oberfläche am Taupunkt – Tauwasser möglich');
   if(frsi!==null&&frsi<0.7)hinweise.push('Temperaturfaktor unter 0,70 (Mindestwert DIN 4108-2)');
-  return {raumGefunden:!!raum||eigeneLuft,luftQuelle:eigeneLuft?'testo':(raum?'raum':''),T,rf,td,ts,abstand,ofRf,ampel:_fsAmpel(ofRf),frsi,mf,mv,faktor,hinweise};
+  return {raumGefunden:!!raum||eigeneLuft,luftQuelle:eigeneLuft?'testo':(raum?'raum':''),T,rf,td,ts,abstand,ofRf,ampel:_fsAmpel(ofRf),frsi,mf,mv,faktor,hinweise,grenzeTs,reserve};
 }
 function _fsNeuerBericht(t){
   const jetzt=new Date();
   return {
     id:'fs_'+Date.now(),vorlage:'feuchte',titel:'Feuchte- und Schimmelprotokoll',
     datum:jetzt.toLocaleDateString('de-DE'),createdAt:jetzt.toISOString(),
-    kopf:{auftraggeber:(t&&t.hausverwaltung)||'',objektAdresse:(t&&(t.adresse||t.title))||'',auftragNr:(t&&(t.repNr||t.kundenNr))||'',
-      nutzer:'',anwesend:'',uhrzeit:jetzt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),
-      wetter:'',letzterRegen:'',aussenT:'',aussenRf:'',messgeraete:'',pruefer:''},
+    kopf:Object.assign({anwesend:'',uhrzeit:jetzt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),
+      wetter:'',letzterRegen:'',aussenT:'',aussenRf:'',messgeraete:'',pruefer:''},_fsKopfAusKarte(t)), // v294: Auftraggeber, Nutzer, Auftrag-Nr., Objekt
     raeume:[],stellen:[],
     sektionen:FS_SEKTIONEN_DEF.map(s=>({titel:s.titel,items:s.items.map(text=>({text,status:'offen',notiz:''}))})),
     bewertung:'',bemerkung:'',empfehlungen:'',fotos:[]
@@ -10460,10 +10462,143 @@ function _fsVervollstaendigen(b){
   if(typeof b.empfehlungen!=='string')b.empfehlungen='';
   return b;
 }
-function _fsPdfName(bericht){
+function _fsPdfName(bericht,zeit){
   const d=String((bericht&&bericht.datum)||'').split('.');
   const datum=(d.length===3&&d[2])?(('0'+d[0]).slice(-2)+'-'+('0'+d[1]).slice(-2)+'-'+d[2]):'';
-  return 'Feuchteprotokoll'+(datum?'_'+datum:'')+'.pdf';
+  const uhr=(zeit instanceof Date&&isFinite(zeit.getTime()))?'_'+('0'+zeit.getHours()).slice(-2)+('0'+zeit.getMinutes()).slice(-2):''; // v294
+  return 'Feuchteprotokoll'+(datum?'_'+datum:'')+uhr+'.pdf';
+}
+
+/* ══ v294: AUSFÜLLHILFEN UND ERGEBNIS (Wunsch Frank 14.09.2026) ═══════════════════════════════
+   · Kopf aus der Karte: Auftraggeber = Hausverwaltung › Rechnungsanschrift › Kontakt (Auftraggeber/Privatkunde/
+     Eigentümer/Hausverwaltung), Nutzer = Kontakte mit Rolle Mieter, Auftrag-Nr. = Vorgangsnummer + Rep-Nr.,
+     Objekt = Adresse › Objektname. „↻ aus Karte" füllt nur LEERE Felder.
+   · 🌤 Wetter holen: Standort → Open-Meteo (Temperatur, Luftfeuchte, Wetterlage, Niederschlag der letzten 7 Tage).
+   · Ampel: gelb ab 60 % (Franks Entscheidung), rot ab 80 % (Kriterium DIN 4108-2). testo nennt öffentlich keine Zahlen.
+   · Schimmelgrenze = Oberflächentemperatur, bei der die Oberfläche 80 % erreicht; Reserve = Oberfläche minus Grenze.
+   · Ungenutzte Checklisten (alles offen, keine Notiz) stehen im PDF nur als „Nicht geprüft".
+   ⛔ Texte, die ins PDF gehen, nur mit Zeichen der PDF-Schrift (kein Emoji – Emoji nur in der Anzeige). */
+const FS_WOHNUNG=['Wohnzimmer','Schlafzimmer','Küche','Bad','Flur'];
+
+function _fsKontaktName(k){return String((k&&(k.name||k.firma))||'').trim();}
+function _fsKopfAusKarte(t){
+  const kontakte=(t&&Array.isArray(t.kontakte))?t.kontakte:[];
+  const nachRolle=rollen=>{const k=kontakte.find(x=>x&&rollen.indexOf(x.rolle)>=0&&_fsKontaktName(x));return k?_fsKontaktName(k):'';};
+  const rech=t&&t.rechnungsanschrift;
+  const rechName=(typeof rech==='string')?rech.split(/\r?\n|,/)[0].trim():String((rech&&(rech.name||rech.firma))||'').trim();
+  const auftraggeber=String((t&&t.hausverwaltung)||'').trim()||rechName||nachRolle(['ag','privatkunde','eigentuemer','hausverwaltung']);
+  const nutzer=kontakte.filter(x=>x&&x.rolle==='mieter'&&_fsKontaktName(x)).map(_fsKontaktName).join(', ');
+  const quelle=[String((t&&t.title)||'')].concat((t&&Array.isArray(t.tags))?t.tags.map(String):[]).join(' ');
+  const vm=/(?:^|\D)(2\d{5})(?!\d)/.exec(quelle);
+  const auftragNr=[vm?vm[1]:'',(t&&t.repNr)?'Rep '+t.repNr:''].filter(Boolean).join(' · ')||String((t&&t.kundenNr)||'');
+  const objektAdresse=String((t&&(t.adresse||t.objektName))||'').trim();
+  return {auftraggeber,nutzer,auftragNr,objektAdresse};
+}
+// Nur leere Felder füllen – was Frank schon eingetragen hat, bleibt stehen. Gibt die Zahl der gefüllten Felder zurück.
+function _fsKopfErgaenzen(bericht,t){
+  if(!bericht||!bericht.kopf)return 0;
+  const v=_fsKopfAusKarte(t);let n=0;
+  Object.keys(v).forEach(key=>{if(v[key]&&!String(bericht.kopf[key]||'').trim()){bericht.kopf[key]=v[key];n++;}});
+  return n;
+}
+
+// Klartext zu einer Messstelle – ohne Emoji (geht auch ins PDF)
+function _fsKlartext(w){
+  if(!w||w.ofRf===null||w.ofRf===undefined||w.grenzeTs===null||w.grenzeTs===undefined||w.ts===null||w.ts===undefined)return {stufe:'',text:''};
+  const ts=_fsEins(w.ts),g=_fsEins(w.grenzeTs),res=w.reserve;
+  if(w.ampel==='gruen')return {stufe:'gruen',text:'Keine Schimmelgefahr: Oberfläche '+ts+' °C, kritisch erst unter '+g+' °C (80 % an der Oberfläche) – Reserve '+_fsEins(res)+' K.'};
+  if(w.ampel==='gelb')return {stufe:'gelb',text:'Mögliches Schimmelrisiko: Oberfläche '+ts+' °C, nur noch '+_fsEins(res)+' K über der Schimmelgrenze von '+g+' °C.'};
+  return {stufe:'rot',text:'Akute Schimmelgefahr: Oberfläche '+ts+' °C liegt '+_fsEins(Math.max(0,-res))+' K unter der Schimmelgrenze von '+g+' °C.'};
+}
+// Gesamtergebnis über alle Messstellen – die schlechteste Ampel bestimmt die Stufe
+function _fsErgebnis(bericht){
+  const w=((bericht&&bericht.stellen)||[]).map(st=>_fsStelleWerte(bericht,st));
+  const bew=w.filter(x=>x.ampel);
+  const z={gruen:0,gelb:0,rot:0};bew.forEach(x=>{z[x.ampel]++;});
+  const hinweise=w.reduce((s,x)=>s+x.hinweise.length,0);
+  const n=w.length,b=bew.length;
+  const stufe=z.rot?'rot':z.gelb?'gelb':b?'gruen':'';
+  let text;
+  if(!n)text='Noch keine Messstelle.';
+  else if(!b)text=n+(n===1?' Messstelle':' Messstellen')+', noch ohne Bewertung (Oberflächentemperatur oder Luftwerte fehlen).';
+  else if(n===1)text=_fsKlartext(bew[0]).text.replace(/^[^:]+: /,''); // eine Stelle: Klartext statt Zählung (Überschrift nennt die Stufe)
+  else if(stufe==='gruen')text=(b===1?'Keine Schimmelgefahr an der Messstelle':'Keine Schimmelgefahr an allen '+b+' bewerteten Messstellen')+(b<n?' ('+(n-b)+' ohne Bewertung)':'')+'.';
+  else text=[z.rot?z.rot+'× akute Schimmelgefahr':'',z.gelb?z.gelb+'× mögliches Schimmelrisiko':'',z.gruen?z.gruen+'× unauffällig':''].filter(Boolean).join(' · ')+(b<n?' · '+(n-b)+' ohne Bewertung':'')+'.';
+  if(hinweise)text+=' '+hinweise+(hinweise===1?' Hinweis':' Hinweise')+' beachten.';
+  const reserven=bew.map(x=>x.reserve).filter(r=>r!==null&&r!==undefined);
+  return {n,bewertet:b,gruen:z.gruen,gelb:z.gelb,rot:z.rot,hinweise,stufe,text,kleinsteReserve:reserven.length?Math.min.apply(null,reserven):null};
+}
+// Checkliste benutzt? – mindestens ein Punkt nicht mehr „offen" oder eine Notiz
+function _fsSektionGenutzt(sek){
+  return ((sek&&sek.items)||[]).some(it=>it&&((it.status&&it.status!=='offen')||String(it.notiz||'').trim()));
+}
+
+// Open-Meteo-Antwort auswerten (reine Funktion). Niederschlag ab 0,2 mm zählt als Regen.
+function _fsWetterAuswerten(d){
+  const c=(d&&d.current)||{};
+  const temp=(typeof c.temperature_2m==='number'&&isFinite(c.temperature_2m))?c.temperature_2m:null;
+  const rh=(typeof c.relative_humidity_2m==='number'&&isFinite(c.relative_humidity_2m))?c.relative_humidity_2m:null;
+  let wetter='';
+  if(typeof c.weather_code==='number'&&typeof _wmoToWetter==='function'){try{wetter=_wmoToWetter(c.weather_code,temp).lbl||'';}catch(e){wetter='';}}
+  const tage=(d&&d.daily&&Array.isArray(d.daily.time))?d.daily.time:[];
+  const mm=(d&&d.daily&&Array.isArray(d.daily.precipitation_sum))?d.daily.precipitation_sum:[];
+  let hi=tage.indexOf(String(c.time||'').slice(0,10));
+  if(hi<0)hi=tage.length-1;
+  let letzterRegen='';
+  if(hi>=0){
+    for(let i=hi;i>=0;i--){
+      const v=Number(mm[i]);
+      if(isFinite(v)&&v>=0.2){const ab=hi-i;letzterRegen=(ab===0?'heute':ab===1?'gestern':'vor '+ab+' Tagen')+', '+_fsEins(v)+' mm';break;}
+    }
+    if(!letzterRegen)letzterRegen='in den letzten '+hi+' Tagen kein Regen';
+  }
+  return {wetter,aussenT:temp===null?'':_fsEins(temp),aussenRf:rh===null?'':_fsEins(rh),letzterRegen};
+}
+function _fsWetterHolen(bericht,neuBauen){
+  if(!navigator.geolocation){toast('📍 Standort nicht verfügbar','error');return;}
+  toast('🌤 Standort und Wetter werden geholt …','info',3000);
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    try{
+      const lat=pos.coords.latitude.toFixed(4),lon=pos.coords.longitude.toFixed(4);
+      const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon
+        +'&current=temperature_2m,relative_humidity_2m,weather_code&daily=precipitation_sum&past_days=7&forecast_days=1&timezone=auto');
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const w=_fsWetterAuswerten(await r.json());
+      if(w.wetter)bericht.kopf.wetter=w.wetter;
+      if(w.aussenT)bericht.kopf.aussenT=w.aussenT;
+      if(w.aussenRf)bericht.kopf.aussenRf=w.aussenRf;
+      if(w.letzterRegen)bericht.kopf.letzterRegen=w.letzterRegen;
+      bericht.kopf.wetterQuelle='Open-Meteo '+new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      scheduleSave();
+      try{neuBauen();}catch(e){console.warn('[Feuchte] neu aufbauen:',e);}
+      toast('✓ '+[w.wetter,w.aussenT?w.aussenT+' °C':'',w.aussenRf?w.aussenRf+' %':''].filter(Boolean).join(' · '),'success',4000);
+    }catch(e){console.warn('[Feuchte] Wetter:',e);toast('Wetter nicht abrufbar: '+(e.message||e),'error',5000);}
+  },err=>{
+    const m={1:'Standort-Zugriff verweigert – bitte in den Einstellungen erlauben.',2:'Standort nicht verfügbar – bitte nochmal versuchen.',3:'Zeitüberschreitung – bitte nochmal versuchen.'};
+    toast('📍 '+(m[err&&err.code]||'Standort-Fehler'),'error',5000);
+  },{timeout:15000,maximumAge:300000,enableHighAccuracy:false});
+}
+
+// Ergebnis-Kasten oben im Formular – Farbe nur im Rand, Schrift bleibt lesbar
+function _fsErgebnisZeigen(el,bericht){
+  const e=_fsErgebnis(bericht);
+  const farbe=e.stufe==='gruen'?'var(--green)':e.stufe==='gelb'?'var(--orange)':e.stufe==='rot'?'var(--red)':'var(--border)';
+  el.style.borderLeftColor=farbe;
+  el.setAttribute('data-fs-stufe',e.stufe||'keine');
+  el.innerHTML='';
+  const k=document.createElement('div');k.style.cssText='font-size:17px;font-weight:700;color:var(--text);';
+  k.textContent=e.stufe==='gruen'?'✅ Keine Schimmelgefahr':e.stufe==='gelb'?'⚠ Mögliches Schimmelrisiko':e.stufe==='rot'?'⛔ Akute Schimmelgefahr':'ℹ Ergebnis';
+  const tx=document.createElement('div');tx.style.cssText='font-size:14px;color:var(--text);margin-top:4px;line-height:1.45;';tx.textContent=e.text;
+  el.append(k,tx);
+}
+
+// PDF öffnen: das eben erstellte vom Gerät, sonst das in Drive abgelegte
+function _fsPdfOeffnen(bericht){
+  const blob=_fsPdfBlobs[bericht.id];
+  if(blob&&typeof _dateiBlobOeffnen==='function'){_dateiBlobOeffnen(blob,bericht.pdfName||_fsPdfName(bericht));return 'geraet';}
+  if(bericht.pdfDriveId){window.open('https://drive.google.com/file/d/'+encodeURIComponent(bericht.pdfDriveId)+'/view','_blank');return 'drive';}
+  toast('Noch kein PDF – bitte zuerst „📄 PDF erstellen"','info',3500);
+  return '';
 }
 // PDF als Dokument an der Karte vermerken – dieselbe Datei nie zweimal
 function _fsAnhangEintragen(t,id,name){
@@ -10486,7 +10621,12 @@ async function _fsPdfNachDrive(blob,name,bericht,t){
     if(bericht.pdfDriveId){
       const r=await fetch('https://www.googleapis.com/upload/drive/v3/files/'+encodeURIComponent(bericht.pdfDriveId)+'?uploadType=media',
         {method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/pdf'},body:blob});
-      if(r.ok)id=bericht.pdfDriveId;
+      if(r.ok){
+        id=bericht.pdfDriveId;
+        if(bericht.pdfName&&bericht.pdfName!==name){ // v294: Name mit Uhrzeit nachziehen
+          try{await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id),{method:'PATCH',headers:{Authorization:'Bearer '+gdriveToken,'Content-Type':'application/json'},body:JSON.stringify({name:name})});}catch(e){console.warn('[Feuchte] PDF umbenennen:',e);}
+        }
+      }
     }
     if(!id){
       const form=new FormData();
@@ -10499,6 +10639,7 @@ async function _fsPdfNachDrive(blob,name,bericht,t){
       id=j.id;
     }
     bericht.pdfDriveId=id;
+    bericht.pdfName=name; // v294
     bericht.driveFileId=id; // PC-Menü „In Google Drive öffnen" liest driveFileId
     _fsAnhangEintragen(t,id,name);
     scheduleSave();
@@ -10576,7 +10717,7 @@ function _openFeuchteprotokollMobil(existingIdx){
   function _neuBauen(){
     const sc=body.scrollTop;
     body.innerHTML='';
-    body.append(_teilKopf(),_teilRaeume(),_teilStellen(),_teilChecklisten(),_teilBewertung(),_teilFotos());
+    body.append(_teilErgebnis(),_teilKopf(),_teilRaeume(),_teilStellen(),_teilChecklisten(),_teilBewertung(),_teilFotos()); // v294: Ergebnis oben
     body.scrollTop=sc;
     _fsWerteNeu();
   }
@@ -10597,12 +10738,24 @@ function _openFeuchteprotokollMobil(existingIdx){
       const st=bericht.stellen[+el.getAttribute('data-fs-stelle')];
       if(st)_fsWerteZeile(el,_fsStelleWerte(bericht,st),st);
     });
+    const eg=body.querySelector('[data-fs-ergebnis]');if(eg)_fsErgebnisZeigen(eg,bericht); // v294
     _fsStats();
+  }
+
+  function _teilErgebnis(){ // v294
+    const e=document.createElement('div');e.setAttribute('data-fs-ergebnis','1');
+    e.style.cssText='margin:10px;padding:12px 14px;border-radius:10px;background:var(--bg2);border:1px solid var(--border);border-left:6px solid var(--border);';
+    return e;
   }
 
   function _teilKopf(){
     const w=document.createElement('div');
-    w.append(_kopfZeile('Auftrag und Termin'),
+    const hilfen=document.createElement('div');hilfen.style.cssText='display:flex;flex-wrap:wrap;gap:8px;padding:8px 14px;'; // v294
+    const hk=(txt,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=txt;b.style.cssText=S_KNOPF+'min-height:44px;border:1.5px solid '+FS_FARBE+';background:transparent;color:var(--text);';b.onclick=fn;return b;};
+    hilfen.append(
+      hk('↻ aus Karte',()=>{const n=_fsKopfErgaenzen(bericht,t);scheduleSave();_neuBauen();toast(n?'✓ '+n+(n===1?' Feld':' Felder')+' aus der Karte übernommen':'ℹ Nichts zu übernehmen – Felder schon gefüllt oder keine Angaben an der Karte','info',3500);}),
+      hk('🌤 Wetter holen',()=>_fsWetterHolen(bericht,_neuBauen)));
+    w.append(_kopfZeile('Auftrag und Termin'),hilfen,
       _feld('Auftraggeber','auftraggeber','aus der Karte'),
       _feld('Objekt','objektAdresse','aus der Karte'),
       _feld('Auftrag-Nr.','auftragNr',''),
@@ -10649,6 +10802,8 @@ function _openFeuchteprotokollMobil(existingIdx){
     });
     const chips=document.createElement('div');chips.style.cssText='display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 12px;';
     const vorhanden=bericht.raeume.map(r=>r.name);
+    const fehlendeWohnung=FS_WOHNUNG.filter(n=>vorhanden.indexOf(n)<0); // v294
+    if(fehlendeWohnung.length>1)chips.appendChild(_chip('＋ Wohnung ('+fehlendeWohnung.length+' Räume)',false,()=>{fehlendeWohnung.forEach(n=>bericht.raeume.push({name:n,t:'',rf:''}));scheduleSave();_neuBauen();}));
     FS_RAUM_VORSCHLAEGE.filter(n=>vorhanden.indexOf(n)<0).forEach(n=>{
       chips.appendChild(_chip('＋ '+n,false,()=>{bericht.raeume.push({name:n,t:'',rf:''});scheduleSave();_neuBauen();}));
     });
@@ -10697,6 +10852,16 @@ function _openFeuchteprotokollMobil(existingIdx){
         gr.appendChild(z);
       });
 
+      let luftGr=null; // v294: Luft der testo-Messung änderbar (leer = Raumklima)
+      if(st.testo||_fsZahl(st.luftT)!==null||_fsZahl(st.luftRf)!==null){
+        luftGr=document.createElement('div');luftGr.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px;';
+        [['Luft °C (Messung)','luftT'],['Luft % rF (Messung)','luftRf']].forEach(([lab,key])=>{
+          const z=document.createElement('label');z.style.cssText='display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text2);min-width:0;';
+          const s=document.createElement('span');s.textContent=lab;
+          const li=_inp(st[key],'leer = Raumklima',v=>{st[key]=v;_fsWerteNeu();},true);li.setAttribute('data-fs-luft',key);
+          z.append(s,li);luftGr.appendChild(z);
+        });
+      }
       const bf=document.createElement('div');bf.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;';
       FS_BEFUNDE.forEach(b=>{
         bf.appendChild(_chip(b,st.befund.indexOf(b)>=0,()=>{
@@ -10722,7 +10887,9 @@ function _openFeuchteprotokollMobil(existingIdx){
       fotoBtn.style.cssText=S_KNOPF+'margin-top:8px;width:100%;border:1.5px solid var(--border);background:transparent;color:var(--text);';
       fotoBtn.onclick=()=>_wpMobFotoPickerForItem(bericht,st,()=>{fotoBtn.textContent=_fotoText();});
 
-      card.append(top,sel,gr,bf,werte,notiz,fotoBtn);
+      card.append(top,sel,gr);
+      if(luftGr)card.appendChild(luftGr);
+      card.append(bf,werte,notiz,fotoBtn);
       w.appendChild(card);
     });
     const add=document.createElement('button');add.type='button';add.textContent='＋ Messstelle';
@@ -10824,12 +10991,15 @@ function _openFeuchteprotokollMobil(existingIdx){
   shareBtn.onclick=async()=>{
     const blob=_fsPdfBlobs[bericht.id];
     if(navigator.share&&blob){
-      const file=new File([blob],_fsPdfName(bericht),{type:'application/pdf'});
+      const file=new File([blob],bericht.pdfName||_fsPdfName(bericht),{type:'application/pdf'});
       try{await navigator.share({title:'Feuchte- und Schimmelprotokoll',files:[file]});}
       catch(e){if(e.name!=='AbortError')toast('Teilen fehlgeschlagen','error');}
     }else{toast('Bitte zuerst PDF erstellen','info');}
   };
-  footer.append(pdfBtn,shareBtn);
+  const openBtn=document.createElement('button');openBtn.type='button';openBtn.textContent='📂 Öffnen'; // v294
+  openBtn.style.cssText='padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;color:var(--text);';
+  openBtn.onclick=()=>_fsPdfOeffnen(bericht);
+  footer.append(pdfBtn,openBtn,shareBtn);
   ov.append(hdr,body,footer);
   document.body.appendChild(ov);
 }
@@ -10856,6 +11026,7 @@ function _fsWerteZeile(el,w,st){
     z.appendChild(amp);
   }
   el.appendChild(z);
+  {const kl=_fsKlartext(w);if(kl.text){const d=document.createElement('div');d.setAttribute('data-fs-klartext',kl.stufe);d.style.cssText='font-size:14px;font-weight:600;color:var(--text);margin-top:3px;line-height:1.45;';d.textContent=(kl.stufe==='gruen'?'✅ ':kl.stufe==='gelb'?'⚠ ':'⛔ ')+kl.text;el.appendChild(d);}} // v294
   const z2=[];
   if(w.frsi!==null)z2.push('Temperaturfaktor '+(Math.round(w.frsi*100)/100).toFixed(2).replace('.',','));
   if(w.faktor!==null)z2.push('Bauteil ×'+_fsEins(w.faktor)+' gegenüber Vergleich');
@@ -10908,6 +11079,16 @@ async function _fsMobPdf(bericht,task){
     doc.text('Datum: '+leer(bericht.datum)+(k.uhrzeit?' · '+k.uhrzeit+' Uhr':'')+(k.auftragNr?' · Auftrag: '+k.auftragNr:''),M,25);
     y=36;
 
+    { // v294: Ergebnis oben
+      const e=_fsErgebnis(bericht);
+      abschnitt('Ergebnis');
+      const kopfText=e.stufe==='gruen'?'Keine Schimmelgefahr':e.stufe==='gelb'?'Mögliches Schimmelrisiko':e.stufe==='rot'?'Akute Schimmelgefahr':'Noch keine Bewertung';
+      const fb=e.stufe==='gruen'?[26,122,60]:e.stufe==='gelb'?[201,106,0]:e.stufe==='rot'?[192,57,43]:[90,90,90];
+      doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...fb);doc.text(kopfText,M,y+4);y+=7;
+      doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(0,0,0);
+      const et=e.text;
+      const el=doc.splitTextToSize(et,W-2*M);doc.text(el,M,y+2);y+=el.length*4.3+5;
+    }
     const tdA=_fsTaupunkt(k.aussenT,k.aussenRf);
     abschnitt('Auftrag und Termin');
     doc.autoTable({startY:y,theme:'grid',margin:{left:M,right:M},
@@ -10962,6 +11143,7 @@ async function _fsMobPdf(bericht,task){
       const zeilen=[];
       bericht.stellen.forEach((st,i)=>{
         const w=werte[i];const txt=[];
+        {const kl=_fsKlartext(w);if(kl.text)txt.push(kl.text);} // v294
         if(w.frsi!==null)txt.push('Temperaturfaktor '+(Math.round(w.frsi*100)/100).toFixed(2).replace('.',','));
         if(w.faktor!==null)txt.push('Bauteil '+_fsEins(w.faktor)+'-fach gegenüber Vergleich');
         w.hinweise.forEach(h=>txt.push(h));
@@ -10981,8 +11163,10 @@ async function _fsMobPdf(bericht,task){
       doc.text(leg,M,y+3);y+=leg.length*3.2+6;
     }
 
+    const nichtGeprueft=[]; // v294
     bericht.sektionen.forEach(sek=>{
       if(!(sek.items||[]).length)return;
+      if(!_fsSektionGenutzt(sek)){nichtGeprueft.push(sek.titel||'');return;}
       abschnitt(sek.titel||'');
       doc.autoTable({startY:y,theme:'grid',margin:{left:M,right:M},head:[['Status','Prüfpunkt','Notiz']],
         body:sek.items.map(it=>[it.status==='ok'?'unauffällig':it.status==='mangel'?'auffällig':'offen',it.text||'',it.notiz||'']),
@@ -10997,6 +11181,12 @@ async function _fsMobPdf(bericht,task){
       y=doc.lastAutoTable.finalY+4;
     });
 
+    if(nichtGeprueft.length){ // v294
+      if(y>275){doc.addPage();y=M;}
+      doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(110,110,110);
+      const ng=doc.splitTextToSize('Nicht geprüft: '+nichtGeprueft.join(' · '),W-2*M);
+      doc.text(ng,M,y+3);y+=ng.length*3.6+5;
+    }
     const bw=FS_BEWERTUNGEN.find(b=>b.k===bericht.bewertung);
     if(bw||bericht.bemerkung||bericht.empfehlungen){
       abschnitt('Bewertung');
@@ -11055,13 +11245,15 @@ async function _fsMobPdf(bericht,task){
 
     const blob=doc.output('blob');
     _fsPdfBlobs[bericht.id]=blob;
-    const name=_fsPdfName(bericht);
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=name;
-    document.body.appendChild(a);a.click();a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),5000);
-    toast('✓ PDF erstellt','success');
-    _fsPdfNachDrive(blob,name,bericht,task);
+    const name=_fsPdfName(bericht,new Date()); // v294: mit Uhrzeit – kein gleichnamiges PDF, keine Rückfrage beim Herunterladen
+    toast('✓ PDF erstellt – mit „📂 Öffnen" ansehen','success',4000);
+    const inDrive=await _fsPdfNachDrive(blob,name,bericht,task);
+    if(!inDrive){ // ohne Drive bleibt nur das Gerät: dann wie bisher herunterladen
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');a.href=url;a.download=name;
+      document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+    }
     return blob;
   }catch(e){
     console.error('[Feuchte] PDF:',e);
