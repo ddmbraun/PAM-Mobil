@@ -4915,7 +4915,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v287';
+const MOB_VERSION='v288';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -14536,10 +14536,37 @@ async function _ortMessen(zeitMs){
 // Strasse+Hausnummer vergleichbar machen - dieselbe Regel wie _pamFlach ("Str." = "Straße")
 function _ortStrasse(adr){return _pamFlach(String(adr||'').split(',')[0]);}
 function _ortPlz(adr){const m=/\b(\d{5})\b/.exec(String(adr||''));return m?m[1]:'';}
+// v288: Adresse zerlegen in Strasse (flach wie _pamFlach) und ALLE Hausnummern.
+// "Musterstr. 2, 2a, 12345 Ort" -> {name:'musterstr', nummern:['2','2a']} · "86, 86a,b,c" -> 86 86a 86b 86c
+// "10-14" -> 10 11 12 13 14 (hoechstens 30 Nummern) · "10 a" / "59_b" -> 10a / 59b · Ortsname oder Zusatz nach
+// der letzten Nummer beendet die Liste. ⛔ Kein Raten: kein Nachbarhaus, "59" passt nicht auf "59b".
+// ⛔ Keine Anfuehrungszeichen in Regex-Literalen (die Ausschneide-Funktion der Suiten haelt sie fuer Strings).
+function _ortAdrTeile(adr){
+  const s=String(adr||'').split(/\b\d{5}\b/)[0];
+  const i=s.search(/\d/);
+  if(i<=0)return null;
+  const name=_pamFlach(s.slice(0,i));
+  if(!name)return null;
+  const nummern=[];let basis='';
+  const teile=s.slice(i).split(/\s*(?:[,;\/&+]|\bund\b|\bu\.)\s*/i);
+  for(let j=0;j<teile.length;j++){
+    const t=teile[j].trim();
+    if(!t)continue;
+    let m=/^(\d+)\s*[-–]\s*(\d+)$/.exec(t);
+    if(m){const a=+m[1],b=+m[2];if(b>a&&b-a<=30){for(let n=a;n<=b;n++)nummern.push(String(n));basis=m[2];continue;}break;}
+    m=/^(\d+)\s*_?\s*([a-z])?$/i.exec(t);
+    if(m){basis=m[1];nummern.push(m[1]+(m[2]?m[2].toLowerCase():''));continue;}
+    m=/^([a-z])$/i.exec(t);
+    if(m&&basis){nummern.push(basis+m[1].toLowerCase());continue;}
+    break;
+  }
+  return nummern.length?{name:name,nummern:nummern}:null;
+}
 function _ortPasstZu(adresse,taskId){
-  const str=_ortStrasse(adresse);
+  // v288: Strasse gleich UND die gemessene Nummer steht in der Nummernliste der Karte (bis v287: nur die erste Nummer)
+  const ich=_ortAdrTeile(adresse);
   // ohne Hausnummer keine Zuordnung - eine Strasse allein passt auf zu viele Karten
-  if(!str||!/\d/.test(str))return null;
+  if(!ich)return null;
   const plz=_ortPlz(adresse);
   const treffer=[];
   try{
@@ -14547,7 +14574,8 @@ function _ortPasstZu(adresse,taskId){
       if(bn.charAt(0)==='_')return;
       (boards[bn]||[]).forEach(function(k){
         if(!k||!k.id||k.archiviert||!k.adresse)return;
-        if(_ortStrasse(k.adresse)!==str)return;
+        const ka=_ortAdrTeile(k.adresse);
+        if(!ka||ka.name!==ich.name||!ich.nummern.some(function(n){return ka.nummern.indexOf(n)>=0;}))return;
         const kp=_ortPlz(k.adresse);
         if(plz&&kp&&plz!==kp)return;
         const typ=(boardTypes&&boardTypes[bn])||'baustelle';
