@@ -142,6 +142,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .tag-klein{font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.35;}
 .tag-knoepfe{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;}
 .tag-chip{display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:0 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:14px;text-decoration:none;cursor:pointer;font-family:inherit;}
+.tag-weg{color:#d9534f;border-color:#d9534f;}
 .tag-pin{display:flex;align-items:center;justify-content:center;width:100%;height:30px;box-sizing:border-box;border-radius:15px;border:2px solid #fff;color:#fff;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.45);white-space:nowrap;}
 .tag-pop{font-size:13px;line-height:1.45;min-width:190px;}
 .tag-pop-z+.tag-pop-z{margin-top:6px;padding-top:6px;border-top:1px solid #ddd;}
@@ -4635,6 +4636,8 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <div id="ortPasstAktuell"></div>
     <input type="text" id="ortSuche" placeholder="andere Karte suchen …" autocomplete="off" oninput="_ortSucheZeichnen()" style="width:100%;box-sizing:border-box;margin:8px 0 6px;padding:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:max(16px, calc(16px * var(--m-scale,1)));">
     <div id="ortSucheListe"></div>
+    <!-- v289: Standort entfernen – die Zeit bleibt. Bewusst 44 px (test_v280 zählt die zwei 48-px-Knöpfe). -->
+    <button onclick="_ortEntfernen()" style="margin-top:14px;width:100%;min-height:44px;border-radius:10px;border:1px solid #d9534f;background:transparent;color:#d9534f;font-size:15px;cursor:pointer;">🗑 Standort entfernen</button>
     <div style="display:flex;gap:8px;margin-top:12px;">
       <button onclick="_ortBlattZu()" style="flex:1;min-height:48px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;cursor:pointer;">Abbrechen</button>
       <button onclick="_ortSpeichern()" style="flex:1;min-height:48px;border-radius:10px;border:none;background:#3b6d11;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">Speichern</button>
@@ -4915,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v288';
+const MOB_VERSION='v289';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5034,6 +5037,7 @@ async function _restoreMobileBackupIfDirty(){
         const before=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
         lt.notizVerlauf=_mergeListByKey(lt.notizVerlauf,bt.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
         lt.zeitEntries=_zeitZeilenMerge(lt.zeitEntries,bt.zeitEntries); // v280: Standort geht nicht verloren
+        if(typeof _zeitGeloeschtMerge==='function'&&(Array.isArray(lt.zeitGeloescht)||Array.isArray(bt.zeitGeloescht))){lt.zeitGeloescht=_zeitGeloeschtMerge(lt.zeitGeloescht,bt.zeitGeloescht);lt.zeitEntries=_zeitOhneGeloeschte(lt.zeitEntries,lt.zeitGeloescht);} // v289: Löschvermerke
         lt.ausserhausTermine=_mergeListByKey(lt.ausserhausTermine,bt.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
         if(typeof _wahlKennung==='function'&&(Array.isArray(lt.anrufWahlen)||Array.isArray(bt.anrufWahlen)))lt.anrufWahlen=_mergeListByKey(lt.anrufWahlen,bt.anrufWahlen,_wahlKennung); // v282
         const after=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
@@ -8514,6 +8518,7 @@ async function saveFile(){
                     mergedTask.pruefberichte=_mergeListByKey(rt.pruefberichte,localTask.pruefberichte,b=>(b.id||((b.titel||'')+'|'+(b.datum||''))));
                     mergedTask.notizVerlauf=_mergeListByKey(rt.notizVerlauf,localTask.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
                     mergedTask.zeitEntries=_zeitZeilenMerge(rt.zeitEntries,localTask.zeitEntries); // v280: Standort geht nicht verloren
+                    if(typeof _zeitGeloeschtMerge==='function'&&(Array.isArray(localTask.zeitGeloescht)||Array.isArray(rt.zeitGeloescht))){mergedTask.zeitGeloescht=_zeitGeloeschtMerge(rt.zeitGeloescht,localTask.zeitGeloescht);mergedTask.zeitEntries=_zeitOhneGeloeschte(mergedTask.zeitEntries,mergedTask.zeitGeloescht);} // v289: Löschvermerke
                     mergedTask.ausserhausTermine=_mergeListByKey(rt.ausserhausTermine,localTask.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
                     // v257: GERICHTET statt vereinigt (Desktop b771) – ein hier entferntes Foto kam über die
                     // Vereinigung aus dem PC-Stand zurück; ein drüben entferntes ebenso aus dem hiesigen.
@@ -14480,7 +14485,8 @@ function addZeit(){
 }
 function removeZeit(i){
   const t=currentTask();if(!t)return;
-  t.zeitEntries.splice(i,1);forceSave();
+  const _weg=t.zeitEntries.splice(i,1)[0];if(typeof _zeitGrabstein==='function')_zeitGrabstein(t,_weg); // v289: Löschvermerk
+  forceSave();
   if(_currentDetailTab==='bau')renderBaudokuTab(t);else if(_currentDetailTab==='schnell')renderSchnellTab(t);else renderDetail(t);
 }
 function updateZeit(i,f,v){
@@ -14607,6 +14613,7 @@ function _ortAblegen(taskId,startMs,feld,o){
   const t=findTaskById(taskId);if(!t)return false;
   const z=(t.zeitEntries||[]).find(function(e){return e&&e.uhrStart===startMs;});
   if(!z)return false;
+  if(z[feld]&&z[feld].entfernt)return false; // v289: von Hand entfernt – eine späte Messung holt ihn nicht zurück
   z[feld]=o;
   scheduleSave();
   _ortNeuZeichnen(t,z);
@@ -14654,7 +14661,8 @@ function _ortTeil(o,wort,i,feld,accText){
 }
 function _ortZeile(z,i){
   try{
-    const a=z&&z.ortStart,b=z&&z.ortStopp;
+    // v289: von Hand entfernte Standorte (entfernt) nicht zeigen
+    const a=(z&&z.ortStart&&!z.ortStart.entfernt)?z.ortStart:null,b=(z&&z.ortStopp&&!z.ortStopp.entfernt)?z.ortStopp:null;
     if(!a&&!b)return '';
     // Start und Stopp am selben Ort: EINE Zeile statt zwei (spart Hoehe auf 375 px)
     const gleich=a&&b&&!a.fehler&&!b.fehler&&(a.adresse||'')===(b.adresse||'')
@@ -14692,6 +14700,24 @@ function _zeitZeilenMerge(erste,zweite){
     return r;
   });
 }
+// ── v289 / b1013: LÖSCHVERMERKE für Uhr-Zeitzeilen ──────────────────────────────────────────────────
+// Karte: zeitGeloescht=[{u:uhrStart,t:Zeit}]. Beim Speicherkonflikt vereinigen beide Geräte die Vermerke und nehmen
+// die Zeilen heraus – sonst holte das Zusammenführen eine gelöschte Zeile vom anderen Gerät zurück.
+// ⛔ NUR Zeilen mit uhrStart (eindeutig). Eine von Hand eingetippte Zeile hat keine Kennung – ein Vermerk über
+//    Datum/Von/Bis könnte eine später gleich eingetippte Zeile fressen (Verlust wäre schlimmer als ein Wiedergänger).
+function _zeitGeloeschtMerge(a,b){return _mergeListByKey(a,b,function(g){return (g&&g.u!=null)?('u'+g.u):'';});}
+function _zeitOhneGeloeschte(liste,grab){
+  if(!Array.isArray(liste)||!Array.isArray(grab)||!grab.length)return liste;
+  const weg={};
+  grab.forEach(function(g){if(g&&g.u!=null)weg['u'+g.u]=1;});
+  return liste.filter(function(z){return !(z&&z.uhrStart!=null&&weg['u'+z.uhrStart]);});
+}
+function _zeitGrabstein(t,z){
+  if(!t||!z||z.uhrStart==null)return false;
+  if(!Array.isArray(t.zeitGeloescht))t.zeitGeloescht=[];
+  if(!t.zeitGeloescht.some(function(g){return g&&g.u===z.uhrStart;}))t.zeitGeloescht.push({u:z.uhrStart,t:Date.now()});
+  return true;
+}
 // ══ v283: UHR-ZEILEN AN NICHT OFFENEN KARTEN BEIM SPEICHERKONFLIKT ═════════════
 /* Befund 13.09.2026 (Code gelesen): Stopp ueber die Uhr-Leiste (_stopTimerWithEnd) haengt die
    Zeitzeile an eine Karte, die meist NICHT offen ist; der Standort kommt Sekunden spaeter
@@ -14716,19 +14742,24 @@ function _uhrHierSammeln(toepfe,ausser){
       arr.forEach(function(t){
         if(!t||!t.id||gesehen[t.id])return;
         gesehen[t.id]=1;
-        if(t.id===ausser||!Array.isArray(t.zeitEntries)||!t.zeitEntries.length)return;
+        if(t.id===ausser)return;
+        // v289: auch neue Löschvermerke einsammeln – eine hier gelöschte Uhr-Zeile an einer nicht offenen Karte käme sonst zurück
+        const grabHier=Array.isArray(t.zeitGeloescht)?t.zeitGeloescht:[];
+        if((!Array.isArray(t.zeitEntries)||!t.zeitEntries.length)&&!grabHier.length)return;
         const snap=_mobSnapListe(t.id,'zeitEntries');
         if(!Array.isArray(snap))return;
+        const grabSnap=grabHier.length?(_mobSnapListe(t.id,'zeitGeloescht')||[]):[];
+        const grab=grabHier.filter(function(g){return g&&g.u!=null&&!grabSnap.some(function(s){return s&&s.u===g.u;});});
         const alt=new Map();
         snap.forEach(function(e){if(e)alt.set(_uhrZeileKennung(e),e);});
         const neu=[],ort=[];
-        t.zeitEntries.forEach(function(e){
+        (t.zeitEntries||[]).forEach(function(e){
           if(!e)return;
           const s=alt.get(_uhrZeileKennung(e));
           if(!s){neu.push(e);return;}
           if(!gleich(e.ortStart,s.ortStart)||!gleich(e.ortStopp,s.ortStopp))ort.push(e);
         });
-        if(neu.length||ort.length)m.set(t.id,{neu:neu,ort:ort});
+        if(neu.length||ort.length||grab.length){const v={neu:neu,ort:ort};if(grab.length)v.grab=grab;m.set(t.id,v);}
       });
     });
   });
@@ -14745,14 +14776,18 @@ function _uhrZuruecklegen(toepfe,m){
         const L=Array.isArray(t.zeitEntries)?t.zeitEntries.slice():[];
         const pos=new Map();
         L.forEach(function(e,i){if(e)pos.set(_uhrZeileKennung(e),i);});
-        x.neu.forEach(function(e){const k=_uhrZeileKennung(e);if(pos.has(k))return;L.push(e);pos.set(k,L.length-1);});
+        // v289: eine drüben gelöschte Uhr-Zeile (Löschvermerk dort) nicht wieder anhängen
+        const grabDort=Array.isArray(t.zeitGeloescht)?t.zeitGeloescht:[];
+        x.neu.forEach(function(e){const k=_uhrZeileKennung(e);if(pos.has(k))return;if(e&&e.uhrStart!=null&&grabDort.some(function(g){return g&&g.u===e.uhrStart;}))return;L.push(e);pos.set(k,L.length-1);});
         x.ort.forEach(function(e){
           const i=pos.get(_uhrZeileKennung(e)); if(i==null)return; // am PC geloescht: bleibt weg
           const z=L[i]; let r=z;
           ['ortStart','ortStopp'].forEach(function(f){const n=_ortNeuer(z[f],e[f]);if(n!==z[f]){if(r===z)r=Object.assign({},z);r[f]=n;}});
           L[i]=r;
         });
-        t.zeitEntries=L;
+        // v289: hier gelöschte Uhr-Zeilen (Löschvermerk) auch drüben herausnehmen
+        if(x.grab&&x.grab.length&&typeof _zeitGeloeschtMerge==='function'){t.zeitGeloescht=_zeitGeloeschtMerge(t.zeitGeloescht,x.grab);t.zeitEntries=_zeitOhneGeloeschte(L,t.zeitGeloescht);}
+        else t.zeitEntries=L;
       });
     });
   });
@@ -14773,7 +14808,7 @@ function _ortBearbeitenFuer(t,i,feld){
   const z=(t.zeitEntries||[])[i];if(!z)return;
   const felder=(feld==='beide')?['ortStart','ortStopp']:[feld];
   const o=z[felder[0]];
-  if(!o||o.fehler)return; // ohne Messung gibt es nichts anzupassen
+  if(!o||o.fehler||o.entfernt)return; // ohne Messung gibt es nichts anzupassen (v289: auch nicht entfernt)
   _ortEdit={taskId:t.id,i:i,uhrStart:z.uhrStart,felder:felder,passt:o.passtZu||null,
     passtVonHand:!!o.passtZuVonHand,gemessen:o.adresseGemessen||''};
   const d=new Date(o.zeit||Date.now());const p=function(n){return String(n).padStart(2,'0');};
@@ -14835,7 +14870,7 @@ function _ortSpeichern(){
   const adr=((document.getElementById('ortAdresse')||{}).value||'').trim();
   const jetzt=Date.now();
   e.felder.forEach(function(f){
-    const o=z[f];if(!o||o.fehler)return;
+    const o=z[f];if(!o||o.fehler||o.entfernt)return;
     // ⛔ Kopie: lat/lon/acc/zeit bleiben wie gemessen - nur Text und Zuordnung aendern sich
     const neu=Object.assign({},o);
     neu.adresse=adr;
@@ -14852,6 +14887,40 @@ function _ortSpeichern(){
   toast('📍 Standort angepasst','success');
 }
 
+// ── v289: 🗑 Standort entfernen (Frank 14.09.2026: „wenn es doppelt ist oder nicht passt einfach wieder löschen“) ──
+// Der Standort wird zum Vermerk {entfernt, zeit, geaendert} – nicht gelöscht: so gewinnt die Entfernung beim Abgleich
+// (jüngerer Stand, _ortNeuer) und ein anderes Gerät holt den alten Standort nicht zurück. Die Zeit bleibt stehen.
+function _ortEntfernen(){
+  const e=_ortEdit;if(!e)return;
+  if(!confirm('Standort entfernen?\n\nDie Zeit bleibt stehen.'))return;
+  const t=findTaskById(e.taskId);if(!t){_ortBlattZu();return;}
+  const z=_ortZeileFinden(t,e);if(!z){toast('Zeitzeile nicht mehr gefunden','error');_ortBlattZu();return;}
+  const stempel=Date.now();
+  e.felder.forEach(function(f){const o=z[f];if(!o||o.entfernt)return;z[f]={entfernt:true,zeit:o.zeit||'',geaendert:stempel};});
+  forceSave();
+  _ortBlattZu();
+  _ortNeuZeichnen(t,z);
+  try{_tagNeuZeichnen();}catch(x){}
+  toast('🗑 Standort entfernt','success');
+}
+// v289: 🗑 ganze Zeitzeile aus „Mein Tag“ löschen – Zeit UND Standort. Uhr-Zeilen bekommen einen Löschvermerk.
+function _tagZeileLoeschen(idx){
+  const p=_tagAktuell[idx];if(!p||!p.sichtbar)return;
+  const t=findTaskById(p.t.id);if(!t)return;
+  const z=p.z;
+  const was=(z.date?String(z.date).split('-').reverse().join('.'):'')+' '+(z.von||'')+'–'+(z.bis||'');
+  if(!confirm('Zeitzeile '+was+' an „'+(t.title||'')+'“ löschen?\n\nZeit UND Standort sind danach weg.'))return;
+  const L=Array.isArray(t.zeitEntries)?t.zeitEntries:[];
+  let i=L.indexOf(z);
+  if(i<0&&z.uhrStart!=null)i=L.findIndex(function(x){return x&&x.uhrStart===z.uhrStart;});
+  if(i<0)return;
+  const weg=L.splice(i,1)[0];
+  if(typeof _zeitGrabstein==='function')_zeitGrabstein(t,weg);
+  forceSave();
+  try{if(typeof currentTaskId!=='undefined'&&currentTaskId===t.id)renderDetail(t);}catch(x){}
+  _tagNeuZeichnen();
+  toast('🗑 Zeitzeile gelöscht','success');
+}
 // ══ v281: 🗺 MEIN TAG – Start/Stopp-Standorte eines Tages auf der Karte ══════════════
 // Frank, 13.09.2026 ("ja 3 bauen"): abends sehen, wo er wann war. Gesammelt wird NACH DATUM
 // ueber alle Karten - egal, auf welcher die Uhr lief. Grundlage: die Standorte aus v280.
@@ -14882,7 +14951,7 @@ function _tagPunkte(tagIso){
         (t.zeitEntries||[]).forEach(function(z){
           if(!z)return;
           ['ortStart','ortStopp'].forEach(function(f){
-            const o=z[f];if(!o||!o.zeit)return;
+            const o=z[f];if(!o||!o.zeit||o.entfernt)return; // v289: entfernt
             const ms=Date.parse(o.zeit);
             if(!isFinite(ms)||_tagLokal(ms)!==tagIso)return;
             raus.push({ms:ms,feld:f,art:(f==='ortStart'?'Start':'Stopp'),o:o,z:z,t:t,board:bn,
@@ -14952,6 +15021,7 @@ function _tagKnoepfe(p,idx){
   let h='';
   if(p.sichtbar)h+='<button class="tag-chip" onclick="event.stopPropagation();_tagKarteOeffnen('+idx+')">📄 Karte</button>';
   if(p.sichtbar&&p.mitOrt)h+='<button class="tag-chip" onclick="event.stopPropagation();_tagBearbeiten('+idx+')">✎ Adresse</button>';
+  if(p.sichtbar)h+='<button class="tag-chip tag-weg" onclick="event.stopPropagation();_tagZeileLoeschen('+idx+')">🗑 Zeile</button>'; // v289
   if(p.mitOrt)h+='<a class="tag-chip" href="'+escAttr('https://www.google.com/maps/search/?api=1&query='+parseFloat(p.o.lat)+','+parseFloat(p.o.lon))+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗ Google</a>';
   return h?'<div class="tag-knoepfe">'+h+'</div>':'';
 }
