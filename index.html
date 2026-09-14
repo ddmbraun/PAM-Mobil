@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v289';
+const MOB_VERSION='v290';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -21151,7 +21151,7 @@ async function _fetchTimeout(url,opts,ms){
 async function _reverseGeocode(lat,lon){
   const key=lat.toFixed(5)+','+lon.toFixed(5);
   if(_geoCache[key]!==undefined)return _geoCache[key];
-  let addr='',strasse='';
+  let addr='',strasse='',photonOrt=''; // v290: Ort aus Photon merken
   // 1) Photon (Komoot) – CORS-freundlich, OSM-Daten, liefert Straße + Hausnummer
   try{
     const r=await _fetchTimeout('https://photon.komoot.io/reverse?lat='+lat+'&lon='+lon+'&lang=de',null,8000);
@@ -21160,8 +21160,12 @@ async function _reverseGeocode(lat,lon){
       const p=(d.features&&d.features[0]&&d.features[0].properties)||{};
       // v69: Straße bevorzugen; p.name nur nutzen, wenn eine Hausnummer existiert
       // (adressiertes Gebäude) – sonst bleibt die Straßenzeile leer statt POI-Name.
-      strasse=[p.street||(p.housenumber?(p.name||''):''),p.housenumber].filter(Boolean).join(' ');
+      // v290: meldet Photon eine STRASSE (type street / osm_key highway), steht ihr Name in p.name – dann gilt er auch ohne
+      // Hausnummer. Bis v289 fiel die Straße weg, und der Rückfall auf Nominatim nannte dort den Ortsteil statt des Orts.
+      const _photonStrasse=(p.type==='street'||p.osm_key==='highway');
+      strasse=[p.street||((p.housenumber||_photonStrasse)?(p.name||''):''),p.housenumber].filter(Boolean).join(' ');
       const ort=[p.postcode,(p.city||p.town||p.village||p.county||'')].filter(Boolean).join(' ');
+      photonOrt=ort;
       addr=[strasse,ort].filter(Boolean).join(', ');
     }
   }catch(e){console.warn('[Geocode Photon]',e);}
@@ -21176,7 +21180,9 @@ async function _reverseGeocode(lat,lon){
         const a=d.address||{};
         const nStr=[a.road,a.house_number].filter(Boolean).join(' ');
         const nOrt=[a.postcode,(a.city||a.town||a.village||a.municipality||a.county||'')].filter(Boolean).join(' ');
-        const nAddr=[nStr,nOrt].filter(Boolean).join(', ')||d.display_name||'';
+        // v290: den ORT weiter von Photon nehmen – Nominatims Dorf bzw. Gemeinde lag in einer Messung an vier Orten
+        // dreimal daneben. Nur wenn Photon keinen Ortsnamen hatte (nur PLZ oder nichts), bleibt Nominatims Ort.
+        const nAddr=[nStr,(/[A-Za-zÄÖÜäöüß]/.test(photonOrt)?photonOrt:nOrt)].filter(Boolean).join(', ')||d.display_name||'';
         // Nominatim nur übernehmen, wenn es MEHR liefert (Straße) oder Photon leer war
         if(nStr||!addr){addr=nAddr||addr;strasse=nStr||strasse;}
       }
