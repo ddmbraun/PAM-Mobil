@@ -4915,7 +4915,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v285';
+const MOB_VERSION='v286';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -14027,7 +14027,10 @@ function _gtbBaustellen(max){
       if(tm&&tm.date===heute&&!zeit)zeit=(tm.von||'');
     });
     const hatTermin=(t.ausserhausTermine||[]).some(function(tm){return tm&&tm.date===heute;});
-    const hatFaellig=(t.due===heute||t.ausfuehrungstermin===heute);
+    // v286 (PC b1009): auch die Zeile „🔨 Ausführung am" von heute zählt – bis v285 las die
+    // Liste nur das stillgelegte Altfeld, das in keiner Karte gefüllt ist.
+    const hatFaellig=(t.due===heute||t.ausfuehrungstermin===heute
+      ||(t.aufgaben||[]).some(function(a){return a&&a.typ==='Ausführungstermin'&&a.datum===heute&&!a.erledigt;}));
     if(hatTermin||hatFaellig)heuteListe.push({t:t,zeit:zeit});
   });
   heuteListe.sort(function(a,b){return (a.zeit||'zz')<(b.zeit||'zz')?-1:1;});
@@ -14040,9 +14043,23 @@ function _gtbBaustellen(max){
     if(gesehen[t.id])return;
     if(t.inAusfuehrung===true||t.inAusfuehrung==='true')inAusf.push(t);
   });
+  // v286 (PC b1009): frühester OFFENER Ausführungstermin – Zeile „Ausführung am" oder
+  // Außerhaus-Termin der Art 🔨 Ausführung; das Altfeld nur, wenn beides fehlt.
+  // ⛔ Bewusst HIER drin und keine eigene Funktion: die älteren Prüfsuiten schneiden
+  //    _gtbBaustellen allein aus – eine neue Abhängigkeit ließe sie abstürzen.
+  function ausfDatum(t){
+    let beste='';
+    (t.aufgaben||[]).forEach(function(a){
+      if(a&&a.typ==='Ausführungstermin'&&a.datum&&!a.erledigt&&(!beste||a.datum<beste))beste=a.datum;
+    });
+    (t.ausserhausTermine||[]).forEach(function(tm){
+      if(tm&&tm.art==='ausfuehrung'&&tm.date&&!tm.erledigt&&(!beste||tm.date<beste))beste=tm.date;
+    });
+    return beste||String(t.ausfuehrungstermin||'').trim();
+  }
   inAusf.forEach(function(t){
     if(raus.length>=grenze)return;
-    const at=(t.ausfuehrungstermin||'').trim();
+    const at=ausfDatum(t);
     nimm(t,at?('Ausführung '+_gtbDatumKurz(at)):'in Ausführung','ausf');
   });
   return raus.slice(0,grenze);
