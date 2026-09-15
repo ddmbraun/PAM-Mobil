@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v294';
+const MOB_VERSION='v296';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10308,9 +10308,10 @@ async function _wpMobPdf(bericht,task){
     if(fotoList.length){
       let col=0;
       for(let fi=0;fi<fotoList.length;fi++){
-        const f=fotoList[fi];let b64=null;
-        if(f.localUrl){try{const rr=await fetch(f.localUrl);const bl=await rr.blob();b64=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(bl);});}catch(e){}}
-        else if(f.driveId&&typeof gdriveToken!=='undefined'&&gdriveToken){try{const rr=await fetch('https://www.googleapis.com/drive/v3/files/'+f.driveId+'?alt=media',{headers:{Authorization:'Bearer '+gdriveToken}});const bl=await rr.blob();b64=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(bl);});}catch(e){}}
+        const f=fotoList[fi];
+        // v295: fetch() auf data:-Adressen sperrt die CSP (connect-src) – Fotos fielen still weg. Weg wie beim Feuchteprotokoll.
+        const pf=await _fsFotoFuerPdf(f);
+        const b64=pf?pf.dataUrl:null;
         if(!b64)continue;
         const iW=85,iH=62;
         if(col===0){if(y+iH+12>285){doc.addPage();y=M;}if(fi===0){doc.setFillColor(230,244,235);doc.rect(M,y,W-2*M,7,'F');doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(26,92,58);doc.text('Fotodokumentation',M+2,y+5);y+=10;}
@@ -10530,7 +10531,77 @@ function _fsErgebnis(bericht){
 }
 // Checkliste benutzt? – mindestens ein Punkt nicht mehr „offen" oder eine Notiz
 function _fsSektionGenutzt(sek){
-  return ((sek&&sek.items)||[]).some(it=>it&&((it.status&&it.status!=='offen')||String(it.notiz||'').trim()));
+  return ((sek&&sek.items)||[]).some(it=>it&&((it.status&&it.status!=='offen')||String(it.notiz||'').trim()||(Array.isArray(it.fotoRefs)&&it.fotoRefs.length>0))); // v296: Foto zählt als geprüft
+}
+
+/* ══ v296: FOTOS DIREKT AN DER ZEILE (Messstelle, Checklisten-Punkt) – wie am Dach-Pin ═══════════════════════
+   Formular: Miniaturen unter der Notiz, ✕ löst nur die Verknüpfung, Antippen = groß, Knopf öffnet die Foto-Auswahl
+   (aufnehmen / Galerie / vorhandenes antippen). PDF: Foto direkt unter der Tabellenzeile (bis 6 cm) UND hinten groß.
+   Ins PDF kommen nur Fotos mit ✓ (inReport) – dieselbe Nummer wie im Fotoabschnitt. */
+function _fsRefPasst(f,ref){return !!(f&&ref&&(f.driveId===ref||f.localKey===ref||f.localUrl===ref));}
+// Fotos einer Zeile, die ins PDF kommen – Nummer wie im Fotoabschnitt, jedes nur einmal
+function _fsZeilenFotos(fotoList,refs){
+  const out=[];
+  (Array.isArray(refs)?refs:[]).forEach(r=>{
+    const i=(fotoList||[]).findIndex(f=>_fsRefPasst(f,r));
+    if(i>=0&&!out.some(o=>o.nr===i+1))out.push({f:fotoList[i],nr:i+1});
+  });
+  return out;
+}
+// Bildunterschrift im Fotoabschnitt: zu welchen Stellen und Prüfpunkten gehört das Foto
+function _fsFotoZuordnung(bericht,f){
+  const teile=[];
+  const st=((bericht&&bericht.stellen)||[]).map((s,i)=>((s&&s.fotoRefs)||[]).some(r=>_fsRefPasst(f,r))?i+1:0).filter(Boolean);
+  if(st.length)teile.push('Stelle '+st.join(', '));
+  ((bericht&&bericht.sektionen)||[]).forEach(sek=>((sek&&sek.items)||[]).forEach(it=>{
+    if(it&&it.text&&(it.fotoRefs||[]).some(r=>_fsRefPasst(f,r)))teile.push(it.text);
+  }));
+  return teile.join(' · ');
+}
+function _fsMiniaturQuelle(f,img){
+  try{
+    const u=String(f.localUrl||'');
+    if(u.startsWith('data:')||u.startsWith('blob:')){img.src=u;return;}
+    if(f.localKey&&!f.driveId&&typeof _mobPhotoGet==='function'){Promise.resolve(_mobPhotoGet(f.localKey)).then(d=>{if(d){f.localUrl=d;img.src=d;}}).catch(()=>{});return;}
+    if(f.driveId){
+      const ts=_thumbGespeichert(f);if(ts){img.src=ts;return;}
+      Promise.resolve(_mobFetchThumb(f.driveId)).then(d=>{if(d){img.src=d;if(_thumbMerken(f,d))scheduleSave();}}).catch(()=>{});
+    }
+  }catch(e){console.warn('[Feuchte] Miniatur:',e);}
+}
+function _fsFotoLeiste(bericht,it,label,kompakt){ // kompakt: nur 📷 (+Zahl) neben der Notiz – die Checkliste bleibt kurz
+  if(!Array.isArray(it.fotoRefs))it.fotoRefs=[];
+  const w=document.createElement('div');w.setAttribute('data-fs-fotoleiste','1');
+  w.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;';
+  const neu=()=>{
+    w.innerHTML='';
+    const fotos=bericht.fotos||[];
+    let anz=0;
+    it.fotoRefs.forEach((ref,ri)=>{
+      const fi=fotos.findIndex(f=>_fsRefPasst(f,ref));
+      if(fi<0)return; // Foto unten bei „Fotos" entfernt – der Verweis bleibt stumm
+      anz++;
+      const f=fotos[fi];
+      const th=document.createElement('div');th.setAttribute('data-fs-miniatur',String(ri));
+      th.title=f.inReport?'Kommt ins PDF':'Nicht im PDF – unten bei „Fotos" antippen';
+      th.style.cssText='position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;cursor:pointer;flex-shrink:0;background:var(--bg3);border:2px solid '+(f.inReport?'#1a7a3c':'var(--border)')+';';
+      const img=document.createElement('img');img.alt='';img.style.cssText='width:100%;height:100%;object-fit:cover;pointer-events:none;';
+      _fsMiniaturQuelle(f,img);
+      th.onclick=()=>_wpMobOpenFoto(bericht,fi);
+      const x=document.createElement('button');x.type='button';x.textContent='✕';x.title='Verknüpfung lösen – das Foto bleibt im Protokoll';
+      x.style.cssText='position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:12px;line-height:24px;padding:0;cursor:pointer;';
+      x.onclick=e=>{e.stopPropagation();it.fotoRefs.splice(ri,1);scheduleSave();neu();};
+      th.append(img,x);w.appendChild(th);
+    });
+    const b=document.createElement('button');b.type='button';b.setAttribute('data-fs-fotoknopf','1');
+    b.textContent=kompakt?'📷'+(anz?' '+anz:''):'📷 '+label+(anz?' ('+anz+')':'');
+    b.title=label;b.setAttribute('aria-label',label+(anz?' ('+anz+')':''));
+    b.style.cssText=(kompakt?'flex:0 0 auto;min-width:52px;':'flex:1 1 160px;')+'min-height:44px;padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:transparent;color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;';
+    b.onclick=()=>_wpMobFotoPickerForItem(bericht,it,neu);
+    w.appendChild(b);
+  };
+  neu();
+  return w;
 }
 
 // Open-Meteo-Antwort auswerten (reine Funktion). Niederschlag ab 0,2 mm zählt als Regen.
@@ -10881,15 +10952,11 @@ function _openFeuchteprotokollMobil(existingIdx){
       const notiz=_inp(st.notiz,'Notiz …',v=>{st.notiz=v;},false);
       notiz.style.marginTop='8px';
 
-      const fotoBtn=document.createElement('button');fotoBtn.type='button';
-      const _fotoText=()=>'📷 Fotos zu dieser Stelle ('+(st.fotoRefs||[]).length+')';
-      fotoBtn.textContent=_fotoText();
-      fotoBtn.style.cssText=S_KNOPF+'margin-top:8px;width:100%;border:1.5px solid var(--border);background:transparent;color:var(--text);';
-      fotoBtn.onclick=()=>_wpMobFotoPickerForItem(bericht,st,()=>{fotoBtn.textContent=_fotoText();});
+      const fotoLeiste=_fsFotoLeiste(bericht,st,'Fotos zu dieser Stelle'); // v296: Miniaturen direkt an der Stelle
 
       card.append(top,sel,gr);
       if(luftGr)card.appendChild(luftGr);
-      card.append(bf,werte,notiz,fotoBtn);
+      card.append(bf,werte,notiz,fotoLeiste);
       w.appendChild(card);
     });
     const add=document.createElement('button');add.type='button';add.textContent='＋ Messstelle';
@@ -10928,7 +10995,11 @@ function _openFeuchteprotokollMobil(existingIdx){
           knr.appendChild(b);
         });
         const n=_inp(it.notiz,'Notiz …',v=>{it.notiz=v;},false);n.style.marginTop='6px';
-        row.append(txt,knr,n);
+        const nz=document.createElement('div');nz.style.cssText='display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px;'; // v296: Notiz und Foto in einer Zeile
+        n.style.marginTop='0';n.style.flex='1 1 180px';n.style.minWidth='0';
+        const fl=_fsFotoLeiste(bericht,it,'Foto zu diesem Punkt',true);fl.style.marginTop='0';fl.style.flex='0 1 auto';
+        nz.append(n,fl);
+        row.append(txt,knr,nz);
         w.appendChild(row);
       });
       const frei=document.createElement('button');frei.type='button';frei.textContent='＋ Freier Eintrag';
@@ -11115,6 +11186,38 @@ async function _fsMobPdf(bericht,task){
 
     const fotoList=(bericht.fotos||[]).filter(f=>f&&f.inReport);
     const fotoNr=ref=>{const i=fotoList.findIndex(f=>f.driveId===ref||f.localKey===ref||f.localUrl===ref);return i<0?0:i+1;};
+    const bildCache=new Map(); // v296: jedes Foto nur einmal laden (an der Zeile UND hinten)
+    const bildLaden=async f=>{if(!bildCache.has(f))bildCache.set(f,await _fsFotoFuerPdf(f));return bildCache.get(f);};
+    // v296: Fotos direkt unter der Tabellenzeile – bis 6 cm hoch, zwei nebeneinander
+    const zeilenBilder=async(liste,text)=>{
+      const bW=(W-2*M-6)/2,bH=60;let col=0,zeileH=0;
+      for(const o of liste){
+        const d=await bildLaden(o.f);if(!d)continue;
+        let w=bW,h=bW*d.h/d.w;if(h>bH){h=bH;w=bH*d.w/d.h;}
+        if(col===0){if(y+bH+10>285){doc.addPage();y=M;}zeileH=0;}
+        const x=col===0?M:M+bW+6;
+        try{doc.addImage(d.dataUrl,'JPEG',x,y+2,w,h);}catch(e){console.warn('[Feuchte] Bild an der Zeile:',e);}
+        doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(90,90,90);
+        const cap=doc.splitTextToSize('Foto '+o.nr+(text?' – '+text:''),bW).slice(0,2);
+        doc.text(cap,x,y+2+h+3.5);
+        zeileH=Math.max(zeileH,h+(cap.length-1)*3);
+        if(col===1)y+=zeileH+9;
+        col=(col+1)%2;
+      }
+      if(col===1)y+=zeileH+9;
+    };
+    // v296: Tabelle an jeder Zeile mit Foto teilen – Bild darunter, dann ohne neuen Kopf weiter
+    const tabelleMitBildern=async(opt,body,bilder)=>{
+      let a=0,erste=true;
+      for(let i=0;i<=body.length;i++){
+        const hatBilder=i<body.length&&!!bilder[i]&&bilder[i].liste.length>0;
+        if(i<body.length&&!hatBilder)continue;
+        const b=i<body.length?i+1:body.length;
+        if(b>a){doc.autoTable(Object.assign({},opt,{startY:y,body:body.slice(a,b),showHead:erste?'firstPage':'never'}));y=doc.lastAutoTable.finalY;erste=false;}
+        if(hatBilder)await zeilenBilder(bilder[i].liste,bilder[i].text);
+        a=b;
+      }
+    };
 
     if(bericht.stellen.length){
       abschnitt('Messstellen');
@@ -11140,7 +11243,7 @@ async function _fsMobPdf(bericht,task){
           if(a)d.cell.styles.fontStyle='bold';
         }});
       y=doc.lastAutoTable.finalY+3;
-      const zeilen=[];
+      const zeilen=[],zeilenFotos=[]; // v296
       bericht.stellen.forEach((st,i)=>{
         const w=werte[i];const txt=[];
         {const kl=_fsKlartext(w);if(kl.text)txt.push(kl.text);} // v294
@@ -11149,13 +11252,14 @@ async function _fsMobPdf(bericht,task){
         w.hinweise.forEach(h=>txt.push(h));
         if(st.testo)txt.push(_fsTestoInfoText(st,w)); // v292
         if(st.notiz)txt.push('Notiz: '+st.notiz);
-        if(txt.length)zeilen.push([String(i+1),txt.join('\n')]);
+        const bl=_fsZeilenFotos(fotoList,st.fotoRefs); // v296
+        if(txt.length||bl.length){zeilen.push([String(i+1),txt.length?txt.join('\n'):'Fotos zur Stelle']);zeilenFotos.push({liste:bl,text:'Stelle '+(i+1)+(st.text?': '+st.text:'')});}
       });
       if(zeilen.length){
-        doc.autoTable({startY:y,theme:'grid',margin:{left:M,right:M},head:[['Nr','Hinweise und Notizen']],body:zeilen,
+        await tabelleMitBildern({theme:'grid',margin:{left:M,right:M},head:[['Nr','Hinweise und Notizen']],
           headStyles:{fillColor:[90,90,90],fontSize:7.5},bodyStyles:{fontSize:7.5},
-          columnStyles:{0:{cellWidth:8,halign:'center'},1:{cellWidth:174}}});
-        y=doc.lastAutoTable.finalY+3;
+          columnStyles:{0:{cellWidth:8,halign:'center'},1:{cellWidth:174}}},zeilen,zeilenFotos); // v296: Fotos direkt unter der Stelle
+        y+=3;
       }
       doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(100,100,100);
       const leg=doc.splitTextToSize(FS_LEGENDE,W-2*M);
@@ -11164,12 +11268,14 @@ async function _fsMobPdf(bericht,task){
     }
 
     const nichtGeprueft=[]; // v294
-    bericht.sektionen.forEach(sek=>{
-      if(!(sek.items||[]).length)return;
-      if(!_fsSektionGenutzt(sek)){nichtGeprueft.push(sek.titel||'');return;}
+    for(const sek of bericht.sektionen){ // v296: for statt forEach – Fotos an den Zeilen werden abgewartet
+      if(!(sek.items||[]).length)continue;
+      if(!_fsSektionGenutzt(sek)){nichtGeprueft.push(sek.titel||'');continue;}
       abschnitt(sek.titel||'');
-      doc.autoTable({startY:y,theme:'grid',margin:{left:M,right:M},head:[['Status','Prüfpunkt','Notiz']],
-        body:sek.items.map(it=>[it.status==='ok'?'unauffällig':it.status==='mangel'?'auffällig':'offen',it.text||'',it.notiz||'']),
+      const sekFotos=sek.items.map(it=>({liste:_fsZeilenFotos(fotoList,it.fotoRefs),text:(it.text||'')+(it.notiz?': '+it.notiz:'')}));
+      const sekBody=sek.items.map((it,ii)=>{const nrn=sekFotos[ii].liste.map(o=>o.nr);
+        return [it.status==='ok'?'unauffällig':it.status==='mangel'?'auffällig':'offen',it.text||'',(it.notiz||'')+(nrn.length?(it.notiz?'\n':'')+'Foto '+nrn.join(', '):'')];});
+      await tabelleMitBildern({theme:'grid',margin:{left:M,right:M},head:[['Status','Prüfpunkt','Notiz']],
         headStyles:{fillColor:farbe,fontSize:8},bodyStyles:{fontSize:8,minCellHeight:6},
         columnStyles:{0:{cellWidth:22,fontStyle:'bold'},1:{cellWidth:95},2:{cellWidth:65}},
         didParseCell:d=>{
@@ -11177,9 +11283,9 @@ async function _fsMobPdf(bericht,task){
           if(d.cell.raw==='unauffällig')d.cell.styles.textColor=[26,122,60];
           else if(d.cell.raw==='auffällig')d.cell.styles.textColor=[192,57,43];
           else d.cell.styles.textColor=[130,130,130];
-        }});
-      y=doc.lastAutoTable.finalY+4;
-    });
+        }},sekBody,sekFotos);
+      y+=4;
+    }
 
     if(nichtGeprueft.length){ // v294
       if(y>275){doc.addPage();y=M;}
@@ -11209,19 +11315,19 @@ async function _fsMobPdf(bericht,task){
       for(let fi=0;fi<fotoList.length;fi++){
         const f=fotoList[fi];
         setSaveInd('saving','PDF: Foto '+(fi+1)+'/'+fotoList.length+' …');
-        const d=await _fsFotoFuerPdf(f);
+        const d=await bildLaden(f); // v296: schon an der Zeile geladen
         if(!d)continue;
         if(col===0){
-          if(erste){abschnitt('Fotos');erste=false;}
+          if(erste){if(y+9+iH+10>285){doc.addPage();y=M;}abschnitt('Fotos');erste=false;} // v296: Überschrift nie allein unten auf der Seite
           if(y+iH+10>285){doc.addPage();y=M;}
           zeileH=0;
         }
         const x=col===0?M:M+iW+12;
         let w=iW,h=iW*d.h/d.w;if(h>iH){h=iH;w=iH*d.w/d.h;}
         try{doc.addImage(d.dataUrl,'JPEG',x,y,w,h);}catch(e){console.warn('[Feuchte] Bild:',e);}
-        const zu=bericht.stellen.map((st,si)=>(st.fotoRefs||[]).some(r=>r===f.driveId||r===f.localKey||r===f.localUrl)?si+1:0).filter(Boolean);
+        const zu=_fsFotoZuordnung(bericht,f); // v296: Stellen UND Prüfpunkte
         doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(90,90,90);
-        doc.text('Foto '+(fi+1)+(zu.length?' – Stelle '+zu.join(', '):''),x,y+h+3.5);
+        doc.text(doc.splitTextToSize('Foto '+(fi+1)+(zu?' – '+zu:''),iW)[0],x,y+h+3.5);
         zeileH=Math.max(zeileH,h);
         if(col===1)y+=zeileH+9;
         col=(col+1)%2;
