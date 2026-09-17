@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v297';
+const MOB_VERSION='v298';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9971,6 +9971,12 @@ let _mobRetryUploadsBusy=false; // v137: läuft nur EINMAL parallel (App-Start-T
 async function _mobRetryPendingUploads(opts){
   const laut=!!(opts&&opts.laut); // vom Knopf gerufen → IMMER eine Rückmeldung, nie stumm
   if(_mobRetryUploadsBusy){if(laut)toast('📤 Läuft bereits – einen Moment…','info',3000);return null;}
+  /* ⛔ v298: Läuft noch ein normaler Foto-Upload (uploadFoto / Schnellnotiz), NICHT
+     nachladen. Befund 17.09.2026 (iPhone): Upload von IMG_2443 hing 65 Min
+     im Hintergrund; beim Zurückkehren liefen angehaltene Upload-Schleife UND dieser Lauf
+     gleichzeitig los → drei Fotos doppelt in Drive. Die v137-Sperre oben kennt nur Läufe
+     von sich selbst. Den Rest erledigt die Schleife, was scheitert, holt der stille Takt. */
+  if(typeof _fotoUploadInFlight!=='undefined'&&_fotoUploadInFlight>0){if(laut)toast('📤 Es wird gerade noch ein Foto hochgeladen – der Rest geht danach von allein','info',4000);return null;}
   if(!gdriveToken||!tokenValid()){if(laut)toast('Nicht angemeldet – bitte einmal anmelden','error',5000);return null;}
   // v143: Verwaiste Fotos (App-Kill bevor der Task-Eintrag gespeichert war) zuerst
   // aus dem Geräte-Speicher wieder an ihre Tasks hängen – dann normal nachladen.
@@ -10037,6 +10043,7 @@ async function _mobRetryPendingUploads(opts){
     toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
     for(const it of pending){
       const {fo,folderId,task}=it;
+      if(fo&&fo.driveId){_fotoPendUpdate();continue;} // v298: inzwischen anderswo hochgeladen → nicht ein zweites Mal
       try{
         if(it.dp)await _dpUploadFromKey(fo,folderId); // v211: eigener Weg, siehe dort
         else await _mobUploadFromKey(fo,folderId,task); // v189: task mitgeben – siehe _tuDateiNachtragen
