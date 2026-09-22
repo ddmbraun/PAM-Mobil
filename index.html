@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v298';
+const MOB_VERSION='v299';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5064,6 +5064,8 @@ function _mobRestoreBoardsOffline(schnellstart){
   try{
     _applyMobileFilter(bk.data);
     if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
+    // v299: gemerkte Spalte auch beim Offline-Start. typeof: test_v261 führt diese Funktion einzeln aus.
+    if(typeof _mobSpalteFuer==='function')currentStatus=_mobSpalteFuer(currentBoard);
     _mobOfflineActive=true;
     // v120 (Geduld-Paket): Beim Schnellstart (Netz vorhanden, Verbindung läuft im
     // Hintergrund an) passenderen Hinweis zeigen als „Offline".
@@ -8147,6 +8149,7 @@ async function loadFile(){
     const data=await r.json();
     _applyMobileFilter(data);
     if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
+    currentStatus=_mobSpalteFuer(currentBoard); // v299: gemerkte Spalte dieses Boards (App-Start, Neu laden)
     _fotoPreloadNeue(); // v145: erster Lauf merkt nur den Bestand (kein Massen-Download)
     // modifiedTime und parent-Ordner-ID für Poll-Vergleich aktualisieren
     try{
@@ -8224,7 +8227,7 @@ async function pollForChanges(){
     const data=await r.json();
     _applyMobileFilter(data);
     if(!currentBoard||!boards[currentBoard])currentBoard=_mobDefaultBoard(); // v132
-    currentStatus=''; // Filter zurücksetzen damit alle Änderungen sichtbar sind
+    currentStatus=_mobSpalteFuer(currentBoard); // v299: gemerkte Spalte behalten, nicht mehr auf „Alle" zurücksetzen
     fileLastModified=meta.modifiedTime;
     if(currentTaskId){const t=findTaskById(currentTaskId);if(t)renderDetail(t);else closeDetail();}
     else{renderList();if(_mobView==='heute')renderHeuteMobil();}
@@ -12074,8 +12077,42 @@ function renderBoardBar(){
     else{lbl.textContent='Aktuelles Board: '+currentBoard+'  ·  '+names.length+' verfügbar';}
   }
 }
-function switchBoard(n){currentBoard=n;currentStatus='';_mobSaveBoard();renderList(true);} // v132: Wahl merken
-function switchStatus(s){currentStatus=(currentStatus===s?'':s);renderList(true);}
+// ── v299: gewählte Spalte je Board merken (nur dieses Gerät) ─────────────────
+// Die Spalte fiel bis v298 bei jedem Abgleich nach PC-Speichern, bei jedem Board-
+// Wechsel und bei jedem App-Start auf „Alle" zurück. Gemerkt wird je Board im
+// Gerätespeicher (wie BOARD_KEY) – nie in Drive, PC und andere Geräte bleiben unberührt.
+// Angewandt wird nur eine Spalte, die es im Board gibt und die der PC fürs Handy freigibt
+// (_mobileStatusFilter); sonst „Alle". Der Merker selbst bleibt dabei stehen.
+// ⛔ var + Laden beim ersten Zugriff: _mobRestoreBoardsOffline läuft beim Start früh.
+var _MOB_SPALTE_KEY='ptp_mob_spalte_v1';
+var _mobSpaltenMerk=null;
+function _mobSpalten(){
+  if(_mobSpaltenMerk)return _mobSpaltenMerk;
+  let o=null;
+  try{o=JSON.parse(localStorage.getItem(_MOB_SPALTE_KEY)||'null');}catch(e){}
+  _mobSpaltenMerk=(o&&typeof o==='object'&&!Array.isArray(o))?o:{};
+  return _mobSpaltenMerk;
+}
+function _mobSpalteMerken(board,s){
+  if(!board)return;
+  const m=_mobSpalten();
+  if(s)m[board]=s;else delete m[board];
+  try{localStorage.setItem(_MOB_SPALTE_KEY,JSON.stringify(m));}catch(e){}
+}
+function _mobSpalteFuer(board){
+  const m=_mobSpalten();
+  const s=(board&&Object.prototype.hasOwnProperty.call(m,board))?String(m[board]||'').trim():'';
+  if(!s)return '';
+  const gleich=x=>String(x==null?'':x).trim()===s;
+  const sts=(Array.isArray(_remoteBoardStatuses[board])&&_remoteBoardStatuses[board].length)?_remoteBoardStatuses[board]:statuses;
+  const spalte=(sts||[]).find(gleich);
+  if(spalte===undefined)return '';
+  const sf=mobileStatusFilter[board];
+  if(Array.isArray(sf)&&sf.length&&!sf.some(gleich))return '';
+  return spalte;
+}
+function switchBoard(n){currentBoard=n;currentStatus=_mobSpalteFuer(n);_mobSaveBoard();renderList(true);} // v132: Wahl merken · v299: Spalte des Boards mitnehmen
+function switchStatus(s){currentStatus=(currentStatus===s?'':s);_mobSpalteMerken(currentBoard,currentStatus);renderList(true);} // v299: je Board merken
 function renderStatusBar(){
   const sec=document.getElementById('statusSection');
   const bar=document.getElementById('statusBar');
@@ -12091,7 +12128,7 @@ function renderStatusBar(){
   const allCount=tasks.length;
   bar.innerHTML='<button class="status-chip'+(currentStatus===''?' active':'')+'" onclick="switchStatus(\'\')">'
     +'Alle <span style="opacity:.7;font-size:11px">('+allCount+')</span></button>'
-    +boardSts.filter(s=>(counts[s]||0)>0).map(s=>{
+    +boardSts.filter(s=>(counts[s]||0)>0||s===currentStatus).map(s=>{ // v299: gewählte Spalte bleibt sichtbar, auch leer
       const cnt=counts[s]||0;
       return '<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="switchStatus(\''+escAttr(s)+'\')">'
         +esc(s)+' <span style="opacity:.7;font-size:11px">('+cnt+')</span></button>';
@@ -12529,7 +12566,8 @@ function _mkTogglePanel(){
     const counts={};tasks.forEach(t=>{const s=t.status||'';counts[s]=(counts[s]||0)+1;});
     h+='<div class="mk-panel-lbl" style="margin-top:10px">Status</div>';
     h+='<button class="status-chip'+(currentStatus===''?' active':'')+'" onclick="_mkPickStatus(\'\')">Alle <span style="opacity:.7;font-size:11px">('+tasks.length+')</span></button>';
-    h+=boardSts.filter(s=>(counts[s]||0)>0).map(s=>'<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="_mkPickStatus(\''+escAttr(s)+'\')">'+esc(s)+' <span style="opacity:.7;font-size:11px">('+(counts[s]||0)+')</span></button>').join('');
+    // v299: die gewählte Spalte bleibt sichtbar (markiert), auch wenn sie gerade leer ist
+    h+=boardSts.filter(s=>(counts[s]||0)>0||s===currentStatus).map(s=>'<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="_mkPickStatus(\''+escAttr(s)+'\')">'+esc(s)+' <span style="opacity:.7;font-size:11px">('+(counts[s]||0)+')</span></button>').join('');
   }
   p.innerHTML=h;p.classList.add('open');
   // v141: abgedunkelter Hintergrund – Tipp daneben schließt das Panel (wie das ⋯-Menü im Dachplan)
