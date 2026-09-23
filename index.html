@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v299';
+const MOB_VERSION='v300';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5184,7 +5184,8 @@ async function _mobPhotoListMeta(){
       const req=tx.objectStore(_MOB_PHOTO_STORE).openCursor();
       req.onsuccess=e=>{
         const c=e.target.result;
-        if(c){const v=c.value||{};out.push({key:v.key,ts:v.ts||0,taskId:v.taskId||'',name:v.name||'',done:v.done||0,hatBild:_mobHatBilddaten(v)});c.continue();}
+        if(c){const v=c.value||{};out.push({key:v.key,ts:v.ts||0,taskId:v.taskId||'',name:v.name||'',done:v.done||0,hatBild:_mobHatBilddaten(v),
+          uploadName:v.uploadName||'',fotoTs:v.fotoTs||'',size:v.size||0,tuLeistung:v.tuLeistung||null});c.continue();} // v300: für die Waisen-Rettung
         else{db.close();res(out);}
       };
       req.onerror=()=>{db.close();res([]);};
@@ -5527,6 +5528,13 @@ function _mobSnapshotSetzen(){
     _mobSnap=m;
   }catch(e){_mobSnap=null;console.warn('[v257] Momentaufnahme:',e);}
 }
+// v300: Momentaufnahme aus dem GESPEICHERTEN Inhalt (Text aus saveFile) statt aus dem aktuellen Stand –
+// gebraucht, wenn während des Speicherns schon wieder etwas geändert wurde. Gleiche Form wie oben.
+function _mobSnapAusInhalt(text){
+  const o=JSON.parse(text),m=new Map();
+  for(const[k,v]of Object.entries(o||{})){if(k.charAt(0)==='_'||!Array.isArray(v))continue;for(const t of v){if(t&&t.id&&!m.has(t.id))m.set(t.id,JSON.stringify(t,_mobSaveReplacer));}}
+  return m;
+}
 function _mobSnapListe(taskId,feld){if(!_mobSnap||!taskId||!_mobSnap.has(taskId))return null;try{const o=JSON.parse(_mobSnap.get(taskId));return Array.isArray(o[feld])?o[feld]:[];}catch(e){return null;}}
 // Gerichtet zusammenführen (wie Desktop b771/b772): Ausgangspunkt ist die HIESIGE Liste – sie trägt
 // die eigenen Entnahmen und Neuzugänge. Von drüben kommt nur dazu, was beim letzten Abgleich noch
@@ -5566,6 +5574,9 @@ let currentTaskId=null;
 let saveTimer=null;
 let dirty=false;
 let _dirtyTs=0; // Zeitstempel wann dirty=true gesetzt wurde (Polling-Block max. 60s)
+// v300: Änderungszähler – jede Änderung zählt hoch. saveFile merkt sich den Stand beim Start und
+// erkennt so, ob WÄHREND des Speicherns etwas dazukam. `var` (kein TDZ): die Zähl-Stellen prüfen per typeof.
+var _mobAenderungNr=0;
 let _mobOfflineActive=false; // true = Boards kamen aus lokalem Backup (Offline-Start); KEIN Drive-Save bis frisch geladen
 let _mobSaving=false;     // Mutex: verhindert parallele saveFile()-Läufe (Race Condition)
 let _mobSaveQueued=false; // Während eines laufenden Saves kam ein weiterer Save-Wunsch → danach erneut speichern
@@ -8486,6 +8497,8 @@ async function saveFile(){
             const _wahlDrueben=(typeof _wahlSammelnAus==='function')?_wahlSammelnAus([remoteVisible,remoteHidden]):null;
             // v283: Uhr-Zeilen und Standorte an NICHT offenen Karten einsammeln (nur was seit dem letzten Abgleich neu ist)
             const _uhrHier=(typeof _uhrHierSammeln==='function')?_uhrHierSammeln([boards,hiddenBoards,_mobileFilteredOut],_savingTaskId):null;
+            // v300: Drive-Kennungen der Fotos (samt festem Upload-Namen) einsammeln – zurückgelegt wird unten nach v283.
+            const _fotoKennHier=(typeof _fotoKennSammeln==='function')?_fotoKennSammeln([boards,hiddenBoards,_mobileFilteredOut]):null;
             // Lokale Änderung der gerade offenen Task in die sichtbaren Remote-Boards mergen
             if(_savingTaskId){
               const localTask=findTaskById(_savingTaskId);
@@ -8602,6 +8615,8 @@ async function saveFile(){
               try{if(_wahlHier&&_wahlDrueben)_wahlToepfeVereinigen([boards,hiddenBoards,_mobileFilteredOut],[_wahlDrueben,_wahlHier]);}catch(e){console.warn('[v282] Wahl-Vermerke:',e);}
               // v283: dazu die Uhr-Zeilen – neue anhängen, Standorte nachtragen, am PC Gelöschtes bleibt weg.
               try{if(_uhrHier)_uhrZuruecklegen([boards,hiddenBoards,_mobileFilteredOut],_uhrHier);}catch(e){console.warn('[v283] Uhr-Zeilen:',e);}
+              // v300: …und die Drive-Kennungen der Fotos – nur an Fotos, die es drüben noch gibt und die dort noch keine haben.
+              try{if(_fotoKennHier)_fotoKennZuruecklegen([boards,hiddenBoards,_mobileFilteredOut],_fotoKennHier);}catch(e){console.warn('[v300] Foto-Kennungen:',e);}
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
@@ -8670,6 +8685,7 @@ async function saveFile(){
     }
     // _mobSaveReplacer: entfernt localUrl (data:/blob:) und _uploading aus Foto-Objekten
     // → hält die Drive-JSON klein; Fotos bleiben über IndexedDB (localKey) erhalten
+    const _aendImInhalt=(typeof _mobAenderungNr==='number')?_mobAenderungNr:0; // v300: diesen Änderungsstand bildet der Inhalt ab
     const content=JSON.stringify(obj,_mobSaveReplacer,2);
     // Resumable Upload (Two-Step: Session-Init + Byte-Transfer)
     const r=await _driveResumableUpdate(gdriveToken, fileId, content, 'application/json', mobETag);
@@ -8743,9 +8759,19 @@ async function saveFile(){
       try{const rm=await r.json();if(rm&&rm.modifiedTime)fileLastModified=rm.modifiedTime;}catch(e){console.warn('[PTP-Mobile]',e);}
     }
     dirty=false; // WICHTIG: vor _saveMobileBackup() – das Backup speichert das dirty-Flag mit
+    /* ⛔ v300 (Befund 22.09.2026): Kam WÄHREND dieses Speicherns eine Änderung dazu – etwa die
+       Drive-Kennung eines eben hochgeladenen Fotos –, steckt sie NICHT im hochgeladenen Inhalt.
+       Bis v299 galt sie trotzdem als gespeichert: das vorgemerkte Nachspeichern fiel weg (dirty
+       war schon false), und das nächste fremde Speichern löschte sie am Handy. Das Foto galt dann
+       als offen und ging ein zweites Mal hoch. Jetzt bleibt dirty stehen, gleich nachspeichern. */
+    const _waehrendGeaendert=(typeof _mobAenderungNr==='number')&&_mobAenderungNr!==_aendImInhalt;
+    if(_waehrendGeaendert){dirty=true;_mobSaveQueued=true;}
     _saveRetryCount=0;
     _saveMobileBackup(); // Lokales Backup nach erfolgreichem Speichern (dirty=false → kein Restore)
     _mobSnapshotSetzen(); // v257: gespeicherter Stand = neue Momentaufnahme
+    // v300: …aber nur, was wirklich in Drive steht. Kam während des Speicherns etwas dazu, gilt der
+    // hochgeladene Inhalt – sonst hielte der nächste Abgleich die neue Änderung für „schon drüben".
+    if(_waehrendGeaendert){try{_mobSnap=_mobSnapAusInhalt(content);}catch(e){_mobSnap=null;}}
     setSaveInd('saved','✓ Gespeichert');
     // Board-Bar und Liste aktualisieren falls Konflikt-Check neue Daten vom Desktop geladen hat
     // (Nicht renderDetail – das würde Fokus/Felder zurücksetzen während der Nutzer tippt)
@@ -10163,10 +10189,19 @@ async function _fotoOrphanReattach(){
     const t=_fotoTaskById(m.taskId); // v148: auch ausgeblendete/gefilterte Tasks
     if(!t)continue;
     if(!t.fotos)t.fotos=[];
-    t.fotos.push({id:m.key,localKey:m.key,name:m.name||'foto.jpg',mimeType:'image/jpeg',size:0,
+    const neu={id:m.key,localKey:m.key,name:m.name||'foto.jpg',mimeType:'image/jpeg',size:0,
       driveId:null,uploadedAt:new Date(m.ts||Date.now()).toISOString(),
       ts:new Date(m.ts||Date.now()).toISOString(), // v182: Tagebuch-Zeit = Sicherungsmoment (≈ Aufnahme; die Original-Datei ist hier weg)
-      source:'mobile'});
+      source:'mobile'};
+    /* v300: Seit vor dem Upload nicht mehr nach Drive gespeichert wird, ist der Gerätespeicher die
+       einzige Quelle nach einem App-Absturz. uploadFoto legt dort Aufnahmezeit, Größe, Leistung und
+       den festen Drive-Namen ab – damit wird das Foto wieder vollständig, und das Nachladen findet
+       einen schon angekommenen Upload, statt ein Doppel zu erzeugen. */
+    if(m.fotoTs)neu.ts=m.fotoTs;
+    if(m.size)neu.size=m.size;
+    if(m.uploadName)neu.uploadName=m.uploadName;
+    if(m.tuLeistung&&m.tuLeistung.lId)neu.tuLeistung=m.tuLeistung;
+    t.fotos.push(neu);
     re++;
   }
   if(re){
@@ -10189,19 +10224,29 @@ async function _mobUploadFromKey(fo,folderId,task){
   const mime=blob.type||'image/jpeg';
   // v254: EINE Stelle für den Namen – er geht sowohl in die Metadaten als auch in die
   // Nachschau des Doppelten-Schutzes. Zwei getrennte Ausdrücke könnten auseinanderlaufen.
-  const _name=fo.name||'foto.jpg';
-  const form=new FormData();
-  form.append('metadata',new Blob([JSON.stringify({name:_name,parents:[folderId],mimeType:mime})],{type:'application/json'}));
-  form.append('file',blob);
-  // v137: wie _uploadOneFotoToDrive – abgelaufener Schlüssel bricht den Nachlade-Upload
-  // nicht mehr ab, sondern wird einmal still erneuert und der Upload wiederholt.
-  // v254: dazu Zeitlimit und Geduld bei kurzen Aussetzern – der 401-Weg von v137 steckt
-  // jetzt mit in _uploadMitGeduld. Die Größe kommt aus dem Blob und ist damit exakt die,
-  // die auch gesendet wird (Voraussetzung für den Doppelten-Schutz).
-  const _send=(signal)=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-    {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form,signal});
-  const r=await _uploadMitGeduld(_send,{bytes:blob.size||0,name:_name,folderId});
-  const j=await r.json();
+  // v300: der beim ersten Versuch fest vergebene Name (uploadName) geht vor.
+  const _name=fo.uploadName||fo.name||'foto.jpg';
+  /* ⛔ v300 (Befund 22.09.2026): ERST NACHSEHEN, DANN SENDEN. Ein Foto lag doppelt in Drive – der
+     erste Upload war angekommen, nur seine Rückmeldung nicht (oder sie ging beim Abgleich
+     verloren), und dieser Weg lud es unter dem rohen Kameranamen ein zweites Mal hoch. Trägt das
+     Foto einen festen Namen, wird genau diese Datei gesucht – Name UND Größe aufs Byte – und nur
+     verknüpft. Ohne festen Namen (ältere Einträge) wird wie bisher nicht geraten. */
+  let j=fo.uploadName?await _uploadSchonDa(_name,folderId,blob.size||0):null;
+  if(!j){
+    const form=new FormData();
+    form.append('metadata',new Blob([JSON.stringify({name:_name,parents:[folderId],mimeType:mime})],{type:'application/json'}));
+    form.append('file',blob);
+    // v137: wie _uploadOneFotoToDrive – abgelaufener Schlüssel bricht den Nachlade-Upload
+    // nicht mehr ab, sondern wird einmal still erneuert und der Upload wiederholt.
+    // v254: dazu Zeitlimit und Geduld bei kurzen Aussetzern – der 401-Weg von v137 steckt
+    // jetzt mit in _uploadMitGeduld. Die Größe kommt aus dem Blob und ist damit exakt die,
+    // die auch gesendet wird (Voraussetzung für den Doppelten-Schutz).
+    const _send=(signal)=>fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+      {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form,signal});
+    const r=await _uploadMitGeduld(_send,{bytes:blob.size||0,name:_name,folderId});
+    j=await r.json();
+  }
+  if(j.name)fo.name=j.name; // v300: Drive-Namen übernehmen wie der Erstweg in uploadFoto
   fo.driveId=j.id;
   delete fo._uploadError; // v143: Fehler-Markierung aufheben – Warnleuchte geht aus
   fo.localUrl=dataUrl; // im Speicher behalten für schnelle Anzeige
@@ -11807,6 +11852,7 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
 function scheduleSave(){
   _mobOfflineEditWarnung(); // v242: erste Änderung im Offline-Start einmalig ansagen
   dirty=true;_dirtyTs=Date.now();
+  if(typeof _mobAenderungNr==='number')_mobAenderungNr++; // v300: siehe saveFile
   setSaveInd('saving','…');
   clearTimeout(saveTimer);
   saveTimer=setTimeout(()=>{saveFile();},1200);
@@ -11815,6 +11861,7 @@ function scheduleSave(){
 function forceSave(){
   _mobOfflineEditWarnung(); // v242: erste Änderung im Offline-Start einmalig ansagen
   dirty=true;_dirtyTs=Date.now();
+  if(typeof _mobAenderungNr==='number')_mobAenderungNr++; // v300: siehe saveFile
   clearTimeout(saveTimer);
   saveFile();
 }
@@ -17966,13 +18013,17 @@ function extractDriveFolderId(url){
   const m2=String(url).trim().match(/^([a-zA-Z0-9_-]{20,})$/);
   return m2?m2[1]:null;
 }
-async function _uploadOneFotoToDrive(file,folderId){
+// Sinnvoller Dateiname: Zeitstempel_Originalname. v300: eigene Funktion – uploadFoto legt den Namen
+// VOR dem ersten Versuch fest und merkt ihn am Foto (uploadName), damit das Nachladen genau diese Datei findet.
+function _fotoUploadName(file){
   const ts=new Date();
   const pad=n=>String(n).padStart(2,'0');
   const stamp=ts.getFullYear()+pad(ts.getMonth()+1)+pad(ts.getDate())+'_'+pad(ts.getHours())+pad(ts.getMinutes())+pad(ts.getSeconds());
-  // Sinnvoller Dateiname: Zeitstempel_Originalname
-  const origName=file.name||'foto.jpg';
-  const safeName=stamp+'_'+origName.replace(/[^\w.\-]+/g,'_');
+  const origName=(file&&file.name)||'foto.jpg';
+  return stamp+'_'+origName.replace(/[^\w.\-]+/g,'_');
+}
+async function _uploadOneFotoToDrive(file,folderId,festName){
+  const safeName=festName||_fotoUploadName(file); // v300: fest vergebener Name geht vor
   const metadata={name:safeName,parents:[folderId],description:'PAM Mobile Upload'};
   const body=new FormData();
   body.append('metadata',new Blob([JSON.stringify(metadata)],{type:'application/json'}));
@@ -18002,6 +18053,9 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   const fileArr=Array.from(files);
   const t=_zielTaskId?findTaskById(_zielTaskId):currentTask();
   if(!t){toast('Keine Task geöffnet','error');return;}
+  // v300: Standort gleich jetzt anfragen – läuft neben dem Verkleinern statt danach. iOS nimmt ihn aus
+  // Web-Fotos heraus, _fotoUebernahme stempelt ihn nach und wartete bisher erst dort bis zu 8 s darauf.
+  try{if(typeof _gpsAktuellePos==='function'&&fileArr.some(f=>!f.lastModified||(Date.now()-f.lastModified)<_FOTO_FRISCH_MS))_gpsAktuellePos();}catch(e){}
   // v72: Reihenfolge wichtig – zuerst der eigene Ordner des Tasks, dann je nach Board-Typ.
   // 1) Eigener Foto-/Projektordner des Tasks (falls vorhanden)
   let folderId=extractDriveFolderId(t.gdrive)
@@ -18077,6 +18131,7 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   // v143: SOFORT als ungespeichert markieren – damit greift der dirty-Schutz des Polls
   // und der „App in Hintergrund"-Handler sichert die frischen Fotos ins lokale Backup.
   dirty=true;_dirtyTs=Date.now();
+  if(typeof _mobAenderungNr==='number')_mobAenderungNr++; // v300: siehe saveFile
   _fotoPendUpdate();
   // v185: Quelle einmal auslesen und sofort zurücksetzen – sonst gilt sie noch beim
   // nächsten Aufruf weiter (etwa wenn danach aus der Mediathek geholt wird).
@@ -18146,25 +18201,32 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
       const dataUrl=u.dataUrl||await _fileToDataUrl(o.file);
       // v143: taskId mitspeichern – verwaiste Fotos (App-Kill vor dem Task-Save)
       // können damit beim nächsten Start wieder an ihren Task gehängt werden.
-      await _mobPhotoSave(o.fo.localKey,dataUrl,{taskId:_taskId,name:o.fo.name||''});
+      // v300: dazu Aufnahmezeit, Größe und Leistung – vor dem Upload wird nicht mehr nach Drive
+      // gespeichert, nach einem App-Absturz ist das hier die einzige Quelle der Waisen-Rettung.
+      await _mobPhotoSave(o.fo.localKey,dataUrl,{taskId:_taskId,name:o.fo.name||'',fotoTs:o.fo.ts||'',size:o.file.size||0,tuLeistung:o.fo.tuLeistung||null});
       // v191: Wurde WÄHREND des Verkleinerns verworfen, den Eintrag gleich wieder weg.
       if(o.fo._entscheidung==='verworfen'){try{await _mobPhotoDelete(o.fo.localKey);}catch(e2){}}
     }catch(e){console.warn('[uploadFoto] localKey save:',e);}
   }
 
   // ── Schritt 1b (v143): Zwischenstand SOFORT sichern, VOR den Uploads ──────
-  // App-Kill während der Kamera (Samsung-Speicherdruck) kostete vorher den ganzen
-  // Stapel – jetzt stehen die Foto-Einträge (localKey) bereits in Backup + Drive-JSON.
+  // App-Kill während der Kamera (Samsung-Speicherdruck) kostete vorher den ganzen Stapel.
+  /* ⛔ v300 (Befund 22.09.2026, Freigabe Frank „bau ABC"): Hier wurde zusätzlich die GANZE
+     Datendatei nach Drive gespeichert (2,4 MB), und das Foto wartete darauf – gemessen lagen zwei
+     Drittel der Wartezeit VOR dem Senden. Jetzt geht das Foto zuerst, die Datendatei einmal danach
+     (forceSave unten). Gesichert ist das Foto trotzdem schon hier: im Gerätespeicher samt Karte,
+     Aufnahmezeit, Größe und Leistung (_mobPhotoSave oben) und im lokalen Backup. Stirbt die App,
+     hängt die Waisen-Rettung es beim nächsten Start vollständig wieder an. */
   _saveMobileBackup();
-  try{clearTimeout(saveTimer);await saveFile();}catch(e){console.warn('[uploadFoto] Zwischen-Save:',e);}
+  clearTimeout(saveTimer); // v300: anstehendes Speichern nicht neben das Foto legen – forceSave unten nimmt es mit
 
   /* ⛔ v191 — DAS TOR. Ab hier geht es nach Drive, und ab hier erst.
      Bis v190 lief der Upload los, während der Dialog noch offen stand: „Behalten"
      startete nichts, „Verwerfen" kam zu spät. Jetzt wartet der Upload auf die
-     Entscheidung. Das Bild ist zu diesem Zeitpunkt bereits im Gerät gesichert und
-     im Zwischen-Save verankert — es kann also nichts verloren gehen, während wir
-     warten. Wer die App weglegt, ohne zu entscheiden, dessen Foto gilt als behalten
-     und wird von der Warnleuchte nachgeladen: im Zweifel behalten. */
+     Entscheidung. Das Bild ist zu diesem Zeitpunkt bereits im Gerät gesichert (v300:
+     mit allem, was die Waisen-Rettung braucht) — es kann also nichts verloren gehen,
+     während wir warten. Wer die App weglegt, ohne zu entscheiden, dessen Foto gilt als
+     behalten und wird von der Warnleuchte nachgeladen: im Zweifel behalten. */
   try{await _entscheidung;}catch(e){console.warn('[uploadFoto] Entscheidung:',e);}
   const _behalten=fotoObjs.filter(o=>o.fo._entscheidung!=='verworfen');
   if(_behalten.length<fotoObjs.length){
@@ -18180,7 +18242,14 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   if(_canUpload&&folderId)for(const {file,fo} of _behalten){
     _fi++;setSaveInd('saving','Foto '+_fi+'/'+_behalten.length+' hochladen…');
     try{
-      const meta=await _uploadOneFotoToDrive(file,folderId);
+      /* v300 (C): Der Drive-Name wird EINMAL festgelegt und gemerkt – an der Karte und im
+         Gerätespeicher. Geht die Rückmeldung verloren, sucht das Nachladen genau diese Datei
+         (_mobUploadFromKey), statt das Foto ein zweites Mal hochzuladen. */
+      const _vorab=_fotoLive(_taskId,fo);
+      if(!_vorab.uploadName)_vorab.uploadName=_fotoUploadName(file);
+      if(_vorab!==fo)fo.uploadName=_vorab.uploadName;
+      await _mobPhotoSetMeta(fo.localKey,{uploadName:_vorab.uploadName});
+      const meta=await _uploadOneFotoToDrive(file,folderId,_vorab.uploadName);
       // v146: die HOCHGELADENE Fassung cachen (komprimiert + ggf. GPS-gestempelt) – vorher
       // lag das rohe Kamera-Original im Cache und der 📍-Dialog zeigte „KEIN Aufnahmeort",
       // obwohl die Drive-Datei längst Koordinaten hatte (Befund Frank 31.07.).
@@ -18256,6 +18325,39 @@ function _fotoLive(taskId,fo){
   let live=fo.localKey?t.fotos.find(f=>f&&f.localKey===fo.localKey):null;
   if(!live){t.fotos.push(fo);live=fo;}
   return live;
+}
+/* v300: Drive-Kennungen beim Konflikt-Abgleich schützen (Befund 22.09.2026). Dort gewinnt für
+   alle NICHT offenen Karten die Drive-Fassung – kam die Kennung eines Fotos erst nach dem letzten
+   Speichern an, war sie weg, das Foto galt als offen und ging ein zweites Mal hoch.
+   Eine Kennung ist eine Tatsache (die Datei liegt in Drive). Zurückgelegt wird sie nur an ein Foto,
+   das es drüben noch gibt (gleicher Geräte-Schlüssel) und das dort noch KEINE Kennung hat –
+   was drüben entfernt wurde, kommt nicht zurück, eine drüben gesetzte Kennung bleibt. */
+function _fotoKennSammeln(toepfe){
+  const m=new Map();
+  for(const topf of toepfe||[])for(const liste of Object.values(topf||{})){
+    if(!Array.isArray(liste))continue;
+    for(const t of liste)for(const f of (t&&t.fotos)||[]){
+      if(f&&f.localKey&&(f.driveId||f.uploadName)&&!m.has(f.localKey))m.set(f.localKey,f);
+    }
+  }
+  return m;
+}
+function _fotoKennZuruecklegen(toepfe,m){
+  let n=0;
+  if(!m||!m.size)return n;
+  for(const topf of toepfe||[])for(const liste of Object.values(topf||{})){
+    if(!Array.isArray(liste))continue;
+    for(const t of liste)for(const f of (t&&t.fotos)||[]){
+      const hier=(f&&f.localKey)?m.get(f.localKey):null;
+      if(!hier||hier===f)continue;
+      if(!f.driveId&&hier.driveId){
+        for(const k of ['driveId','name','thumbnail','url','download'])if(hier[k])f[k]=hier[k];
+        delete f._uploadError;n++;
+      }
+      if(!f.uploadName&&hier.uploadName)f.uploadName=hier.uploadName;
+    }
+  }
+  return n;
 }
 
 // ══════════════════════════════════════════════
@@ -21907,7 +22009,12 @@ async function _submitQuickAdd(){
     _idx++;setSaveInd('saving','Foto '+_idx+'/'+fotoObjs.length+' hochladen…');
     try{
       o.fo._uploading=true;
-      const meta=await _uploadOneFotoToDrive(o.f,_qaFolderId);
+      // v300 (C): fester Drive-Name wie in uploadFoto – das Nachladen findet einen angekommenen Upload wieder
+      const _vorabQ=_fotoLive(newT.id,o.fo);
+      if(!_vorabQ.uploadName)_vorabQ.uploadName=_fotoUploadName(o.f);
+      if(_vorabQ!==o.fo)o.fo.uploadName=_vorabQ.uploadName;
+      await _mobPhotoSetMeta(o.fo.localKey,{uploadName:_vorabQ.uploadName});
+      const meta=await _uploadOneFotoToDrive(o.f,_qaFolderId,_vorabQ.uploadName);
       // v146: hochgeladene Fassung cachen statt Roh-Original (s. uploadFoto)
       try{if(typeof _fotoBlobCache!=='undefined')_blobCacheEinfuegen(_fotoBlobCache,meta.id,URL.createObjectURL(o.f));}catch(e){}
       const live=_fotoLive(newT.id,o.fo);
@@ -21963,6 +22070,7 @@ async function deleteTask(){
   // currentTaskId bleibt gesetzt bis nach dem Save, damit _savingTaskId im Konflikt-Merge
   // den richtigen Task referenziert und PC-Änderungen an anderen Tasks erhalten bleiben.
   dirty=true;_dirtyTs=Date.now();
+  if(typeof _mobAenderungNr==='number')_mobAenderungNr++; // v300: läuft gerade ein Speichern, darf das Löschen nicht als gespeichert gelten
   clearTimeout(saveTimer);
   try{await saveFile();}catch(e){console.warn('[PTP-Mobile] deleteTask save:',e);}
   currentTaskId=null;
