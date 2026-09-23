@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v300';
+const MOB_VERSION='v301';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9752,6 +9752,23 @@ function _wpMobFotoPickerForItem(bericht,it,onChangeCb){
 }
 
 
+/* v301: Berichts-Foto im LIVE-Stand nachschlagen – das Gegenstück zu `_fotoLive` (v143)
+   für Fotos, die in `task.pruefberichte[].fotos` wohnen. Der Konflikt-Abgleich kann
+   Auftrag UND Bericht durch neue Objekte ersetzt haben; ein Schreibzugriff auf das alte
+   Objekt ginge dann ins Leere (Drive-Kennung weg → Foto gilt als offen → Doppel).
+   ⛔ Anders als `_fotoLive` wird hier NICHTS wieder eingehängt: ist das Foto drüben weg,
+   wurde es verworfen oder gelöscht – es darf nicht zurückkommen. */
+function _wpFotoLive(taskId,bericht,fo){
+  try{
+    const t=taskId?findTaskById(taskId):null;
+    const liste=(t&&Array.isArray(t.pruefberichte))?t.pruefberichte:null;
+    if(!liste)return fo;
+    const b=liste.find(x=>x&&(x===bericht||(bericht&&bericht.id&&x.id===bericht.id)));
+    if(!b||!Array.isArray(b.fotos))return fo;
+    const f=fo&&fo.localKey?b.fotos.find(x=>x&&x.localKey===fo.localKey):null;
+    return f||fo;
+  }catch(e){return fo;}
+}
 /* v231: `onBehalten` – Rückruf mit den Fotos, die die Entscheidung überlebt haben.
    Nur so kann der Mangel-Picker frisch Aufgenommenes gleich verknüpfen, ohne ein
    verworfenes Bild zu verknüpfen (der Verweis bliebe sonst als Karteileiche stehen). */
@@ -9772,7 +9789,9 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
     const fotoObjs=files.map(file=>{
       const blobUrl=URL.createObjectURL(file);
       const localKey='photo_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
-      const fo={name:file.name,inReport:true,localUrl:blobUrl,localKey,driveId:null,_uploading:false};
+      // v301: fester Drive-Name schon beim Übernehmen – er geht so auch in den Gerätespeicher
+      // und übersteht Abgleich, Neustart und Nachladen (Doppelten-Schutz wie v300).
+      const fo={name:file.name,inReport:true,localUrl:blobUrl,localKey,driveId:null,_uploading:false,uploadName:_fotoUploadName(file)};
       bericht.fotos.push(fo);
       return{file,fo};
     });
@@ -9824,7 +9843,7 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
       _fileToDataUrl(file).then(dataUrl=>{
         if(fo._entscheidung==='verworfen')return null; // während des Einlesens verworfen
         fo.localUrl=dataUrl; // blob-URL durch persistente data-URL ersetzen
-        return _mobPhotoSave(fo.localKey,dataUrl);
+        return _mobPhotoSave(fo.localKey,dataUrl,{uploadName:fo.uploadName||''}); // v301: fester Name mit in den Gerätespeicher
       }).then(()=>{scheduleSave();}).catch(e=>console.warn('[MobPhoto]',e));
     });
 
@@ -9839,9 +9858,20 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
     }
     if(!_wpBehalten.length){try{_wpMobRenderFotos(bericht,grid);}catch(e){}return;}
 
-    // ── 2. Uploads parallel im Hintergrund ─────────────────────────────────
+    /* ── 2. Uploads nacheinander, mit demselben Baustein wie alle anderen Wege ──
+       ⛔ v301 (Befund 23.09.2026): Dieser Weg war der letzte auf dem Stand von v202 –
+       blanker fetch, alle Fotos gleichzeitig, roher Kameraname („image.jpg" mehrfach im
+       selben Auftragsordner). Ihm fehlten damit:
+         · Zeitlimit und Geduld bei Aussetzern (v254) – ein hängendes Foto stand endlos,
+         · Schlüssel-Erneuerung bei 401 (v137) – abgelaufener Zugang = Fehlschlag,
+         · Doppelten-Schutz über einen festen Namen (v300),
+         · die Upload-Sperre (v143): der Abgleich durfte mitten im Upload die Boards
+           ersetzen, dann ging die Drive-Kennung an ein verwaistes Objekt – das Foto galt
+           als offen und das Nachladen schickte es ein zweites Mal.
+       Alles vier steckt jetzt in `_uploadOneFotoToDrive` + `_fotoUploadInFlight` + `_wpFotoLive`. */
     if(typeof gdriveToken!=='undefined'&&gdriveToken){
       const ct=currentTask();
+      const _wpTaskId=ct?ct.id:null;
       const fid=ct?_extractFolderIdMob(ct.gdrive||ct.gdriveOrdner||''):null;
       if(fid){
         // Upload-Spinner einblenden
@@ -9851,35 +9881,40 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
         _wpMobRenderFotos(bericht,grid);
 
         let ok=0,fail=0;
-        await Promise.all(_wpBehalten.map(async({file,fo})=>{
+        _fotoUploadInFlight++; // v301: Sperre wie v143 – der Abgleich wartet
+        try{
+        for(const {file,fo} of _wpBehalten){ // v301: nacheinander (v78-Regel), nicht mehr alle gleichzeitig
+          const live=_wpFotoLive(_wpTaskId,bericht,fo); // v301: Ergebnis IMMER an den Live-Eintrag
           try{
-            const form=new FormData();
-            form.append('metadata',new Blob([JSON.stringify({name:file.name,parents:[fid],mimeType:file.type})],{type:'application/json'}));
-            form.append('file',file);
-            const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
-              {method:'POST',headers:{Authorization:'Bearer '+gdriveToken},body:form});
-            if(r.ok){
-              const j=await r.json();fo.driveId=j.id;ok++;
-              // Drive-Upload erfolgreich → lokale IndexedDB-Kopie kann bereinigt werden
-              if(fo.localKey)_mobPhotoDelete(fo.localKey).catch(()=>{});
-              // thumbnailLink sofort holen (erspart API-Call beim nächsten Öffnen)
-              // Google braucht manchmal 2-3 Sek zum Generieren → kurz warten dann holen
-              setTimeout(async()=>{
-                try{
-                  const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(j.id)+'?fields=thumbnailLink',
-                    {headers:{Authorization:'Bearer '+gdriveToken}});
-                  if(mr.ok){const md=await mr.json();if(md.thumbnailLink){fo.thumbnail=md.thumbnailLink;scheduleSave();}}
-                }catch(_){}
-              },3000);
-            }
-            else fail++;
-          }catch(ex){fail++;console.warn('[MobPhoto] Upload:',ex);}
+            if(!live.uploadName)live.uploadName=fo.uploadName||_fotoUploadName(file); // v301: der beim Übernehmen vergebene Name gilt
+            if(live!==fo)fo.uploadName=live.uploadName;
+            const meta=await _uploadOneFotoToDrive(file,fid,live.uploadName);
+            live.driveId=meta.id;live.name=meta.name||live.name;ok++;
+            if(meta.thumbnailLink)live.thumbnail=meta.thumbnailLink; // v301: kommt schon mit der Antwort
+            delete live._uploadError;
+            if(live!==fo){fo.driveId=meta.id;fo.name=live.name;}
+            // Drive-Upload erfolgreich → lokale IndexedDB-Kopie kann bereinigt werden
+            if(fo.localKey)_mobPhotoDelete(fo.localKey).catch(()=>{});
+            // thumbnailLink nachholen, falls Google ihn noch nicht erzeugt hatte (2-3 Sek)
+            if(!meta.thumbnailLink)setTimeout(async()=>{
+              try{
+                const mr=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(meta.id)+'?fields=thumbnailLink',
+                  {headers:{Authorization:'Bearer '+gdriveToken}});
+                if(mr.ok){const md=await mr.json();if(md.thumbnailLink){live.thumbnail=md.thumbnailLink;scheduleSave();}}
+              }catch(_){}
+            },3000);
+          }catch(ex){fail++;live._uploadError=true;console.warn('[MobPhoto] Upload:',ex);}
           finally{
-            fo._uploading=false;
+            live._uploading=false;fo._uploading=false;
             scheduleSave();
+            _fotoPendUpdate(); // v301: Warnleuchte gleich mitziehen
             _wpMobRenderFotos(bericht,grid); // Spinner entfernen sobald dieses Foto fertig ist
           }
-        }));
+        }
+        }finally{
+          _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);
+          _fotoPendUpdate();
+        }
         if(fail===0)toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' in Drive gespeichert','success',2500);
         else toast((fail>0?fail+' Fehler – wird beim nächsten Start wiederholt, ':'')+ok+' gespeichert','error',4000);
       }
@@ -10277,7 +10312,15 @@ async function _dpUploadFromKey(fo,folderId){
      fo.editedDriveId (so heilt sich ein gescheiterter Mal-Upload von selbst). */
   const _edited=!!(fo.driveId&&fo.editedName&&!fo.editedDriveId);
   const file=new File([blob],_edited?(fo.editedName||'dachplan_pin_bearbeitet.jpg'):(fo.name||('dachplan_'+fo.key+'.jpg')),{type:blob.type||'image/jpeg'});
-  const meta=await _uploadOneFotoToDrive(file,folderId);
+  /* ⛔ v301: Hat das Pin-Foto beim ersten Versuch einen festen Drive-Namen bekommen, wird
+     ZUERST genau diese Datei gesucht (Name UND Größe aufs Byte) und nur verknüpft. Sonst
+     entstand bei verlorener Rückmeldung ein Doppel – ausgerechnet auf dem Dach, wo der
+     Empfang am schlechtesten ist. Ohne festen Namen (bemalte Fassung, Basisbild,
+     Altbestand) bleibt es wie bisher: kein Raten. */
+  const _fest=(!_edited&&fo.uploadName)?fo.uploadName:'';
+  let meta=null;
+  if(_fest&&typeof _uploadSchonDa==='function')meta=await _uploadSchonDa(_fest,folderId,(blob&&blob.size)||0);
+  if(!meta)meta=await _uploadOneFotoToDrive(file,folderId,_fest||undefined);
   if(_edited)fo.editedDriveId=meta.id;else fo.driveId=meta.id;
   if(fo._dpBasis)fo._dpBasis.imgDriveId=meta.id; // Basisbild: Kennung gehört an den Dachplan, nicht ans Ersatz-Objekt
 }
@@ -18020,7 +18063,20 @@ function _fotoUploadName(file){
   const pad=n=>String(n).padStart(2,'0');
   const stamp=ts.getFullYear()+pad(ts.getMonth()+1)+pad(ts.getDate())+'_'+pad(ts.getHours())+pad(ts.getMinutes())+pad(ts.getSeconds());
   const origName=(file&&file.name)||'foto.jpg';
-  return stamp+'_'+origName.replace(/[^\w.\-]+/g,'_');
+  const basis=stamp+'_'+origName.replace(/[^\w.\-]+/g,'_');
+  /* ⛔ v301 (im Browser gemessen): Mehrere Fotos aus EINER Auswahl bekommen ihren Namen in
+     derselben Sekunde – und vom iPhone heißen sie alle „image.jpg". Der Name wäre damit zweimal
+     derselbe. Seit v300 ist er aber die Kennung, an der das Nachladen „liegt schon oben?" prüft:
+     zwei gleiche Namen könnten das falsche Bild verknüpfen. Deshalb bekommt jeder weitere Name
+     in derselben Sekunde eine laufende Nummer.
+     ⛔ Der Merker hängt an der Funktion selbst (nicht daneben): Prüfungen schneiden sie einzeln
+     aus und führen sie ohne ihre Umgebung aus – eine Variable daneben gäbe dort einen Absturz. */
+  if(basis===_fotoUploadName._zuletzt){
+    _fotoUploadName._lauf=(_fotoUploadName._lauf||0)+1;
+    return stamp+'-'+_fotoUploadName._lauf+'_'+origName.replace(/[^\w.\-]+/g,'_');
+  }
+  _fotoUploadName._zuletzt=basis;_fotoUploadName._lauf=0;
+  return basis;
 }
 async function _uploadOneFotoToDrive(file,folderId,festName){
   const safeName=festName||_fotoUploadName(file); // v300: fest vergebener Name geht vor
@@ -24894,7 +24950,9 @@ window.Dachplan=(function(){
     if(!behalten.length){drawThumbs(p);return;}
     for(const o of behalten){
       const small=o.file,fo=o.fo;
-      if(folderId){try{const meta=await _uploadOneFotoToDrive(small,folderId);fo.driveId=meta.id;save();}
+      if(folderId){try{
+        if(!fo.uploadName)fo.uploadName=_fotoUploadName(small); // v301: fester Drive-Name, einmal vergeben (siehe _dpUploadFromKey)
+        const meta=await _uploadOneFotoToDrive(small,folderId,fo.uploadName);fo.driveId=meta.id;save();}
         catch(e){say('Foto lokal gesichert – Drive-Upload später','error');}}
       else{say('Kein Foto-Ordner – Foto nur lokal gesichert','error');}
     }
