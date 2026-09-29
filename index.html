@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v302';
+const MOB_VERSION='v303';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -8854,6 +8854,7 @@ function _pruefMenuShow(e){
     {label:'+ Prüfbericht',       fn:function(){_openPruefformular();},         bg:'rgba(255,255,255,.12)',border:'rgba(255,255,255,.35)',color:'inherit'},
     {label:'🏠 Wartungsprotokoll',fn:function(){_openWartungsprotokollMobil();},bg:'#1a5c3a',             border:'#1a5c3a',             color:'#fff'},
     {label:'💧 Feuchte / Schimmel',fn:function(){_openFeuchteprotokollMobil();},bg:'#1f5f8b',             border:'#1f5f8b',             color:'#fff'}, // v291
+    {label:'💧 Feuchte – Keller',  fn:function(){_openFeuchteprotokollMobil(undefined,'keller');},bg:'#1f5f8b',border:'#1f5f8b',color:'#fff'}, // v303
   ];
   items.forEach(function(it,i){
     const btn=document.createElement('button');
@@ -10487,6 +10488,50 @@ const FS_LEGENDE='Taupunkt nach Magnus-Formel aus Raumtemperatur und Luftfeuchte
   +'Bauteilfeuchte in Digits: Vergleichswerte, keine Masse-%. Temperaturfaktor nur bei mindestens 10 K zwischen innen und außen; Mindestwert 0,70 nach DIN 4108-2.';
 const _fsPdfBlobs={}; // zuletzt erstelltes PDF je Bericht – bewusst NICHT am Bericht (würde mitgespeichert)
 
+/* ══ v303: KELLER-VARIANTE ════════════════════════════════════════════════════════════════════
+   Menü „＋" → „💧 Feuchte – Keller" legt dasselbe Formular mit art:'keller' an: eigene Abhakliste,
+   Raumvorschläge und Ursachen. Messen, Rechnen, Fotos und PDF bleiben gleich.
+   ⛔ Bewertungs-Schlüssel A–C bedeuten je nach Art etwas anderes – immer über _fsBewertungenFuer lesen.
+   ⛔ Texte gehen ins PDF: nur Zeichen der PDF-Schrift. */
+const FS_KELLER_TITEL='Feuchte- und Schimmelprotokoll Keller';
+const FS_KELLER_SEKTIONEN=[
+  {titel:'1 · Befund im Keller',items:[
+    'Schimmel an Gegenständen oder Wänden (wo, wie groß)',
+    'Wasser oder Pfützen am Boden',
+    'Salzausblühungen, abplatzender Putz oder Farbe',
+    'Feuchterand an der Wand (Höhe über Boden notieren)',
+    'Muffiger Geruch'
+  ]},
+  {titel:'2 · Wand, Boden, außen',items:[
+    'Wand grenzt an Erdreich (Außenwand)',
+    'Fallrohre und Regenwasseranschluss am Haus in Ordnung',
+    'Gelände fällt vom Haus weg ab',
+    'Kellerfenster / Lichtschacht dicht, Lichtschacht entwässert',
+    'Wasser- und Abwasserleitungen im Raum trocken'
+  ]},
+  {titel:'3 · Lüftung und Nutzung',items:[
+    'Kellerfenster im Sommer offen (warme Luft schlägt sich an kalten Wänden nieder)',
+    'Gegenstände direkt an der Außenwand oder in Kartons auf dem Boden',
+    'Nachbarkeller ebenso betroffen',
+    'Wäsche wird im Keller getrocknet'
+  ]},
+  {titel:'4 · Angaben der Nutzer',items:[
+    'Seit wann? Nur nach Regen, nur im Sommer oder immer?',
+    'Was hat sich zuletzt geändert?'
+  ]}
+];
+const FS_KELLER_RAEUME=['Kellerraum','Kellergang','Nachbarkeller (Vergleich)','Treppenhaus'];
+const FS_KELLER_BEWERTUNGEN=[
+  {k:'A',text:'Wasser von außen (Erdreich, Lichtschacht, Fallrohr) wahrscheinlich'},
+  {k:'B',text:'Tauwasser: warme, feuchte Luft an kalten Wänden wahrscheinlich'},
+  {k:'C',text:'Aufsteigende Feuchte aus Boden oder Mauerwerk wahrscheinlich'},
+  {k:'D',text:'mehrere Ursachen'}
+];
+function _fsIstKeller(b){return !!b&&b.art==='keller';}
+function _fsBewertungenFuer(b){return _fsIstKeller(b)?FS_KELLER_BEWERTUNGEN:FS_BEWERTUNGEN;}
+function _fsRaumVorschlaege(b){return _fsIstKeller(b)?FS_KELLER_RAEUME:FS_RAUM_VORSCHLAEGE;}
+function _fsTitel(b){return _fsIstKeller(b)?FS_KELLER_TITEL:'Feuchte- und Schimmelprotokoll';}
+
 function _fsZahl(v){
   if(v===null||v===undefined)return null;
   const s=String(v).trim().replace(',','.');
@@ -10538,9 +10583,9 @@ function _fsStelleWerte(bericht,st){
   if(frsi!==null&&frsi<0.7)hinweise.push('Temperaturfaktor unter 0,70 (Mindestwert DIN 4108-2)');
   return {raumGefunden:!!raum||eigeneLuft,luftQuelle:eigeneLuft?'testo':(raum?'raum':''),T,rf,td,ts,abstand,ofRf,ampel:_fsAmpel(ofRf),frsi,mf,mv,faktor,hinweise,grenzeTs,reserve};
 }
-function _fsNeuerBericht(t){
+function _fsNeuerBericht(t,art){
   const jetzt=new Date();
-  return {
+  const b={
     id:'fs_'+Date.now(),vorlage:'feuchte',titel:'Feuchte- und Schimmelprotokoll',
     datum:jetzt.toLocaleDateString('de-DE'),createdAt:jetzt.toISOString(),
     kopf:Object.assign({anwesend:'',uhrzeit:jetzt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}),
@@ -10549,6 +10594,11 @@ function _fsNeuerBericht(t){
     sektionen:FS_SEKTIONEN_DEF.map(s=>({titel:s.titel,items:s.items.map(text=>({text,status:'offen',notiz:''}))})),
     bewertung:'',bemerkung:'',empfehlungen:'',fotos:[]
   };
+  if(art==='keller'){ // v303: eigene Abhakliste für Keller; ohne „art" bleibt es das Wohnungsprotokoll
+    b.art='keller';b.titel=FS_KELLER_TITEL;
+    b.sektionen=FS_KELLER_SEKTIONEN.map(s=>({titel:s.titel,items:s.items.map(text=>({text,status:'offen',notiz:''}))}));
+  }
+  return b;
 }
 // Altbestand/Fremdgerät: fehlende Teile ergänzen, nichts überschreiben
 function _fsVervollstaendigen(b){
@@ -10567,7 +10617,7 @@ function _fsPdfName(bericht,zeit){
   const d=String((bericht&&bericht.datum)||'').split('.');
   const datum=(d.length===3&&d[2])?(('0'+d[0]).slice(-2)+'-'+('0'+d[1]).slice(-2)+'-'+d[2]):'';
   const uhr=(zeit instanceof Date&&isFinite(zeit.getTime()))?'_'+('0'+zeit.getHours()).slice(-2)+('0'+zeit.getMinutes()).slice(-2):''; // v294
-  return 'Feuchteprotokoll'+(datum?'_'+datum:'')+uhr+'.pdf';
+  return 'Feuchteprotokoll'+(bericht&&bericht.art==='keller'?'_Keller':'')+(datum?'_'+datum:'')+uhr+'.pdf';
 }
 
 /* ══ v294: AUSFÜLLHILFEN UND ERGEBNIS (Wunsch Frank 14.09.2026) ═══════════════════════════════
@@ -10823,14 +10873,14 @@ async function _fsPdfNachDrive(blob,name,bericht,t){
   }
 }
 
-function _openFeuchteprotokollMobil(existingIdx){
+function _openFeuchteprotokollMobil(existingIdx,art){
   const t=currentTask();if(!t)return;
   if(!t.pruefberichte)t.pruefberichte=[];
   let bericht;
   if(typeof existingIdx==='number'&&t.pruefberichte[existingIdx]&&t.pruefberichte[existingIdx].vorlage==='feuchte'){
     bericht=t.pruefberichte[existingIdx];
   }else{
-    bericht=_fsNeuerBericht(t);
+    bericht=_fsNeuerBericht(t,art);
     t.pruefberichte.push(bericht);
     scheduleSave();
   }
@@ -10852,7 +10902,7 @@ function _openFeuchteprotokollMobil(existingIdx){
   closeBtn.style.cssText='background:rgba(255,255,255,.2);border:none;color:#fff;width:40px;height:40px;border-radius:8px;font-size:18px;cursor:pointer;flex-shrink:0;';
   closeBtn.onclick=()=>{ov.remove();try{const ct=currentTask();if(ct)renderDetail(ct);}catch(e){console.warn('[Feuchte] zurück:',e);}};
   const hdrMeta=document.createElement('div');hdrMeta.style.cssText='flex:1;min-width:0;';
-  const hdrT=document.createElement('div');hdrT.style.cssText='font-size:15px;font-weight:700;color:#fff;';hdrT.textContent='💧 Feuchte- und Schimmelprotokoll';
+  const hdrT=document.createElement('div');hdrT.style.cssText='font-size:15px;font-weight:700;color:#fff;';hdrT.textContent='💧 '+_fsTitel(bericht);
   const hdrS=document.createElement('div');hdrS.style.cssText='font-size:12px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
   hdrS.textContent=(bericht.kopf.objektAdresse||t.adresse||t.title||'')+' · '+(bericht.datum||'');
   hdrMeta.append(hdrT,hdrS);
@@ -10974,8 +11024,8 @@ function _openFeuchteprotokollMobil(existingIdx){
     const chips=document.createElement('div');chips.style.cssText='display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 12px;';
     const vorhanden=bericht.raeume.map(r=>r.name);
     const fehlendeWohnung=FS_WOHNUNG.filter(n=>vorhanden.indexOf(n)<0); // v294
-    if(fehlendeWohnung.length>1)chips.appendChild(_chip('＋ Wohnung ('+fehlendeWohnung.length+' Räume)',false,()=>{fehlendeWohnung.forEach(n=>bericht.raeume.push({name:n,t:'',rf:''}));scheduleSave();_neuBauen();}));
-    FS_RAUM_VORSCHLAEGE.filter(n=>vorhanden.indexOf(n)<0).forEach(n=>{
+    if(!_fsIstKeller(bericht)&&fehlendeWohnung.length>1)chips.appendChild(_chip('＋ Wohnung ('+fehlendeWohnung.length+' Räume)',false,()=>{fehlendeWohnung.forEach(n=>bericht.raeume.push({name:n,t:'',rf:''}));scheduleSave();_neuBauen();}));
+    _fsRaumVorschlaege(bericht).filter(n=>vorhanden.indexOf(n)<0).forEach(n=>{
       chips.appendChild(_chip('＋ '+n,false,()=>{bericht.raeume.push({name:n,t:'',rf:''});scheduleSave();_neuBauen();}));
     });
     chips.appendChild(_chip('＋ anderer Raum',false,()=>{
@@ -10990,7 +11040,8 @@ function _openFeuchteprotokollMobil(existingIdx){
     const w=document.createElement('div');
     w.appendChild(_kopfZeile('Messstellen'));
     const info=document.createElement('div');info.style.cssText='padding:6px 14px 2px;font-size:12px;color:var(--text2);';
-    info.textContent='Oberfläche mit dem Infrarot-Thermometer. Bauteilfeuchte in Digits – immer eine trockene Stelle zum Vergleich messen.';
+    info.textContent='Oberfläche mit dem Infrarot-Thermometer. Bauteilfeuchte in Digits – immer eine trockene Stelle zum Vergleich messen.'
+      +(_fsIstKeller(bericht)?' Im Keller an derselben Wand in mehreren Höhen messen (z. B. 10, 50, 100 cm) – jede Höhe eine eigene Stelle.':'');
     w.appendChild(info);
     const raumNamen=bericht.raeume.map(r=>r.name).filter(Boolean);
     bericht.stellen.forEach((st,si)=>{
@@ -10999,7 +11050,7 @@ function _openFeuchteprotokollMobil(existingIdx){
       const top=document.createElement('div');top.style.cssText='display:flex;align-items:center;gap:8px;';
       const nr=document.createElement('span');nr.textContent=String(si+1);
       nr.style.cssText='width:30px;height:30px;border-radius:50%;background:'+FS_FARBE+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;';
-      const txtI=_inp(st.text,'Stelle, z. B. Außenecke oben',v=>{st.text=v;},false);
+      const txtI=_inp(st.text,_fsIstKeller(bericht)?'Stelle, z. B. Außenwand 10 cm':'Stelle, z. B. Außenecke oben',v=>{st.text=v;},false);
       txtI.setAttribute('data-fs-stellentext',String(si));
       const x=document.createElement('button');x.type='button';x.textContent='✕';x.title='Messstelle entfernen';
       x.style.cssText='width:40px;height:40px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--red);font-size:15px;cursor:pointer;flex-shrink:0;';
@@ -11114,7 +11165,7 @@ function _openFeuchteprotokollMobil(existingIdx){
     const w=document.createElement('div');
     w.appendChild(_kopfZeile('Bewertung'));
     const wahl=document.createElement('div');wahl.style.cssText='display:flex;flex-direction:column;gap:6px;padding:8px 14px;';
-    FS_BEWERTUNGEN.forEach(bw=>{
+    _fsBewertungenFuer(bericht).forEach(bw=>{
       const c=_chip(bw.k+' · '+bw.text,bericht.bewertung===bw.k,()=>{bericht.bewertung=(bericht.bewertung===bw.k)?'':bw.k;scheduleSave();_neuBauen();});
       c.style.textAlign='left';c.style.borderRadius='10px';
       wahl.appendChild(c);
@@ -11163,7 +11214,7 @@ function _openFeuchteprotokollMobil(existingIdx){
     const blob=_fsPdfBlobs[bericht.id];
     if(navigator.share&&blob){
       const file=new File([blob],bericht.pdfName||_fsPdfName(bericht),{type:'application/pdf'});
-      try{await navigator.share({title:'Feuchte- und Schimmelprotokoll',files:[file]});}
+      try{await navigator.share({title:_fsTitel(bericht),files:[file]});}
       catch(e){if(e.name!=='AbortError')toast('Teilen fehlgeschlagen','error');}
     }else{toast('Bitte zuerst PDF erstellen','info');}
   };
@@ -11244,7 +11295,7 @@ async function _fsMobPdf(bericht,task){
 
     doc.setFillColor(...farbe);doc.rect(0,0,W,30,'F');
     doc.setTextColor(255,255,255);doc.setFontSize(16);doc.setFont('helvetica','bold');
-    doc.text('Feuchte- und Schimmelprotokoll',M,12);
+    doc.text(_fsTitel(bericht),M,12);
     doc.setFontSize(9);doc.setFont('helvetica','normal');
     doc.text(doc.splitTextToSize('Objekt: '+leer(k.objektAdresse||task.adresse),W-2*M)[0],M,19);
     doc.text('Datum: '+leer(bericht.datum)+(k.uhrzeit?' · '+k.uhrzeit+' Uhr':'')+(k.auftragNr?' · Auftrag: '+k.auftragNr:''),M,25);
@@ -11393,7 +11444,7 @@ async function _fsMobPdf(bericht,task){
       const ng=doc.splitTextToSize('Nicht geprüft: '+nichtGeprueft.join(' · '),W-2*M);
       doc.text(ng,M,y+3);y+=ng.length*3.6+5;
     }
-    const bw=FS_BEWERTUNGEN.find(b=>b.k===bericht.bewertung);
+    const bw=_fsBewertungenFuer(bericht).find(b=>b.k===bericht.bewertung);
     if(bw||bericht.bemerkung||bericht.empfehlungen){
       abschnitt('Bewertung');
       doc.setTextColor(0,0,0);doc.setFontSize(9);
