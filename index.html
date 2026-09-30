@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v307';
+const MOB_VERSION='v308';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5553,6 +5553,78 @@ function _mobListeGerichtet(remoteList,localList,snapList,keyFn){
   for(const it of loc){const k=keyFn(it||{});if(k&&seen.has(k))continue;if(k)seen.add(k);out.push(it);}
   for(const it of rem){const k=keyFn(it||{});if(!k||seen.has(k)||snapKeys.has(k))continue;seen.add(k);out.push(it);}
   return out;
+}
+// b1036 / v308 (Nachmessung 30.09.2026 zu b1033): die LISTEN fotos / attachments / checkliste / kontakte je EINTRAG dreiseitig
+// zusammenführen. Bis b1035 galt: die hiesige Liste ist die Basis, von drüben kommt nur Neues dazu. Folge: ein am Handy
+// GEÄNDERTER Eintrag (Haken, Telefonnummer, Bildunterschrift, Anhangname) ging verloren, sobald der PC dieselbe Liste
+// angefasst hatte, und ein am Handy GELÖSCHTER Eintrag kam zurück (Block 1b). Jetzt vergleicht die Funktion drei Stände –
+// hier, drüben und den letzten gemeinsamen Stand (Momentaufnahme des letzten Abgleichs, b662):
+//   · hier unverändert, drüben geändert        → drüben gilt
+//   · hier geändert, drüben unverändert         → hier gilt
+//   · beide geändert                             → hier gilt (wie bisher)
+//   · beim Abgleich da, hier unverändert, drüben weg  → weg (dort entfernt)
+//   · beim Abgleich da, hier geändert, drüben weg     → bleibt (im Zweifel behalten)
+//   · beim Abgleich da, hier weg                       → bleibt weg (hier entfernt)
+//   · neu (nicht im Abgleich): hier → bleibt, drüben → kommt dazu
+// Ist der letzte gemeinsame Stand keine Liste, kommt null zurück – der Aufrufer bleibt beim bisherigen Weg.
+// Einträge ohne Kennung bleiben, wie sie sind (was man nicht erkennt, wirft man nicht weg).
+// ⛔ _lz3Gleich und _liste3Wege stehen ZEICHENGLEICH in PAM Desktop und PAM Mobil (test_b1036 / v308 / test_v308 vergleichen).
+function _lz3Gleich(a,b,ers){
+  const s=function(x){return JSON.stringify(x,function(k,w){
+    if(ers)w=ers.call(this,k,w);
+    if(w&&typeof w==='object'&&!Array.isArray(w)){const o={};Object.keys(w).sort().forEach(function(n){o[n]=w[n];});return o;}
+    return w;});};
+  return s(a)===s(b);
+}
+function _liste3Wege(remoteList,localList,basisList,kennung,ers,uebernehmen){
+  if(!Array.isArray(basisList)||!Array.isArray(remoteList)||!Array.isArray(localList))return null;
+  const nach=function(l){const m=new Map();l.forEach(function(x){const k=kennung(x||{});if(k&&!m.has(k))m.set(k,x);});return m;};
+  const R=nach(remoteList),B=nach(basisList);
+  const nimm=uebernehmen||function(x,r){return r;};
+  const out=[];const schonDa=new Set();
+  localList.forEach(function(x){
+    const k=kennung(x||{});
+    if(!k){out.push(x);return;}
+    schonDa.add(k);
+    const r=R.get(k),b=B.get(k);
+    if(b===undefined){out.push(x);return;}                                   // neu hier
+    const hierGleich=_lz3Gleich(x,b,ers);
+    if(r===undefined){if(!hierGleich)out.push(x);return;}                    // drüben entfernt: hier unverändert → weg
+    if(hierGleich&&!_lz3Gleich(r,b,ers)){out.push(nimm(x,r));return;}       // nur drüben geändert
+    out.push(x);
+  });
+  remoteList.forEach(function(x){
+    const k=kennung(x||{});
+    if(!k||schonDa.has(k)||B.has(k))return;                                  // schon hier · beim Abgleich da und hier entfernt
+    schonDa.add(k);out.push(x);
+  });
+  return out;
+}
+// v308: Kennungen der vier Listen fuer das dreiseitige Zusammenfuehren – dieselben wie am Desktop (_LISTEN_KENNUNG b772 / _fotoKennung);
+// die Fotos wie in der Zeile mit _mobListeGerichtet im Speicherkonflikt. Ein geaendertes Kennungsfeld (Text, Name) ist fuer die Funktion
+// „alt entfernt + neu dazu“ – auch das geht ohne Verlust.
+const _MOB_LISTEN_KENNUNG={
+  fotos:        f=>(f&&(f.id||f.driveId||f.path||((f.name&&f.size)?('ns:'+f.name+'|'+f.size):'')))||'',
+  attachments:  f=>(f&&(f.fileId||f.url||((f.name||'')+'|'+(f.size||0))))||'',
+  checkliste:   c=>(c&&(c.id||(c.text||'')))||'',
+  kontakte:     k=>(k&&(k.id||((k.rolle||'')+'|'+(k.name||''))))||''
+};
+// v308: verglichen wird ohne die nur hier vorkommenden Felder (_mobSaveReplacer); nimmt man ein drueben geaendertes Foto, bleiben
+// localUrl / _uploading / dataUrl des hiesigen Eintrags erhalten (Anzeige und laufender Upload).
+function _mobListeDrei(feld,remoteList,localList,basisList){
+  const kf=_MOB_LISTEN_KENNUNG[feld];
+  if(!kf)return null;
+  const behalte=(feld==='fotos')?function(x,r){const o=Object.assign({},r);['localUrl','_uploading','dataUrl'].forEach(function(n){if(x&&x[n]!==undefined)o[n]=x[n];});return o;}:undefined;
+  return _liste3Wege(remoteList,localList,basisList,kf,_mobSaveReplacer,behalte);
+}
+// v308: im Speicherkonflikt die vier Listen der gerade gespeicherten Karte durch die dreiseitige Fassung ersetzen. Basis ist die
+// Momentaufnahme des letzten Abgleichs (_mobSnapListe); ohne sie, ohne Liste auf einer Seite: mergedTask bleibt, wie es ist.
+function _mobListenDreiAnwenden(taskId,rt,localTask,mergedTask){
+  if(!rt||!localTask||!mergedTask)return;
+  ['fotos','attachments','checkliste','kontakte'].forEach(function(f){
+    const n=_mobListeDrei(f,rt[f],localTask[f],_mobSnapListe(taskId,f));
+    if(n)mergedTask[f]=n;
+  });
 }
 let _remoteSeenBoards=new Set(); // Alle Board-Namen die jemals vom Server geladen wurden
 let mobileWhitelist=[];   // Aus _mobileBoards; leer = keine Einschränkung
@@ -8686,6 +8758,10 @@ async function saveFile(){
                     // Fix: checkliste und kontakte mergen statt überschreiben
                     mergedTask.checkliste=_mergeListByKey(rt.checkliste,localTask.checkliste,c=>(c.text||'')); // Fix v76: done-Status nicht im Schlüssel → kein Duplikat bei gleichzeitiger Bearbeitung
                     mergedTask.kontakte=_mergeListByKey(rt.kontakte,localTask.kontakte,k=>((k.rolle||'')+'|'+(k.name||'')+'|'+(k.tel||'')));
+                    // v308: die vier Listen je Eintrag dreiseitig (hier · drueben · Momentaufnahme) – bis v307 gewann bei attachments/checkliste/kontakte
+                    // die Datei (Datei zuerst): am Handy Geloeschtes kam zurueck, ein gesetzter Haken ging verloren, eine geaenderte Telefonnummer
+                    // ergab einen zweiten Kontakt. Ohne Momentaufnahme bleibt es bei den Zeilen oben. typeof: Pruefsuiten fuehren Teile dieses Blocks aus.
+                    if(typeof _mobListenDreiAnwenden==='function')_mobListenDreiAnwenden(_savingTaskId,rt,localTask,mergedTask);
                     // v211: Dachplan – stand auf keiner der Listen, die lokale Fassung
                     // ersetzte das Feld komplett (siehe _dachplanKonfliktMerge)
                     {const _dpM=_dachplanKonfliktMerge(rt.dachplan,localTask.dachplan);if(_dpM)mergedTask.dachplan=_dpM;}
