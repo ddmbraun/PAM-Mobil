@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v305';
+const MOB_VERSION='v306';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -8144,6 +8144,7 @@ function _applyMobileFilter(data){
   try{_tuVorabNotizWandern();}catch(e){console.warn('[TU] Vorab-Notiz (Laden):',e);}
   // v214: offener Dachplan nimmt den Auftrag frisch in die Hand (Karteileichen-Falle)
   try{if(window.Dachplan&&Dachplan.rebind)Dachplan.rebind();}catch(e){console.warn('[Dachplan] rebind (Laden):',e);}
+  try{if(typeof _pbOffenNeuBinden==='function')_pbOffenNeuBinden();}catch(e){console.warn('[v306] Formular neu binden (Laden):',e);} // v306: offenes Formular an den frischen Stand hängen
   _mobSnapshotSetzen(); // v257: ab hier ist jeder Auftrag deckungsgleich mit dem geladenen Drive-Stand
 }
 // ── POLLING: fremde Änderungen (z.B. vom Desktop) übernehmen ──
@@ -8313,6 +8314,138 @@ function _mergeListByKey(remoteList,localList,keyFn){
   for(const it of b){const k=keyFn(it||{});if(k&&!seen.has(k)){seen.add(k);out.push(it);}else if(!k){out.push(it);}}
   return out;
 }
+// b1033/v306 (Befund 30.09.2026, Test „Testakte Wasser“: am Tablet Getipptes kam nie in der Datei an): FORMULARE
+// (pruefberichte) je Eintrag zusammenführen. Jedes Gerät stempelt beim Speichern `geaendert` an jedes Formular, das
+// sich seit dem letzten Abgleich HIER geändert hat (_pbStempeln). Beim Zusammenführen gewinnt je Formular die JÜNGER
+// gestempelte Fassung (_pbJuengerGewinnt) – vorher gewann am PC die Fassung vom Öffnen des Fensters, am Handy immer die
+// aus der Datei. Gelöschte Formulare tragen einen Löschvermerk in `pruefberichteGeloescht` ({id,t}), wie zeitGeloescht.
+// ⛔ Die fünf _pb-Funktionen stehen ZEICHENGLEICH in PAM Desktop und PAM Mobil (test_b1033 / test_v306 vergleichen).
+function _pbGeloeschtMerge(a,b){return _mergeListByKey(a,b,function(g){return (g&&g.id!=null)?('p'+g.id):'';});}
+function _pbOhneGeloeschte(liste,grab){
+  if(!Array.isArray(liste)||!Array.isArray(grab)||!grab.length)return liste;
+  const weg={};
+  grab.forEach(function(g){if(g&&g.id!=null)weg['p'+g.id]=1;});
+  return liste.filter(function(b){return !(b&&b.id!=null&&weg['p'+b.id]);});
+}
+function _pbGrabstein(t,b){
+  if(!t||!b||b.id==null)return false;
+  if(!Array.isArray(t.pruefberichteGeloescht))t.pruefberichteGeloescht=[];
+  if(!t.pruefberichteGeloescht.some(function(g){return g&&String(g.id)===String(b.id);}))t.pruefberichteGeloescht.push({id:b.id,t:Date.now()});
+  return true;
+}
+function _pbJuengerGewinnt(ergebnis,remoteList,localList){
+  if(!Array.isArray(ergebnis))return ergebnis;
+  const z=function(b){const n=Number(b&&b.geaendert);return isFinite(n)?n:0;};
+  const juengste={};
+  [remoteList,localList].forEach(function(l){(Array.isArray(l)?l:[]).forEach(function(b){if(b&&b.id!=null){const k='p'+b.id;if(!juengste[k]||z(b)>z(juengste[k]))juengste[k]=b;}});});
+  return ergebnis.map(function(b){if(!b||b.id==null)return b;const j=juengste['p'+b.id];return (j&&z(j)>z(b))?j:b;});
+}
+function _pbStempeln(t,basisTask,jetzt,ser){
+  if(!t||!Array.isArray(t.pruefberichte)||!t.pruefberichte.length)return 0;
+  const s=ser||function(o){return JSON.stringify(o);};
+  const alt={};
+  ((basisTask&&Array.isArray(basisTask.pruefberichte))?basisTask.pruefberichte:[]).forEach(function(b){if(b&&b.id!=null)alt['p'+b.id]=b;});
+  const ohne=function(b){const c=Object.assign({},b);delete c.geaendert;return s(c);};
+  let n=0;
+  t.pruefberichte.forEach(function(b){
+    if(!b||b.id==null)return;
+    const a=alt['p'+b.id];
+    if(a?ohne(a)===ohne(b):!!b.geaendert)return;   // seit dem Abgleich unverändert · neu, aber schon gestempelt
+    b.geaendert=jetzt;n++;
+  });
+  return n;
+}
+// v306: vor jedem Speichern die Formulare stempeln, die sich seit dem letzten Abgleich HIER geändert haben.
+// Grundlage ist die Momentaufnahme _mobSnap (v257); verglichen wird wie dort ohne die Geräte-Felder (_mobSaveReplacer).
+function _pbAlleStempelnMob(){
+  if(!_mobSnap)return 0;
+  const jetzt=Date.now();let n=0;
+  const ser=function(o){return JSON.stringify(o,_mobSaveReplacer);};
+  for(const grp of [boards||{},hiddenBoards||{},_mobileFilteredOut||{}])for(const v of Object.values(grp)){
+    if(!Array.isArray(v))continue;
+    for(const t of v){
+      if(!t||!t.id||!Array.isArray(t.pruefberichte)||!t.pruefberichte.length)continue;
+      const s=_mobSnap.get(t.id);let bt=null;
+      if(s){try{bt=JSON.parse(s);}catch(e){bt=null;}}
+      n+=_pbStempeln(t,bt,jetzt,ser);
+    }
+  }
+  return n;
+}
+// v306: Formulare an ALLEN Karten vor dem Zusammenführen einsammeln – bis v305 kam nur die gerade OFFENE Karte
+// mit ihrem hiesigen Stand durch den Abgleich; wer das Formular schon geschlossen hatte, verlor seine Eingaben an die
+// Fassung aus der Datei. Vorbild: v283 (Uhr-Zeilen an nicht offenen Karten). `basis` = geaendert je Formular beim
+// letzten Abgleich (aus _mobSnap) – damit ein drüben (ohne Löschvermerk) entferntes Formular nicht zurückkommt.
+function _pbHierSammeln(gruppen){
+  const m=new Map();
+  for(const grp of gruppen)for(const v of Object.values(grp||{})){
+    if(!Array.isArray(v))continue;
+    for(const t of v){
+      if(!t||!t.id)continue;
+      const pb=Array.isArray(t.pruefberichte)?t.pruefberichte:[];
+      const gl=Array.isArray(t.pruefberichteGeloescht)?t.pruefberichteGeloescht:[];
+      if(!pb.length&&!gl.length)continue;
+      const basis={};let basisDa=false;
+      try{const s=_mobSnap&&_mobSnap.get(t.id);if(s){basisDa=true;(JSON.parse(s).pruefberichte||[]).forEach(function(b){if(b&&b.id!=null)basis['p'+b.id]=Number(b.geaendert)||0;});}}catch(e){basisDa=false;}
+      m.set(t.id,{pb:pb.slice(),gl:gl.slice(),basis:basis,basisDa:basisDa});
+    }
+  }
+  return m;
+}
+function _pbZuruecklegen(gruppen,hier){
+  if(!hier||!hier.size)return 0;
+  const z=function(b){const n=Number(b&&b.geaendert);return isFinite(n)?n:0;};
+  let n=0;
+  for(const grp of gruppen)for(const v of Object.values(grp||{})){
+    if(!Array.isArray(v))continue;
+    for(const t of v){
+      if(!t||!t.id||!hier.has(t.id))continue;
+      const h=hier.get(t.id);
+      const drueben=Array.isArray(t.pruefberichte)?t.pruefberichte:[];
+      const gl=_pbGeloeschtMerge(t.pruefberichteGeloescht,h.gl);
+      const da=new Set(drueben.map(function(b){return (b&&b.id!=null)?'p'+b.id:'';}).filter(Boolean));
+      let liste=_pbJuengerGewinnt(drueben,drueben,h.pb);
+      for(const b of h.pb){
+        if(!b||b.id==null||da.has('p'+b.id))continue;
+        const k='p'+b.id;
+        if(h.basisDa&&(k in h.basis)&&z(b)<=h.basis[k])continue;   // war beim Abgleich da, hier unverändert → drüben entfernt
+        liste.push(b);                                               // hier neu (oder hier geändert) → behalten
+      }
+      liste=_pbOhneGeloeschte(liste,gl);
+      const vorher=JSON.stringify([t.pruefberichte||null,t.pruefberichteGeloescht||null]);
+      t.pruefberichte=liste;if(gl.length)t.pruefberichteGeloescht=gl;
+      if(JSON.stringify([t.pruefberichte||null,t.pruefberichteGeloescht||null])!==vorher)n++;
+    }
+  }
+  return n;
+}
+// v306: welches Formular gerade offen ist. Nach jedem Neuladen (Abgleich alle 10 s, Konflikt beim Speichern) hält
+// boards NEUE Objekte – das offene Formular schrieb bis v305 weiter in das ALTE, und alles Getippte ging ins Leere
+// (Befund 30.09.2026: „eins … fünf“ standen am Tablet im Feld, in der Datei nie). Wie Dachplan.rebind (v214).
+let _pbOffen=null; // {taskId, obj, ovId, neu}
+function _pbOffenMerken(t,obj,ovId,neu){_pbOffen=(t&&obj)?{taskId:t.id,obj:obj,ovId:ovId||'',neu:neu||null}:null;}
+function _pbOffenNeuBinden(){
+  const o=_pbOffen;if(!o||!o.obj)return false;
+  if(o.ovId&&!document.getElementById(o.ovId)){_pbOffen=null;return false;}   // Formular ist zu
+  let t=null;try{t=findTaskById(o.taskId);}catch(e){t=null;}
+  if(!t||!Array.isArray(t.pruefberichte))return false;
+  const i=t.pruefberichte.findIndex(function(b){return b&&String(b.id)===String(o.obj.id);});
+  if(i<0)return false;                                                            // drüben gelöscht – nichts anfassen
+  const neu=t.pruefberichte[i];if(neu===o.obj)return false;
+  const z=function(b){const n=Number(b&&b.geaendert);return isFinite(n)?n:0;};
+  const ser=function(x){return JSON.stringify(x,_mobSaveReplacer);};
+  if(ser(neu)!==ser(o.obj)&&z(neu)>=z(o.obj)){
+    // Drüben ist eine jüngere Fassung: sie in DAS Objekt übernehmen, an dem das Formular hängt, und neu zeichnen
+    // (die Zeilen halten Teil-Objekte – ohne Neuzeichnen schrieben sie weiter in die alten).
+    Object.keys(o.obj).forEach(function(k){delete o.obj[k];});Object.assign(o.obj,neu);
+    t.pruefberichte[i]=o.obj;
+    if(typeof o.neu==='function'){try{o.neu();}catch(e){console.warn('[v306] Formular neu zeichnen:',e);}}
+  }else{
+    t.pruefberichte[i]=o.obj;   // gleicher Inhalt (oder hier jünger): das offene Objekt bleibt der Eintrag
+    if(ser(neu)!==ser(o.obj)){try{scheduleSave();}catch(e){console.warn('[v306] nachspeichern:',e);}}   // hier jünger → nachspeichern
+  }
+  return true;
+}
 /* v211: Dachplan bei Schreib-Konflikten ZUSAMMENFÜHREN statt eine Seite komplett
    gewinnen zu lassen. Bis v210 stand `dachplan` auf keiner Merge-Liste: beim Konflikt
    um den offenen Task ersetzte die lokale Fassung das Feld vollständig – ein
@@ -8454,6 +8587,7 @@ async function saveFile(){
   // Saves durch closeDetail() auf null gesetzt werden; wir brauchen den ursprünglichen
   // Wert, damit der Konflikt-Handler die lokale Task findet und nicht verwirft.
   const _savingTaskId=currentTaskId;
+  try{if(typeof _pbAlleStempelnMob==='function')_pbAlleStempelnMob();}catch(e){console.warn('[v306] Formular-Stempel:',e);} // v306: hier Geändertes stempeln – VOR dem Konflikt-Check
   try{
     // ── Konflikt-Check: hat der Desktop seit unserem letzten Stand geschrieben? ──
     try{
@@ -8501,6 +8635,8 @@ async function saveFile(){
             const _uhrHier=(typeof _uhrHierSammeln==='function')?_uhrHierSammeln([boards,hiddenBoards,_mobileFilteredOut],_savingTaskId):null;
             // v300: Drive-Kennungen der Fotos (samt festem Upload-Namen) einsammeln – zurückgelegt wird unten nach v283.
             const _fotoKennHier=(typeof _fotoKennSammeln==='function')?_fotoKennSammeln([boards,hiddenBoards,_mobileFilteredOut]):null;
+            // v306: Formulare an ALLEN Karten einsammeln – zurückgelegt wird unten nach v300.
+            const _pbHier=(typeof _pbHierSammeln==='function')?_pbHierSammeln([boards,hiddenBoards,_mobileFilteredOut]):null;
             // Lokale Änderung der gerade offenen Task in die sichtbaren Remote-Boards mergen
             if(_savingTaskId){
               const localTask=findTaskById(_savingTaskId);
@@ -8534,6 +8670,9 @@ async function saveFile(){
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
                     mergedTask.pruefberichte=_mergeListByKey(rt.pruefberichte,localTask.pruefberichte,b=>(b.id||((b.titel||'')+'|'+(b.datum||''))));
+                    // v306: je Formular gewinnt die jünger geänderte Fassung (bis v305 bei gleicher Kennung IMMER die aus der Datei); Löschvermerke beider Seiten
+                    if(typeof _pbJuengerGewinnt==='function')mergedTask.pruefberichte=_pbJuengerGewinnt(mergedTask.pruefberichte,rt.pruefberichte,localTask.pruefberichte);
+                    if(typeof _pbGeloeschtMerge==='function'&&(Array.isArray(localTask.pruefberichteGeloescht)||Array.isArray(rt.pruefberichteGeloescht))){mergedTask.pruefberichteGeloescht=_pbGeloeschtMerge(rt.pruefberichteGeloescht,localTask.pruefberichteGeloescht);mergedTask.pruefberichte=_pbOhneGeloeschte(mergedTask.pruefberichte,mergedTask.pruefberichteGeloescht);}
                     mergedTask.notizVerlauf=_mergeListByKey(rt.notizVerlauf,localTask.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
                     mergedTask.zeitEntries=_zeitZeilenMerge(rt.zeitEntries,localTask.zeitEntries); // v280: Standort geht nicht verloren
                     if(typeof _zeitGeloeschtMerge==='function'&&(Array.isArray(localTask.zeitGeloescht)||Array.isArray(rt.zeitGeloescht))){mergedTask.zeitGeloescht=_zeitGeloeschtMerge(rt.zeitGeloescht,localTask.zeitGeloescht);mergedTask.zeitEntries=_zeitOhneGeloeschte(mergedTask.zeitEntries,mergedTask.zeitGeloescht);} // v289: Löschvermerke
@@ -8619,6 +8758,10 @@ async function saveFile(){
               try{if(_uhrHier)_uhrZuruecklegen([boards,hiddenBoards,_mobileFilteredOut],_uhrHier);}catch(e){console.warn('[v283] Uhr-Zeilen:',e);}
               // v300: …und die Drive-Kennungen der Fotos – nur an Fotos, die es drüben noch gibt und die dort noch keine haben.
               try{if(_fotoKennHier)_fotoKennZuruecklegen([boards,hiddenBoards,_mobileFilteredOut],_fotoKennHier);}catch(e){console.warn('[v300] Foto-Kennungen:',e);}
+              // v306: …und die Formulare – je Formular die jüngere Fassung, hier Neues bleibt, Löschvermerke gelten.
+              try{if(_pbHier)_pbZuruecklegen([boards,hiddenBoards,_mobileFilteredOut],_pbHier);}catch(e){console.warn('[v306] Formulare:',e);}
+              // v306: das offene Formular hängt jetzt an den neuen Objekten (wie Dachplan.rebind oben)
+              try{if(typeof _pbOffenNeuBinden==='function')_pbOffenNeuBinden();}catch(e){console.warn('[v306] Formular neu binden (Konflikt):',e);}
             }
             if(remote._boardStatuses&&typeof remote._boardStatuses==='object')
               _remoteBoardStatuses={...remote._boardStatuses};
@@ -8905,6 +9048,7 @@ function _openPruefformular(existingIdx){
   /* Overlay aufbauen */
   const GID='_pruefformularOverlay';
   const old=document.getElementById(GID);if(old)old.remove();
+  if(typeof _pbOffenMerken==='function')_pbOffenMerken(t,bericht,GID,null); // v306: nach Neuladen/Zusammenführen wieder anhängen
   const ov=document.createElement('div');
   ov.id=GID;
   ov.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;background:var(--bg);';
@@ -9057,6 +9201,7 @@ function _openPruefformular(existingIdx){
 function _deletePruefbericht(idx){
   const t=currentTask();if(!t||!t.pruefberichte)return;
   if(!confirm('Prüfbericht löschen?'))return;
+  if(typeof _pbGrabstein==='function')_pbGrabstein(t,t.pruefberichte[idx]); // v306: Löschvermerk – sonst holt der Abgleich das Formular vom PC zurück
   t.pruefberichte.splice(idx,1);
   forceSave();
   const ct=currentTask();if(ct)renderDetail(ct);
@@ -9232,6 +9377,7 @@ function _openWartungsprotokollMobil(existingIdx){
   }
 
   const GID='_wpMobOverlay';const old=document.getElementById(GID);if(old)old.remove();
+  if(typeof _pbOffenMerken==='function')_pbOffenMerken(t,bericht,GID,null); // v306: nach Neuladen/Zusammenführen wieder anhängen
   const ov=document.createElement('div');ov.id=GID;
   ov.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;background:var(--bg);';
 
@@ -10991,6 +11137,7 @@ function _openFeuchteprotokollMobil(existingIdx,art){
   _fsVervollstaendigen(bericht);
 
   const GID='_fsMobOverlay';const old=document.getElementById(GID);if(old)old.remove();
+  if(typeof _pbOffenMerken==='function')_pbOffenMerken(t,bericht,GID,function(){_neuBauen();}); // v306: nach Neuladen/Zusammenführen an den frischen Stand hängen, bei jüngerer Fassung von drüben neu zeichnen
   const ov=document.createElement('div');ov.id=GID;
   ov.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;flex-direction:column;background:var(--bg);';
 
