@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v303';
+const MOB_VERSION='v304';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10494,29 +10494,43 @@ const _fsPdfBlobs={}; // zuletzt erstelltes PDF je Bericht – bewusst NICHT am 
    ⛔ Bewertungs-Schlüssel A–C bedeuten je nach Art etwas anderes – immer über _fsBewertungenFuer lesen.
    ⛔ Texte gehen ins PDF: nur Zeichen der PDF-Schrift. */
 const FS_KELLER_TITEL='Feuchte- und Schimmelprotokoll Keller';
-const FS_KELLER_SEKTIONEN=[
+const FS_KELLER_SEKTIONEN=[ // v304: fünf Abschnitte, ergänzt nach UBA-Schimmelleitfaden 2024 und Fachquellen
   {titel:'1 · Befund im Keller',items:[
-    'Schimmel an Gegenständen oder Wänden (wo, wie groß)',
+    'Zugang zum Keller nur über Treppenhaus oder Hof (kein Wohnraum)',
+    'Schimmel an Gegenständen oder Wänden (wo?)',
+    'Schimmelfläche: unter 20 cm² / bis 0,5 m² / über 0,5 m²',
+    'Hinter Regalen, Schränken und Verkleidungen nachgesehen',
     'Wasser oder Pfützen am Boden',
     'Salzausblühungen, abplatzender Putz oder Farbe',
     'Feuchterand an der Wand (Höhe über Boden notieren)',
     'Muffiger Geruch'
   ]},
-  {titel:'2 · Wand, Boden, außen',items:[
+  {titel:'2 · Wand und Boden innen',items:[
     'Wand grenzt an Erdreich (Außenwand)',
-    'Fallrohre und Regenwasseranschluss am Haus in Ordnung',
-    'Gelände fällt vom Haus weg ab',
-    'Kellerfenster / Lichtschacht dicht, Lichtschacht entwässert',
-    'Wasser- und Abwasserleitungen im Raum trocken'
+    'Innendämmung, Vorsatzschale oder Verkleidung an der Wand',
+    'Rohr- und Leitungsdurchführungen trocken',
+    'Übergang Wand / Boden: Feuchte, Risse, Fugen',
+    'Wasser- und Abwasserleitungen im Raum trocken',
+    'Bodenablauf, Rückstauklappe oder Hebeanlage vorhanden und gewartet'
   ]},
-  {titel:'3 · Lüftung und Nutzung',items:[
+  {titel:'3 · Außen am Haus',items:[
+    'Fallrohre und Regenwasseranschluss in Ordnung',
+    'Gelände / Pflaster fällt vom Haus weg ab',
+    'Kellerfenster / Lichtschacht dicht, Lichtschacht entwässert',
+    'Sockel: Risse, Putzschäden oder Feuchteflecken',
+    'Spritzwasser, Bewuchs oder Erde direkt an der Hauswand',
+    'Drainage / Kontrollschacht vorhanden, Wasserstand'
+  ]},
+  {titel:'4 · Lüftung und Nutzung',items:[
     'Kellerfenster im Sommer offen (warme Luft schlägt sich an kalten Wänden nieder)',
     'Gegenstände direkt an der Außenwand oder in Kartons auf dem Boden',
+    'Weitere Feuchtequellen (Luftentfeuchter, Pflanzen, Brennholz)',
     'Nachbarkeller ebenso betroffen',
     'Wäsche wird im Keller getrocknet'
   ]},
-  {titel:'4 · Angaben der Nutzer',items:[
+  {titel:'5 · Angaben der Nutzer',items:[
     'Seit wann? Nur nach Regen, nur im Sommer oder immer?',
+    'Frühere Wasserschäden, Hochwasser, bisherige Maßnahmen',
     'Was hat sich zuletzt geändert?'
   ]}
 ];
@@ -10618,6 +10632,88 @@ function _fsPdfName(bericht,zeit){
   const datum=(d.length===3&&d[2])?(('0'+d[0]).slice(-2)+'-'+('0'+d[1]).slice(-2)+'-'+d[2]):'';
   const uhr=(zeit instanceof Date&&isFinite(zeit.getTime()))?'_'+('0'+zeit.getHours()).slice(-2)+('0'+zeit.getMinutes()).slice(-2):''; // v294
   return 'Feuchteprotokoll'+(bericht&&bericht.art==='keller'?'_Keller':'')+(datum?'_'+datum:'')+uhr+'.pdf';
+}
+
+/* ══ v304: ABSCHNITTE EINKLAPPEN + „📘 So geht's" ═══════════════════════════════════════════════
+   Einklappen ist nur Anzeige: gemerkt je Gerät im Browser-Speicher (Bericht-Kennung → Abschnitt-Nummern),
+   NICHT am Bericht – sonst würde es mitgespeichert und auf dem anderen Gerät mit zugeklappt. Das PDF zeigt immer alles.
+   Die Anleitung steht fest im Programm, damit sie im Keller auch ohne Empfang aufgeht. */
+const FS_ZU_KEY='pam_fs_zu';
+function _fsZuLesen(id){
+  try{const m=JSON.parse(localStorage.getItem(FS_ZU_KEY)||'{}');return Array.isArray(m[id])?m[id]:[];}catch(e){return [];}
+}
+function _fsZuSetzen(id,idx,zu){
+  try{
+    const m=JSON.parse(localStorage.getItem(FS_ZU_KEY)||'{}');
+    const l=(Array.isArray(m[id])?m[id]:[]).filter(i=>i!==idx);
+    if(zu)l.push(idx);
+    if(l.length)m[id]=l;else delete m[id];
+    localStorage.setItem(FS_ZU_KEY,JSON.stringify(m));
+  }catch(e){}
+}
+function _fsSektionKurz(sek){
+  let ok=0,mangel=0,offen=0;
+  ((sek&&sek.items)||[]).forEach(it=>{if(it.status==='ok')ok++;else if(it.status==='mangel')mangel++;else offen++;});
+  return [mangel?mangel+' auffällig':'',ok?ok+' unauffällig':'',offen?offen+' offen':''].filter(Boolean).join(' · ')||'keine Punkte';
+}
+const FS_HILFE=[
+  ['Vorbereitung',[
+    'Messgeräte 10 Minuten im Keller liegen lassen – kalt/warm verfälscht die Werte.',
+    'Das Protokoll darf vorher angelegt sein. Am Termin „🌤 Wetter holen" antippen (Standort nötig) oder Wetter, letzten Regen, Außen °C und % rF selbst eintragen.',
+    'Oben bei Raumklima den Raum anlegen (z. B. „＋ Kellerraum") und Temperatur und Luftfeuchte eintragen – der Taupunkt steht dann daneben.'
+  ]],
+  ['testo 605i (Luft) und 805i (Oberfläche)',[
+    'testo Smart App öffnen, beide Fühler verbinden, Schimmelindikation wählen.',
+    'Emissionsgrad am 805i für Putz, Beton und Farbe auf 0,95. Keine blanken Rohre oder Fliesen mit Infrarot messen.',
+    'Prüfen: die App rechnet mit den Werten vom Fühler, nicht mit fest eingestellten 20 °C / 50 %.',
+    'Laser auf die Stelle, Foto, Speichern, dann Teilen → Google Drive → Ordner „00_App-Daten / testo-Eingang".',
+    'In PAM bei Messstellen „📥 testo-Messung einlesen" → Messungen antippen → Raum wählen → Einlesen → im Foto auf die Stelle tippen → „✓ Punkt übernehmen". Braucht Internet.',
+    'Die Messstelle ist dann mit Luft, Oberfläche und Foto angelegt – nur noch den Namen ergänzen.'
+  ]],
+  ['Trotec BM31WP (Bauteilfeuchte in Digits)',[
+    'Taste 3× kurz (Lampe gelb) → Trotec-App: SENSOREN → Aktualisieren → Verbinden (Lampe grün). Dabei hinten halten und in die Luft richten.',
+    'Zuerst eine trockene Stelle messen (hoch an der Wand) → „Vergleich trocken".',
+    'Gerade und fest andrücken, 8–10 cm Abstand zu Ecken und Kanten. Menü → „Min / Max / Ø zurücksetzen", 3× messen, den Ø-Wert in „Bauteil (Digits)" eintragen.',
+    'Mit Foto in der Trotec-App: Menü → Aufzeichnung starten → „Einzelpunktmessung mit Bild", im Foto auf jede Messstelle tippen, von unten nach oben. REC → Aufzeichnung beenden → Speichern mit Namen der Wand.',
+    'Salze und Metall machen die Zahl zu hoch, raue Flächen zu niedrig. Digits sind Vergleichswerte, keine Prozent Wasser – kein Material wählen.'
+  ]],
+  ['Messstellen benennen',[
+    'Wände durchnummerieren und Höhe dazu: „Wand 1 Außenwand 10 cm", „Wand 1 Außenwand 50 cm", „Wand 1 Außenwand 100 cm".',
+    'Trotec-Foto und testo-Messung unter demselben Wand-Namen speichern – dann gehören sie eindeutig zusammen.',
+    'An jeder Messstelle „📷 Fotos zu dieser Stelle" → Kamera: ganze Wand mit Zollstock.'
+  ]],
+  ['Abhaken',[
+    'Nur antippen, was zutrifft: ✓ unauffällig · ⚠ auffällig · ○ offen. Was offen bleibt, stört nicht.',
+    'Überschrift eines Abschnitts antippen oder „▲ Abschnitt einklappen" am Ende – dann bleibt nur eine Zeile mit der Kurzfassung. Im PDF steht trotzdem alles.',
+    'Außen-Rundgang ums Haus: Abschnitt „Außen am Haus" (nur im Keller-Protokoll).'
+  ]],
+  ['Abschluss',[
+    'Ursache wählen und kurz begründen. Nur Fotos mit grünem Haken kommen ins PDF.',
+    '„PDF erstellen" – das PDF landet im Ordner der Karte, „📂 Öffnen" zeigt es sofort.'
+  ]]
+];
+function _fsHilfeZeigen(){
+  const alt=document.getElementById('_fsHilfe');if(alt){alt.remove();return;}
+  const ov=document.createElement('div');ov.id='_fsHilfe';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:var(--bg);display:flex;flex-direction:column;';
+  const kopf=document.createElement('div');
+  kopf.style.cssText='background:'+FS_FARBE+';padding:12px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;';
+  const zu=document.createElement('button');zu.type='button';zu.textContent='←';zu.setAttribute('aria-label','Anleitung schließen');
+  zu.style.cssText='background:rgba(255,255,255,.2);border:none;color:#fff;width:40px;height:40px;border-radius:8px;font-size:18px;cursor:pointer;flex-shrink:0;';
+  zu.onclick=()=>ov.remove();
+  const t=document.createElement('div');t.style.cssText='font-size:15px;font-weight:700;color:#fff;';t.textContent="📘 So geht's – Feuchte messen";
+  kopf.append(zu,t);
+  const inhalt=document.createElement('div');
+  inhalt.style.cssText='flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 16px 40px;';
+  FS_HILFE.forEach(([titel,zeilen])=>{
+    const h=document.createElement('div');h.textContent=titel;
+    h.style.cssText='font-size:15px;font-weight:700;color:var(--text);margin:16px 0 6px;padding-left:8px;border-left:4px solid '+FS_FARBE+';';
+    const ol=document.createElement('ol');ol.style.cssText='margin:0;padding-left:22px;';
+    zeilen.forEach(z=>{const li=document.createElement('li');li.textContent=z;li.style.cssText='font-size:15px;line-height:1.5;color:var(--text);margin-bottom:6px;';ol.appendChild(li);});
+    inhalt.append(h,ol);
+  });
+  ov.append(kopf,inhalt);
+  document.body.appendChild(ov);
 }
 
 /* ══ v294: AUSFÜLLHILFEN UND ERGEBNIS (Wunsch Frank 14.09.2026) ═══════════════════════════════
@@ -10908,7 +11004,10 @@ function _openFeuchteprotokollMobil(existingIdx,art){
   hdrMeta.append(hdrT,hdrS);
   const statsEl=document.createElement('div');statsEl.id='_fsMobStats';
   statsEl.style.cssText='background:rgba(255,255,255,.18);border-radius:6px;padding:3px 8px;font-size:12px;color:#fff;white-space:nowrap;flex-shrink:0;';
-  hdr.append(closeBtn,hdrMeta,statsEl);
+  const hilfeBtn=document.createElement('button');hilfeBtn.type='button';hilfeBtn.textContent='📘';hilfeBtn.title="So geht's";hilfeBtn.setAttribute('aria-label',"So geht's – Anleitung"); // v304
+  hilfeBtn.style.cssText='background:rgba(255,255,255,.2);border:none;color:#fff;width:40px;height:40px;border-radius:8px;font-size:18px;cursor:pointer;flex-shrink:0;';
+  hilfeBtn.onclick=()=>_fsHilfeZeigen();
+  hdr.append(closeBtn,hdrMeta,hilfeBtn,statsEl);
 
   const body=document.createElement('div');
   body.style.cssText='flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:0 0 96px;';
@@ -11130,9 +11229,25 @@ function _openFeuchteprotokollMobil(existingIdx,art){
   function _teilChecklisten(){
     const w=document.createElement('div');
     const stufen=[{k:'ok',t:'✓ unauffällig',c:'var(--green)'},{k:'mangel',t:'⚠ auffällig',c:'var(--red)'},{k:'offen',t:'○ offen',c:'var(--text2)'}];
-    bericht.sektionen.forEach(sek=>{
+    const zuListe=_fsZuLesen(bericht.id); // v304: eingeklappte Abschnitte (nur auf diesem Gerät)
+    const umschalten=(si,zu)=>{
+      _fsZuSetzen(bericht.id,si,zu);_neuBauen();
+      if(zu){const k=body.querySelector('[data-fs-sek="'+si+'"]');if(k){try{k.scrollIntoView({block:'start'});}catch(e){}}}
+    };
+    bericht.sektionen.forEach((sek,si)=>{
       if(!Array.isArray(sek.items))sek.items=[];
-      w.appendChild(_kopfZeile(sek.titel||''));
+      const zu=zuListe.indexOf(si)>=0;
+      const kopf=document.createElement('button');kopf.type='button';kopf.setAttribute('data-fs-sek',String(si));
+      kopf.setAttribute('aria-expanded',zu?'false':'true');
+      kopf.style.cssText=S_HDR+'display:flex;align-items:center;gap:8px;width:100%;text-align:left;cursor:pointer;font-family:inherit;border-right:none;';
+      const pfeil=document.createElement('span');pfeil.textContent=zu?'▸':'▾';pfeil.style.cssText='width:16px;flex-shrink:0;';
+      const kt=document.createElement('span');kt.textContent=sek.titel||'';kt.style.cssText='flex:1;min-width:0;';
+      kopf.append(pfeil,kt);
+      if(zu){const kurz=document.createElement('span');kurz.setAttribute('data-fs-sekkurz',String(si));kurz.textContent=_fsSektionKurz(sek);
+        kurz.style.cssText='font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap;flex-shrink:0;';kopf.appendChild(kurz);}
+      kopf.onclick=()=>umschalten(si,!zu);
+      w.appendChild(kopf);
+      if(zu)return;
       sek.items.forEach(it=>{
         const row=document.createElement('div');row.style.cssText='padding:10px 14px;border-bottom:1px solid var(--border);';
         const txt=document.createElement('div');txt.style.cssText='font-size:14px;color:var(--text);margin-bottom:6px;';txt.textContent=it.text||'';
@@ -11157,6 +11272,10 @@ function _openFeuchteprotokollMobil(existingIdx,art){
       frei.style.cssText=S_KNOPF+'display:block;width:calc(100% - 28px);margin:8px 14px;border:1px dashed var(--border);background:transparent;color:var(--text2);';
       frei.onclick=()=>{const tx=prompt('Prüfpunkt:');if(tx&&tx.trim()){sek.items.push({text:tx.trim(),status:'offen',notiz:''});scheduleSave();_neuBauen();}};
       w.appendChild(frei);
+      const ein=document.createElement('button');ein.type='button';ein.textContent='▲ Abschnitt einklappen';ein.setAttribute('data-fs-einklappen',String(si)); // v304
+      ein.style.cssText=S_KNOPF+'display:block;width:calc(100% - 28px);margin:0 14px 12px;border:1.5px solid '+FS_FARBE+';background:transparent;color:var(--text);';
+      ein.onclick=()=>umschalten(si,true);
+      w.appendChild(ein);
     });
     return w;
   }
