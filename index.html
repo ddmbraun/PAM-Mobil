@@ -4918,7 +4918,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v304';
+const MOB_VERSION='v305';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10663,12 +10663,20 @@ const FS_HILFE=[
     'Oben bei Raumklima den Raum anlegen (z. B. „＋ Kellerraum") und Temperatur und Luftfeuchte eintragen – der Taupunkt steht dann daneben.'
   ]],
   ['testo 605i (Luft) und 805i (Oberfläche)',[
-    'testo Smart App öffnen, beide Fühler verbinden, Schimmelindikation wählen.',
-    'Emissionsgrad am 805i für Putz, Beton und Farbe auf 0,95. Keine blanken Rohre oder Fliesen mit Infrarot messen.',
-    'Prüfen: die App rechnet mit den Werten vom Fühler, nicht mit fest eingestellten 20 °C / 50 %.',
-    'Laser auf die Stelle, Foto, Speichern, dann Teilen → Google Drive → Ordner „00_App-Daten / testo-Eingang".',
-    'In PAM bei Messstellen „📥 testo-Messung einlesen" → Messungen antippen → Raum wählen → Einlesen → im Foto auf die Stelle tippen → „✓ Punkt übernehmen". Braucht Internet.',
-    'Die Messstelle ist dann mit Luft, Oberfläche und Foto angelegt – nur noch den Namen ergänzen.'
+    'ERST beide Fühler einschalten und in der testo Smart App verbinden, DANN Schimmelindikation starten.',
+    'Unter „Messparameter" prüfen: bei Lufttemperatur und Feuchte muss „testo 605i" stehen, nicht „20,0 °C / 50 %". Die Einstellung springt sonst zurück.',
+    'Emissionsgrad VOR dem Messen einstellen – nachträglich ändert er gespeicherte Werte nicht (die testo-Datei merkt sich den verwendeten Wert).',
+    'Laser auf die Stelle, Foto, Speichern. Im Keller ohne Netz nur speichern – exportiert wird später.',
+    'Mit Netz: Menü ☰ → Messdaten → Messung öffnen → Export → Bilder anhaken → JSON (NICHT CSV – PAM liest nur JSON) → Google Drive → „00_App-Daten / testo-Eingang".',
+    'In PAM bei Messstellen „📥 testo-Messung einlesen" → alle Messungen antippen → Raum wählen → Einlesen → in jedem Foto auf die Stelle tippen → „✓ Punkt übernehmen". Braucht Internet.',
+    'Die Messstellen sind dann mit Luft, Oberfläche und Foto angelegt – nur noch Namen und Digits ergänzen.'
+  ]],
+  ['Emissionsgrad je Wand (testo-Leitfaden Infrarot)',[
+    'Putz, Mauerwerk, Ziegel, Mörtel, Beton: 0,93 · Kalksandstein: 0,95 · Farbe: 0,91–0,96 · Fliesen: 0,93 → 0,95 lassen (Fehler etwa 1 °C oder weniger).',
+    'Gipsputz: 0,80–0,90 → auf 0,90 stellen. Holz: 0,80–0,94 → 0,90.',
+    'Rohes Naturstein-Mauerwerk (Sandstein 0,67, Basalt 0,72, Granit 0,45): so NICHT messen – mattes schwarzes Klebeband aufkleben und darauf messen, oder eine verputzte Stelle suchen.',
+    'Blankes Metall und Rohre nicht mit Infrarot messen.',
+    'Zusätzlich oben bei „Messgeräte" eintragen, z. B. „805i, ε 0,95" – dann steht es im PAM-PDF.'
   ]],
   ['Trotec BM31WP (Bauteilfeuchte in Digits)',[
     'Taste 3× kurz (Lampe gelb) → Trotec-App: SENSOREN → Aktualisieren → Verbinden (Lampe grün). Dabei hinten halten und in die Luft richten.',
@@ -11881,6 +11889,19 @@ function _fsMesspunktWaehlen(bildUrl,titel){
   });
 }
 
+/* v305: Messungen, die NUR als CSV im Eingang liegen (kein .tjf/.json mit gleichem Namen). PAM liest nur JSON –
+   solche Messungen fehlten sonst still in der Liste (Befund 30.09.2026: Export zuerst als CSV). Reine Funktion. */
+function _fsTestoNurCsv(dateien){
+  const namen=(dateien||[]).map(f=>String((f&&f.name)||''));
+  const basis=n=>n.replace(/\.[^.]+$/,'').toLowerCase();
+  const mitJson=new Set(namen.filter(n=>/\.(tjf|json)$/i.test(n)).map(basis));
+  return namen.filter(n=>/\.csv$/i.test(n)&&!mitJson.has(basis(n))).map(n=>{
+    const m=/(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})/.exec(n);
+    return {datei:n,text:m?m[3]+'.'+m[2]+'.'+m[1]+', '+m[4]+':'+m[5]+' Uhr':n};
+  });
+}
+const FS_TESTO_JSON_WEG='In der testo-App: Menü ☰ → Messdaten → Messung öffnen → Export → Bilder anhaken → JSON (nicht CSV) → Google Drive → „'+FS_TESTO_ORDNER+'".';
+
 async function _fsTestoEinlesen(bericht,t,neuBauen){
   if(!(typeof tokenValid==='function'&&tokenValid())){toast('Drive nicht verbunden – zum Einlesen bitte mit Empfang anmelden','error',5000);return;}
   const GID='_fsTestoSheet';const alt=document.getElementById(GID);if(alt)alt.remove();
@@ -11909,9 +11930,10 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
   }catch(e){console.warn('[testo] Liste:',e);info('Google Drive nicht erreichbar ('+(e.message||e)+'). Bitte mit Empfang erneut versuchen.');return;}
   const jsons=dateien.filter(f=>/\.(tjf|json)$/i.test(f.name||''));
   const bilder=dateien.filter(f=>/\.(jpe?g|png)$/i.test(f.name||''));
-  const csvs=dateien.filter(f=>/\.csv$/i.test(f.name||'')).length;
-  const csvText=csvs?' '+csvs+' CSV-Datei'+(csvs===1?' im Ordner wird':'en im Ordner werden')+' nicht eingelesen – in der testo-App bitte als JSON speichern.':'';
-  if(!jsons.length){info('Keine testo-Messungen im Ordner. In der testo-App: Speichern → Teilen → Google Drive → „'+FS_TESTO_ORDNER+'".'+csvText);return;}
+  const nurCsv=_fsTestoNurCsv(dateien); // v305: nur Messungen OHNE JSON-Zwilling melden
+  const csvText=nurCsv.length?'⚠ '+(nurCsv.length===1?'1 Messung liegt':nurCsv.length+' Messungen liegen')+' nur als CSV vor und '+(nurCsv.length===1?'fehlt':'fehlen')+' deshalb in der Liste: '
+    +nurCsv.slice(0,6).map(c=>c.text).join(' · ')+(nurCsv.length>6?' …':'')+'. '+FS_TESTO_JSON_WEG:'';
+  if(!jsons.length){info('Keine testo-Messungen als JSON im Ordner. '+(csvText||FS_TESTO_JSON_WEG));return;}
   info('Lese '+jsons.length+' Messung'+(jsons.length===1?'':'en')+' …');
 
   const bildNamen=bilder.map(b=>b.name);
@@ -11957,8 +11979,13 @@ async function _fsTestoEinlesen(bericht,t,neuBauen){
 
   inhalt.innerHTML='';
   const hinweis=document.createElement('div');hinweis.style.cssText='font-size:13px;color:var(--text2);margin:0 0 8px;line-height:1.45;';
-  hinweis.textContent='Ordner „'+FS_TESTO_ORDNER+'" · Messungen antippen. PAM legt beim Einlesen eine Kopie in den Ordner des Auftrags – die Originale hier kannst du später in Drive löschen.'+csvText;
+  hinweis.textContent='Ordner „'+FS_TESTO_ORDNER+'" · Messungen antippen. PAM legt beim Einlesen eine Kopie in den Ordner des Auftrags – die Originale hier kannst du später in Drive löschen.';
   inhalt.appendChild(hinweis);
+  if(csvText){ // v305: gut sichtbar statt im Kleingedruckten
+    const cw=document.createElement('div');cw.setAttribute('data-fs-nurcsv',String(nurCsv.length));
+    cw.style.cssText='font-size:14px;font-weight:600;color:var(--text);margin:0 0 10px;padding:10px 12px;border-radius:8px;background:var(--bg2);border-left:5px solid var(--orange);line-height:1.45;';
+    cw.textContent=csvText;inhalt.appendChild(cw);
+  }
   messungen.forEach((m,i)=>{
     const row=document.createElement('button');row.type='button';row.setAttribute('data-fs-testo',String(i));
     row.style.cssText='display:block;width:100%;text-align:left;margin:0 0 8px;padding:12px;border-radius:10px;border:2px solid var(--border);background:var(--bg2);color:var(--text);font-family:inherit;cursor:pointer;';
