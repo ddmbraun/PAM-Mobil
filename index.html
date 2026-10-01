@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v320';
+const MOB_VERSION='v321';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5683,6 +5683,35 @@ function _jsaUrl(s){
   const u = String(s == null ? '' : s).trim();
   return /^https?:[/][/]/i.test(u) ? _jsa(u) : '';
 }
+// v321: Link-Wache. Ein gespeicherter Link kann mit javascript: beginnen und würde beim Klick Programmcode ausführen. Gesperrt werden NUR
+// javascript:, vbscript: und data:text/html bzw. data:image/svg (ausführbar). Alles andere (https, mailto, tel, Dateipfade, blob:, data:application/pdf) bleibt wie es war.
+// Browser entfernen Tabulator/Zeilenumbruch mitten im Namen und führende Steuerzeichen/Leerzeichen – das tun wir vor dem Vergleich auch.
+function _urlBoese(u){
+  const s = String(u == null ? '' : u); let r = '', anfang = true;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 9 || c === 10 || c === 13) continue;
+    if (anfang && c <= 32) continue;
+    anfang = false; r += s.charAt(i);
+  }
+  r = r.toLowerCase();
+  return r.indexOf('javascript:') === 0 || r.indexOf('vbscript:') === 0 || r.indexOf('data:text/html') === 0 || r.indexOf('data:image/svg') === 0;
+}
+(function _pamLinkWache(){
+  if (window.__pamLinkWache) return; window.__pamLinkWache = true;
+  function warne(){ console.warn('[Sicherheit] Gefährlicher Link nicht geöffnet.'); try { const t = '⚠ Dieser Link wurde aus Sicherheitsgründen nicht geöffnet.'; typeof toast==='function'?toast(t,'error'):0; } catch (e) {} }
+  const orig = window.open;
+  window.open = function(u){ if (_urlBoese(u)) { warne(); return null; } return orig.apply(window, arguments); };
+  function anker(ev){
+    let t = ev.target;
+    while (t && t !== document && !(t.tagName === 'A' || t.tagName === 'AREA')) t = t.parentNode;
+    if (!t || t === document) return;
+    const h = t.getAttribute('href');
+    if (h != null && _urlBoese(h)) { ev.preventDefault(); ev.stopImmediatePropagation(); warne(); }
+  }
+  document.addEventListener('click', anker, true);
+  document.addEventListener('auxclick', anker, true);
+})();
 // Notiz-Zeitstempel anzeigen: NUR echte ISO-Strings (2026-06-10T…) per Date formatieren.
 // Alles andere (z.B. „10.06.2026, 14:32" aus Altbestand) unverändert durchreichen –
 // new Date('10.06.2026') würde als Monat.Tag.Jahr fehlinterpretiert!
