@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v319';
+const MOB_VERSION='v320';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5663,6 +5663,26 @@ function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s
 // durch &amp; – aus einem Anführungszeichen wurde damit sichtbar `&amp;quot;`. Das
 // kaufmännische Und muss zuerst dran, sonst verdoppelt es die eigenen Ersetzungen.
 function escAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+// v320 (wie Desktop b1049): Text in Inline-Handlern (onclick="f('…')"). esc()/_escHtml() reichen dafür NICHT: der Browser macht aus &#39; im
+// Attribut vor dem Ausführen wieder ein ' – ein Name wie  ');…//  bricht aus dem Text aus. _jsa() schreibt jedes gefährliche
+// Zeichen (\ ' " < > & ` und Steuerzeichen) als \xHH bzw. \uHHHH; das Ergebnis enthält keine HTML-Sonderzeichen mehr
+// und ist damit in Attribut UND JavaScript-Text sicher. Die Funktion bekommt später wieder genau den Originaltext.
+function _jsa(s){
+  const str = String(s == null ? '' : s), BS = String.fromCharCode(92);
+  let r = '';
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c < 32 || c === 34 || c === 38 || c === 39 || c === 60 || c === 62 || c === 92 || c === 96 || c === 127 || c === 8232 || c === 8233) {
+      r += c < 256 ? BS + 'x' + ('0' + c.toString(16)).slice(-2) : BS + 'u' + ('000' + c.toString(16)).slice(-4);
+    } else r += str.charAt(i);
+  }
+  return r;
+}
+// Wie _jsa, aber nur Webadressen (http/https); alles andere (javascript:, data: …) ergibt einen leeren Text.
+function _jsaUrl(s){
+  const u = String(s == null ? '' : s).trim();
+  return /^https?:[/][/]/i.test(u) ? _jsa(u) : '';
+}
 // Notiz-Zeitstempel anzeigen: NUR echte ISO-Strings (2026-06-10T…) per Date formatieren.
 // Alles andere (z.B. „10.06.2026, 14:32" aus Altbestand) unverändert durchreichen –
 // new Date('10.06.2026') würde als Monat.Tag.Jahr fehlinterpretiert!
@@ -6706,7 +6726,7 @@ function _tuMobErledigt(taskId,lId){
 // wäre das eine Bremse. Der 📝 sitzt neben dem ✓ und ist genauso groß (Handschuhe).
 function _tuMobNotizKnopf(taskId,lId,hoehe){
   var h=hoehe||40;
-  return '<span onclick="event.stopPropagation();_tuMobNotiz(\''+escAttr(taskId)+'\',\''+escAttr(lId)+'\')"'
+  return '<span onclick="event.stopPropagation();_tuMobNotiz(\''+_jsa(taskId)+'\',\''+_jsa(lId)+'\')"'
     +' style="flex-shrink:0;min-width:44px;height:'+h+'px;border-radius:'+Math.round(h/2)+'px;'
     +'background:var(--bg3);border:1px solid var(--border);color:var(--text2);display:inline-flex;'
     +'align-items:center;justify-content:center;font-size:16px;cursor:pointer;">📝</span>';
@@ -6872,7 +6892,7 @@ function _tuMobObjektZeilen(t,gross,schlank){
       var _notiz=(((l.eintraege)||[]).some(function(x){return !!(x&&x.notiz&&String(x.notiz).trim());})
         ||(l.notizVorab&&l.notizVorab.text&&String(l.notizVorab.text).trim()))?1:0;
       var _info=(_n||_notiz)
-        ? '<div class="bau-karte-info" onclick="event.stopPropagation();_tuLeistungAnhaenge(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')">'
+        ? '<div class="bau-karte-info" onclick="event.stopPropagation();_tuLeistungAnhaenge(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')">'
           + (_n?'<span>📎 '+_n+(nVor?' · '+nVor+' vorab':'')+(nOffen?' · '+nOffen+' lädt':'')+'</span>':'')
           + (_notiz?'<span>📝 Notiz</span>':'')
           + '<span class="bau-karte-info-pfeil">›</span>'
@@ -6928,18 +6948,18 @@ function _tuMobKnopfReihe(t,l,kH,sIco,beschriftet){
         +'<span class="bau-kn-ico">'+ico+'</span><span class="bau-kn-lbl">'+lbl+'</span></button>';
     };
     return '<div class="bau-kaestchen">'
-      + kn('📎','Anhang','', '_tuMobFotoNachreichen(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Foto oder Protokoll anhängen – auch schon vor dem Abhaken')
-      + kn('📝','Notiz','',  '_tuMobNotiz(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Notiz zum letzten Termin – vor dem ersten ✓ wird sie vorab abgelegt')
-      + kn('✓','Erledigt','fertig','_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')','Heute als erledigt eintragen')
+      + kn('📎','Anhang','', '_tuMobFotoNachreichen(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')','Foto oder Protokoll anhängen – auch schon vor dem Abhaken')
+      + kn('📝','Notiz','',  '_tuMobNotiz(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')','Notiz zum letzten Termin – vor dem ersten ✓ wird sie vorab abgelegt')
+      + kn('✓','Erledigt','fertig','_tuMobErledigt(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')','Heute als erledigt eintragen')
       + '</div>';
   }
   /* ⚠ Die runde Fassung bleibt in DERSELBEN Funktion, bewusst nicht in einer eigenen.
      Vier Prüfsuiten schneiden `_tuMobKnopfReihe` aus dem Quelltext und führen sie aus;
      eine ausgelagerte Hilfsfunktion kennen sie nicht und die Suiten brechen ab. Beim
      ersten Anlauf ist mir genau das passiert. */
-  return '<span onclick="event.stopPropagation();_tuMobFotoNachreichen(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" title="Foto oder Protokoll anhängen – auch schon vor dem Abhaken" style="flex-shrink:0;min-width:'+(kH+4)+'px;height:'+kH+'px;border-radius:'+Math.round(kH/2)+'px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);display:inline-flex;align-items:center;justify-content:center;font-size:'+sIco+'px;cursor:pointer;">📎</span>'
+  return '<span onclick="event.stopPropagation();_tuMobFotoNachreichen(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')" title="Foto oder Protokoll anhängen – auch schon vor dem Abhaken" style="flex-shrink:0;min-width:'+(kH+4)+'px;height:'+kH+'px;border-radius:'+Math.round(kH/2)+'px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);display:inline-flex;align-items:center;justify-content:center;font-size:'+sIco+'px;cursor:pointer;">📎</span>'
     + _tuMobNotizKnopf(t.id,l.id,kH)
-    + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" title="Heute als erledigt eintragen" style="flex-shrink:0;min-width:'+(kH+6)+'px;height:'+kH+'px;border-radius:'+Math.round(kH/2)+'px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:'+(sIco+1)+'px;font-weight:700;cursor:pointer;">✓</span>';
+    + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')" title="Heute als erledigt eintragen" style="flex-shrink:0;min-width:'+(kH+6)+'px;height:'+kH+'px;border-radius:'+Math.round(kH/2)+'px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:'+(sIco+1)+'px;font-weight:700;cursor:pointer;">✓</span>';
 }
 // v178: dieselben Zeilen zusätzlich im Baudoku-Reiter – dort ist alles auf
 // Außendienst ausgelegt (große Knöpfe, große Schrift). Frank wollte sie an
@@ -7784,7 +7804,7 @@ function renderHeuteMobil(){
 
   function uhrBtn(t){
     var isRunning=t.id===runningTaskId;
-    return'<span onclick="event.stopPropagation();_cardTimerToggle(\''+escAttr(t.id)+'\')" '
+    return'<span onclick="event.stopPropagation();_cardTimerToggle(\''+_jsa(t.id)+'\')" '
       +'title="'+(isRunning?'Stoppuhr stoppen':'Stoppuhr starten')+'" '
       +'style="flex-shrink:0;width:40px;height:40px;border-radius:50%;background:'+(isRunning?'#e8791a':'#5b6472')+';display:inline-flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;">'
       +(isRunning?'⏹':'⏱')+'</span>';
@@ -7836,7 +7856,7 @@ function renderHeuteMobil(){
       fahrtTxt='<span style="font-size:11px;padding:2px 7px;border-radius:4px;background:#8a5a2422;color:'+_hTon('#c98a3d')+';font-weight:600;white-space:nowrap;">🚗 '
         +(hin===rueck?hin+' min je Richtung':hin+' min hin / '+rueck+' min zurück')+'</span>';
     }
-    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
+    return'<div onclick="openDetail(\''+_jsa(t.id)+'\')" '
       +'style="background:var(--bg2);border:1px solid var(--border);border-left:4px solid #2e6fc4;border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
       +'<div style="padding:9px 10px 3px;display:flex;align-items:center;gap:8px;">'
       +(zeit?'<span style="font-size:15px;font-weight:700;color:var(--accent2);white-space:nowrap;">'+esc(zeit)+'</span>':'')
@@ -7887,7 +7907,7 @@ function renderHeuteMobil(){
     // v170: statt kleinem orangem Text „Heute: …" dasselbe gefüllte Kästchen wie
     // die Badges daneben – gleiche Optik, und der Grund fällt endlich auf
     badges+=(badges?' ':'')+_grundBox(e);
-    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" '
+    return'<div onclick="openDetail(\''+_jsa(t.id)+'\')" '
       +'style="background:var(--bg2);border:1px solid var(--border);border-left:4px solid '+borderColor
       +';border-radius:0 10px 10px 0;margin-bottom:8px;overflow:hidden;cursor:pointer;">'
       +'<div style="padding:9px 10px 3px;display:flex;align-items:center;gap:6px;">'
@@ -7907,7 +7927,7 @@ function renderHeuteMobil(){
     color=_hTon(color); // v171: Überschrift + Zahl-Blase im Sonnen-Modus abgedunkelt
     var zu=!!_heuteZu[key];
     return'<div style="margin-bottom:'+(zu?'6px':'12px')+';">'
-      +'<div onclick="_heuteZuToggle(\''+key+'\')" style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:'+color
+      +'<div onclick="_heuteZuToggle(\''+_jsa(key)+'\')" style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:'+color
       +';margin-bottom:6px;display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;padding:4px 0;">'
       +'<span style="width:6px;height:6px;border-radius:50%;background:'+color+';display:inline-block;"></span>'
       +'<span style="opacity:.8;">'+(zu?'▸':'▾')+'</span>'
@@ -7923,7 +7943,7 @@ function renderHeuteMobil(){
     var t=item.t,tm=item.tm;
     var zeit=(tm.von||'')+(tm.bis?'–'+tm.bis:'');
     var titel=((tm.betreff||tm.beschreibung)||'').trim()||t.title||'(ohne Bezeichnung)';
-    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="display:flex;gap:9px;align-items:baseline;padding:8px 2px;border-top:1px solid var(--border);cursor:pointer;">'
+    return'<div onclick="openDetail(\''+_jsa(t.id)+'\')" style="display:flex;gap:9px;align-items:baseline;padding:8px 2px;border-top:1px solid var(--border);cursor:pointer;">'
       +'<span style="font-size:13px;font-weight:600;color:var(--text);min-width:48px;flex-shrink:0;">'+esc(zeit||'—')+'</span>'
       +'<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(titel)+'</span>'
       +'</div>';
@@ -7933,7 +7953,7 @@ function renderHeuteMobil(){
     // v170: Titel bleibt oben (Entscheidung Frank), darunter der Grund im
     // Kästchen – 13px statt 11px und farbig statt grau. Das Board rutscht
     // dahinter und bleibt klein und grau, es ist nur Herkunft.
-    return'<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:8px 2px;border-top:1px solid var(--border);cursor:pointer;">'
+    return'<div onclick="openDetail(\''+_jsa(t.id)+'\')" style="padding:8px 2px;border-top:1px solid var(--border);cursor:pointer;">'
       +'<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||'(ohne Titel)')+'</div>'
       +'<div style="margin-top:3px;display:flex;align-items:center;gap:7px;min-width:0;">'
       +  '<span style="min-width:0;overflow:hidden;">'+_grundBox(e)+'</span>'
@@ -7948,7 +7968,7 @@ function renderHeuteMobil(){
     var farbe=_hTon(ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb);
     var auf=!!_tuMobOffen[t.id];
     var h='<div style="border-top:1px solid var(--border);">'
-      +'<div onclick="_tuMobToggle(\''+escAttr(t.id)+'\')" style="display:flex;align-items:center;gap:8px;padding:9px 2px;cursor:pointer;">'
+      +'<div onclick="_tuMobToggle(\''+_jsa(t.id)+'\')" style="display:flex;align-items:center;gap:8px;padding:9px 2px;cursor:pointer;">'
       +  '<span style="width:8px;height:8px;border-radius:50%;background:'+farbe+';flex-shrink:0;"></span>'
       +  '<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(t.title||'')+'</span>'
       +  '<span style="font-size:12px;color:var(--text2);flex-shrink:0;">'+ls.length+' fällig</span>'
@@ -7965,7 +7985,7 @@ function renderHeuteMobil(){
           +  _tuMobNotizZeile(l) // v175
           +'</div>'
           +_tuMobNotizKnopf(t.id,l.id,38) // v175
-          +'<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:38px;border-radius:19px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
+          +'<span onclick="event.stopPropagation();_tuMobErledigt(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:38px;border-radius:19px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
           +'</div>';
       });
     }
@@ -7997,7 +8017,7 @@ function renderHeuteMobil(){
     var farbe=_hTon(ls.some(function(l){return _tuAmpel(l)==='rot';})?TU_FARBE.rot:TU_FARBE.gelb);
     var auf=!!_tuMobOffen[t.id];
     var h='<div style="background:var(--bg2);border-radius:12px;border:1px solid var(--border);border-left:4px solid '+_hTon('#7F77DD')+';margin-bottom:8px;overflow:hidden;">'
-      + '<div onclick="openDetail(\''+escAttr(t.id)+'\')" style="padding:9px 11px 6px;cursor:pointer;">'
+      + '<div onclick="openDetail(\''+_jsa(t.id)+'\')" style="padding:9px 11px 6px;cursor:pointer;">'
       +   '<div style="display:flex;align-items:flex-start;gap:6px;">'
       +     '<span style="width:9px;height:9px;border-radius:50%;background:'+farbe+';flex-shrink:0;margin-top:5px;"></span>'
       +     '<span style="font-size:15px;font-weight:600;color:var(--text);line-height:1.3;">'+esc(t.title||'')+'</span>'
@@ -8007,7 +8027,7 @@ function renderHeuteMobil(){
     if(!auf){
       h+='<div style="font-size:12px;color:var(--text2);padding:0 11px 8px 26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
         + esc(ls.slice(0,3).map(function(l){return l.name||'';}).filter(Boolean).join(' · ')+(ls.length>3?' · +'+(ls.length-3):''))+'</div>'
-        + '<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:1px solid var(--border);cursor:pointer;">▾ Aufklappen</div>';
+        + '<div onclick="event.stopPropagation();_tuMobToggle(\''+_jsa(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:1px solid var(--border);cursor:pointer;">▾ Aufklappen</div>';
     }else{
       ls.forEach(function(l){
         var lf=_hTon(TU_FARBE[_tuAmpel(l)]||TU_FARBE.gelb);
@@ -8020,10 +8040,10 @@ function renderHeuteMobil(){
           + '</div>'
           // Großer Knopf: das hier wird mit Handschuhen auf der Baustelle getippt
           + _tuMobNotizKnopf(t.id,l.id,40) // v175
-          + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+escAttr(t.id)+'\',\''+escAttr(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:40px;border-radius:20px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
+          + '<span onclick="event.stopPropagation();_tuMobErledigt(\''+_jsa(t.id)+'\',\''+_jsa(l.id)+'\')" style="flex-shrink:0;min-width:46px;height:40px;border-radius:20px;background:'+_hTon('#7F77DD')+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;cursor:pointer;">✓</span>'
           + '</div>';
       });
-      h+='<div onclick="event.stopPropagation();_tuMobToggle(\''+escAttr(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:1px solid var(--border);cursor:pointer;">▴ Zuklappen</div>';
+      h+='<div onclick="event.stopPropagation();_tuMobToggle(\''+_jsa(t.id)+'\')" style="padding:10px;text-align:center;font-size:13px;font-weight:600;color:var(--text2);border-top:1px solid var(--border);cursor:pointer;">▴ Zuklappen</div>';
     }
     return h+'</div>';
   }
@@ -10727,25 +10747,30 @@ document.addEventListener('DOMContentLoaded',function(){
   const _authState=_query.get('state'); // v119: Handoff-Code, den die App vor dem Login gesetzt hat
   if(_authCode){
     window.history.replaceState({},'',window.location.pathname);
-    _exchangeCodeForTokenMobile(_authCode,_authState);
+    // v320: state prüfen. 'voll' = dieser Browser hat den Login selbst gestartet (gemerkter Wert gleich).
+    // 'schliessfach' = anderer Kontext (Safari-Tab bei der Homescreen-App): nur Ticket ins Schließfach, NICHT anmelden.
+    // 'abgelehnt' = gar kein state (kommt von keinem unserer Logins).
+    const _modus=_mobOauthModus(_authState);
+    if(_modus==='abgelehnt'){
+      console.warn('[OAuth] Rücksprung ohne state – Code verworfen.');
+      const el=document.getElementById('loginStatus');
+      if(el)el.textContent='⚠ Anmeldung abgelehnt (ungültige Rückmeldung). Bitte neu anmelden.';
+      try{toast('⚠ Anmeldung abgelehnt – bitte neu anmelden','error');}catch(e){}
+      return;
+    }
+    _exchangeCodeForTokenMobile(_authCode,_authState,_modus==='schliessfach');
     return;
   }
-  // ── Legacy: access_token aus Hash (Fallback) ──
-  const hash=window.location.hash;
-  if(hash&&hash.includes('access_token')){
-    const p=new URLSearchParams(hash.substring(1));
-    const token=p.get('access_token');
-    const exp=p.get('expires_in');
-    if(token){
-      window.history.replaceState({},'',window.location.pathname);
-      try{localStorage.setItem(_OAUTH_HANDOFF_KEY,JSON.stringify({token,exp:exp||3600,ts:Date.now()}));}catch(e){}
-      onTokenResponse({access_token:token,expires_in:exp||3600});
-      try{if(window.opener||window.history.length<=2)setTimeout(()=>window.close(),800);}catch(e){}
-    }
+  // v320: Der alte Rückweg über #access_token in der Adresszeile (Implicit Flow) ist entfernt – er prüfte nichts,
+  // und ein untergeschobener Link hätte PAM mit einem fremden Konto angemeldet. Ein fremder Hash wird nur aus der Adresse genommen.
+  if(window.location.hash&&window.location.hash.includes('access_token')){
+    window.history.replaceState({},'',window.location.pathname+window.location.search);
+    console.warn('[OAuth] Schlüssel in der Adresszeile ignoriert (alter Rückweg abgeschafft).');
   }
 });
 // ── Code gegen Tokens tauschen (via Cloud Function) ──
-async function _exchangeCodeForTokenMobile(authCode,handoffCode){
+// v320: nurSchliessfach = Ticket nur beim Server ablegen, diesen Browser NICHT anmelden (fremder Kontext, siehe _mobOauthModus)
+async function _exchangeCodeForTokenMobile(authCode,handoffCode,nurSchliessfach){
   try{
     const response=await fetch(CLOUD_FUNCTION_URL,{
       method:'POST',
@@ -10757,7 +10782,7 @@ async function _exchangeCodeForTokenMobile(authCode,handoffCode){
     if(data.error)throw new Error(data.error);
     // Refresh Token speichern
     if(data.refresh_token){
-      try{localStorage.setItem('pam_gdrive_refresh_token',data.refresh_token);}catch(e){}
+      if(!nurSchliessfach){try{localStorage.setItem('pam_gdrive_refresh_token',data.refresh_token);}catch(e){}}
       // v119: Dauer-Ticket zusätzlich ins Server-Schließfach legen. Dieser Login-Kontext hat
       // einen ANDEREN localStorage als die installierte App – ohne diesen Umweg käme das
       // Ticket dort nie an und die App fragte bei jedem Start neu nach Anmeldung.
@@ -10771,6 +10796,13 @@ async function _exchangeCodeForTokenMobile(authCode,handoffCode){
         }catch(e){console.warn('[Handoff] stash fehlgeschlagen:',e);}
       }
     }
+    if(nurSchliessfach){
+      const el=document.getElementById('loginStatus');
+      if(el)el.textContent=data.refresh_token?'✓ Anmeldung abgeschlossen – bitte zur App zurückwechseln.':'⚠ Kein Dauer-Ticket erhalten – bitte in der App neu anmelden.';
+      try{toast(data.refresh_token?'✓ Anmeldung abgeschlossen – bitte zur App zurückwechseln':'⚠ Kein Dauer-Ticket erhalten','info');}catch(e){}
+      try{if(window.opener||window.history.length<=2)setTimeout(()=>window.close(),800);}catch(e){}
+      return;
+    }
     // Token für PWA-Handoff ablegen (iOS: Safari → PWA)
     try{localStorage.setItem(_OAUTH_HANDOFF_KEY,JSON.stringify({token:data.access_token,exp:data.expires_in||3600,ts:Date.now()}));}catch(e){}
     onTokenResponse({access_token:data.access_token,expires_in:data.expires_in||3600});
@@ -10782,6 +10814,12 @@ async function _exchangeCodeForTokenMobile(authCode,handoffCode){
   }
 }
 
+// ── v320: Rücksprung einordnen. 'voll' nur, wenn der zurückgekommene state genau der ist, den DIESER Browser beim Login-Start gemerkt hat ──
+function _mobOauthModus(zurueck){
+  if(typeof zurueck!=='string'||!zurueck)return 'abgelehnt';
+  let gemerkt='';try{gemerkt=localStorage.getItem(HANDOFF_CODE_KEY)||'';}catch(e){}
+  return(gemerkt&&gemerkt===zurueck)?'voll':'schliessfach';
+}
 // ── v119: Einmal-Code für das Server-Schließfach erzeugen (32 Zeichen, zufällig) ──
 function _mobNewHandoffCode(){
   const a=new Uint8Array(24);crypto.getRandomValues(a);
@@ -10933,7 +10971,7 @@ function renderBoardBar(){
   bar.innerHTML=names.map(n=>{
     const cnt=_mobSichtbar(n).length; // v219: zählt, was die Liste zeigt
     const bIcon=_bIconTyp(n)+' '; // v205: kannte vorher kein 🏠 Objekt
-    return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="switchBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
+    return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="switchBoard(\''+_jsa(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
   if(lbl){
     if(names.length<=1){lbl.textContent='Board';}
@@ -10993,7 +11031,7 @@ function renderStatusBar(){
     +'Alle <span style="opacity:.7;font-size:11px">('+allCount+')</span></button>'
     +boardSts.filter(s=>(counts[s]||0)>0||s===currentStatus).map(s=>{ // v299: gewählte Spalte bleibt sichtbar, auch leer
       const cnt=counts[s]||0;
-      return '<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="switchStatus(\''+escAttr(s)+'\')">'
+      return '<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="switchStatus(\''+_jsa(s)+'\')">'
         +esc(s)+' <span style="opacity:.7;font-size:11px">('+cnt+')</span></button>';
     }).join('');
 }
@@ -11187,7 +11225,7 @@ function _anrufZeichnen(){
     }
     h+=z.nurPc
       ? '<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin-top:9px;line-height:1.4;">💻 nur am PC — dieses Board ist fürs Handy nicht freigegeben, wählen geht trotzdem.</div>'
-      : '<button onclick="_anrufKarteAuf(\''+escAttr(z.id)+'\')" style="width:100%;margin-top:9px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>';
+      : '<button onclick="_anrufKarteAuf(\''+_jsa(z.id)+'\')" style="width:100%;margin-top:9px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>';
     return h+'</div>';
   }).join('');
 }
@@ -11405,9 +11443,9 @@ function _wahlZeichnen(el){
       return '<div class="wahl-zeile" style="font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.4;padding:4px 0;border-top:1px solid var(--border);">'
         +'<b>'+esc(_wahlZeit(w.ts,false))+'</b><br><span style="color:var(--text2);">📞 '+(w.name?esc(_anrufEinzeilig(w.name))+' · ':'')+esc(w.nr||'')+'</span></div>';
     }).join('');
-    if(x.wahlen.length>3)s+='<button class="wahl-mehr" onclick="_wahlAufklappen(\''+escAttr(t.id)+'\')" style="background:none;border:none;color:#1a6fc4;font-size:calc(13.5px * var(--m-scale,1));padding:8px 0 2px;cursor:pointer;">'+(offen?'weniger':'+ '+(x.wahlen.length-3)+' weitere')+'</button>';
+    if(x.wahlen.length>3)s+='<button class="wahl-mehr" onclick="_wahlAufklappen(\''+_jsa(t.id)+'\')" style="background:none;border:none;color:#1a6fc4;font-size:calc(13.5px * var(--m-scale,1));padding:8px 0 2px;cursor:pointer;">'+(offen?'weniger':'+ '+(x.wahlen.length-3)+' weitere')+'</button>';
     s+=(x.art==='karte')
-      ?'<button onclick="_anrufKarteAuf(\''+escAttr(t.id)+'\')" style="width:100%;margin-top:8px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>'
+      ?'<button onclick="_anrufKarteAuf(\''+_jsa(t.id)+'\')" style="width:100%;margin-top:8px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>'
       :((x.art==='pc')?'<div style="'+klein+'margin-top:8px;">💻 nur am PC – hier nicht zu öffnen.</div>':'');
     return s+'</div>';
   }).join('');
@@ -11421,7 +11459,7 @@ function _mkTogglePanel(){
   h+=names.map(n=>{
     const cnt=_mobSichtbar(n).length; // v219: zählt, was die Liste zeigt
     const bIcon=_bIconTyp(n)+' '; // v205: kannte vorher kein 🏠 Objekt
-    return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="_mkPickBoard(\''+escAttr(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
+    return '<button class="board-chip'+(n===currentBoard?' active':'')+'" onclick="_mkPickBoard(\''+_jsa(n)+'\')">'+bIcon+esc(n)+' <span style="opacity:.7;font-size:12px;">('+cnt+')</span></button>';
   }).join('');
   const tasks=_mobSichtbar(currentBoard); // v219: Chips zählen, was die Liste zeigt
   const boardSts=(_remoteBoardStatuses[currentBoard]&&_remoteBoardStatuses[currentBoard].length)?_remoteBoardStatuses[currentBoard]:statuses;
@@ -11430,7 +11468,7 @@ function _mkTogglePanel(){
     h+='<div class="mk-panel-lbl" style="margin-top:10px">Status</div>';
     h+='<button class="status-chip'+(currentStatus===''?' active':'')+'" onclick="_mkPickStatus(\'\')">Alle <span style="opacity:.7;font-size:11px">('+tasks.length+')</span></button>';
     // v299: die gewählte Spalte bleibt sichtbar (markiert), auch wenn sie gerade leer ist
-    h+=boardSts.filter(s=>(counts[s]||0)>0||s===currentStatus).map(s=>'<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="_mkPickStatus(\''+escAttr(s)+'\')">'+esc(s)+' <span style="opacity:.7;font-size:11px">('+(counts[s]||0)+')</span></button>').join('');
+    h+=boardSts.filter(s=>(counts[s]||0)>0||s===currentStatus).map(s=>'<button class="status-chip'+(currentStatus===s?' active':'')+'" onclick="_mkPickStatus(\''+_jsa(s)+'\')">'+esc(s)+' <span style="opacity:.7;font-size:11px">('+(counts[s]||0)+')</span></button>').join('');
   }
   p.innerHTML=h;p.classList.add('open');
   // v141: abgedunkelter Hintergrund – Tipp daneben schließt das Panel (wie das ⋯-Menü im Dachplan)
@@ -11483,7 +11521,7 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
   const infoZeile=_teile
     ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+_teile+'</div>'
     :'';
-  return '<div class="kz'+(warn?' kz-rot':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
+  return '<div class="kz'+(warn?' kz-rot':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+_jsa(t.id)+'\')">'
     +'<div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
     +infoZeile
     +'</div>';
@@ -11650,7 +11688,7 @@ function renderList(resetScroll){
     // Maps-Knopf. Läuft die Uhr, wird er orange und stoppt beim Antippen; die laufende Zeit
     // steht weiterhin oben im ⏱-Badge der Karte. Die Knopfzeile erscheint jetzt IMMER,
     // sonst fehlte der Uhr-Knopf bei Tasks ohne Telefon/Adresse.
-    const cardUhrBtn='<span onclick="event.stopPropagation();_cardTimerToggle(\''+escAttr(t.id)+'\')" '
+    const cardUhrBtn='<span onclick="event.stopPropagation();_cardTimerToggle(\''+_jsa(t.id)+'\')" '
       +'title="'+(isRunning?'Stoppuhr stoppen':'Stoppuhr starten')+'" '
       +(isRunning?'':'class="card-akt" ') // v138: laufende Uhr bleibt orange (Farbe = Bedeutung)
       +'style="flex-shrink:0;width:36px;height:36px;border-radius:50%;background:'+(isRunning?'#e8791a':'#5b6472')+';display:inline-flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;">'
@@ -11666,7 +11704,7 @@ function renderList(resetScroll){
       :'';
     // v102: oranger Seitenstreifen bei überfälligem Termin/Fälligkeit, sonst blau
     const _cardWarn=!!((t.due&&isOverdue(t.due))||(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date()));
-    return '<div class="task-card'+(_cardWarn?' card-warn':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+escAttr(t.id)+'\')">'
+    return '<div class="task-card'+(_cardWarn?' card-warn':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+_jsa(t.id)+'\')">'
       +'<div class="task-card-body">'
       +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">'
       +(isNotizBoard
@@ -11738,7 +11776,7 @@ function renderList(resetScroll){
       +'</div>'  // .task-card-body
       +_fotoThumbHtml
       +'</div>';
-  } catch(_e){ console.error('[renderList]',t&&t.id,_e); return '<div class="task-card" onclick="openDetail(\''+escAttr((t&&t.id)||'')+'\')">⚠ <span style="color:var(--red)">'+esc((t&&t.title)||'(Fehler)')+'</span></div>'; }
+  } catch(_e){ console.error('[renderList]',t&&t.id,_e); return '<div class="task-card" onclick="openDetail(\''+_jsa((t&&t.id)||'')+'\')">⚠ <span style="color:var(--red)">'+esc((t&&t.title)||'(Fehler)')+'</span></div>'; }
   }).join('')+_mobAusFuss; // v219: 🙈-Fußzeile unter der Liste
   if(runningTaskId)_startListTickLoop();else _stopListTickLoop();
   // Foto-Thumbnails asynchron nachladen
@@ -12762,7 +12800,7 @@ function _renderBauPersonal(t){
   let html='<div style="display:flex;flex-wrap:wrap;gap:0;margin-bottom:6px;">';
   liste.forEach(name=>{
     const aktiv=ausgewaehlt.includes(name);
-    html+='<span class="bau-person-chip'+(aktiv?' active':'')+'" onclick="toggleBauPersonal(\''+escAttr(name)+'\')">'+esc(name)+'</span>';
+    html+='<span class="bau-person-chip'+(aktiv?' active':'')+'" onclick="toggleBauPersonal(\''+_jsa(name)+'\')">'+esc(name)+'</span>';
   });
   html+='</div><div style="font-size:11px;color:var(--text2);">Antippen = heute anwesend / nicht anwesend</div>';
   return html;
@@ -12796,7 +12834,7 @@ function _renderBauMaterial(t){
         +'</div>'
         +'<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">'
         +'<input class="bau-mat-val" type="number" min="0" step="any" value="'+escAttr(String(verbrMenge))+'" placeholder="–" '
-        +'onchange="updateBauMaterialVerbrauch(\''+escAttr(m.name)+'\',this.value,\''+escAttr(m.einheit||'')+'\')"> '
+        +'onchange="updateBauMaterialVerbrauch(\''+_jsa(m.name)+'\',this.value,\''+_jsa(m.einheit||'')+'\')"> '
         +'<span style="font-size:11px;color:var(--text2);">'+esc(m.einheit||'')+'</span>'
         +'</div>'
         +'</div>';
@@ -12954,7 +12992,7 @@ function _matBaueGruppenFilter(){
   if(!wrap||!_artikelDaten)return;
   const gruppen=['Alle',...new Set(_artikelDaten.map(a=>a[2]).filter(Boolean).sort())];
   wrap.innerHTML=gruppen.map(g=>
-    '<span class="mat-modal-fchip'+(_matAktiveGruppe===g?' active':'')+'" onclick="_matSetGruppe(\''+escAttr(g)+'\')">'+esc(g)+'</span>'
+    '<span class="mat-modal-fchip'+(_matAktiveGruppe===g?' active':'')+'" onclick="_matSetGruppe(\''+_jsa(g)+'\')">'+esc(g)+'</span>'
   ).join('');
 }
 
@@ -13102,7 +13140,7 @@ function _renderBauWetter(t){
   const opts=[{k:'sonnig',ico:'☀️',lbl:'Sonnig'},{k:'bewoelkt',ico:'⛅',lbl:'Bewölkt'},{k:'regen',ico:'🌧',lbl:'Regen'},{k:'kalt',ico:'🥶',lbl:'Kalt'}];
   let html='<div class="bau-wetter-row">';
   opts.forEach(o=>{
-    html+='<div class="bau-wetter-btn'+(wetter===o.k?' active':'')+'" onclick="setBauWetter(\''+o.k+'\')"><span class="bau-wetter-icon">'+o.ico+'</span><span class="bau-wetter-lbl">'+o.lbl+'</span></div>';
+    html+='<div class="bau-wetter-btn'+(wetter===o.k?' active':'')+'" onclick="setBauWetter(\''+_jsa(o.k)+'\')"><span class="bau-wetter-icon">'+o.ico+'</span><span class="bau-wetter-lbl">'+o.lbl+'</span></div>';
   });
   html+='</div>';
   // Automatisch geladene Wetterdaten anzeigen
@@ -13506,7 +13544,7 @@ function renderDetail(t){
           +'</div>'
           +'<input id="timerDesc" class="uhr-neu-feld" type="text" placeholder="Woran arbeitest du gerade?" maxlength="120"'
             +' value="'+escAttr(savedDesc)+'" autocomplete="off">'
-          +'<button type="button" class="uhr-neu-knopf '+(running?'stop':'start')+'" onclick="toggleMobileTimer(\''+escAttr(t.id)+'\')">'
+          +'<button type="button" class="uhr-neu-knopf '+(running?'stop':'start')+'" onclick="toggleMobileTimer(\''+_jsa(t.id)+'\')">'
             +(running?'⏹  Stoppen':'▶  Starten')+'</button>'
         +'</div>';
       }
@@ -13754,7 +13792,7 @@ function renderDetail(t){
     + _mAktionsleiste(t)
     + _kopfHtml
     + '<div class="m-kacheln">'+_kacheln.map(function(k){
-        return '<button class="m-kachel '+(k.leer?'leer':'voll')+'" onclick="_mBereichOeffnen(\''+escAttr(k.key)+'\')">'
+        return '<button class="m-kachel '+(k.leer?'leer':'voll')+'" onclick="_mBereichOeffnen(\''+_jsa(k.key)+'\')">'
           +'<span class="m-kachel-top"><span class="m-kachel-ico">'+k.ico+'</span>'
           +(k.zahl?'<span class="m-kachel-zahl">'+esc(k.zahl)+'</span>':'')
           +'</span>'
@@ -13764,7 +13802,7 @@ function renderDetail(t){
     // Fußzeile: Wege woandershin, keine Bereiche dieses Tasks.
     + '<div style="display:flex;gap:8px;margin-top:10px;">'
       + '<button onclick="Dachplan.open()" style="flex:1;padding:12px 4px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(14px * var(--m-scale,1));font-weight:700;cursor:pointer;">🗺 Dachplan</button>'
-      + '<button id="mobOfflineBtn" onclick="_mobOfflinePinTask(\''+escAttr(t.id)+'\',this)" style="flex:1;padding:12px 4px;border-radius:10px;border:1px solid '+(_mobIsOfflinePinned(t.id)?'#1a8a3c':'var(--border)')+';background:'+(_mobIsOfflinePinned(t.id)?'#0f5132':'var(--bg3)')+';color:'+(_mobIsOfflinePinned(t.id)?'#fff':'var(--text)')+';font-size:calc(14px * var(--m-scale,1));font-weight:700;cursor:pointer;">'+(_mobIsOfflinePinned(t.id)?'✅ Offline dabei':'📴 Offline mitnehmen')+'</button>'
+      + '<button id="mobOfflineBtn" onclick="_mobOfflinePinTask(\''+_jsa(t.id)+'\',this)" style="flex:1;padding:12px 4px;border-radius:10px;border:1px solid '+(_mobIsOfflinePinned(t.id)?'#1a8a3c':'var(--border)')+';background:'+(_mobIsOfflinePinned(t.id)?'#0f5132':'var(--bg3)')+';color:'+(_mobIsOfflinePinned(t.id)?'#fff':'var(--text)')+';font-size:calc(14px * var(--m-scale,1));font-weight:700;cursor:pointer;">'+(_mobIsOfflinePinned(t.id)?'✅ Offline dabei':'📴 Offline mitnehmen')+'</button>'
     + '</div>'
     + _qaObjektRueckweg(t)
   +'</div>';
@@ -14552,7 +14590,7 @@ function _gtbSheetZeichnen(){
        wenn ich die Baustelle aus der Liste wähle?" Deshalb kein Start-Knopf mehr in der
        Zeile. v265 bleibt: der Name bricht um, statt abgeschnitten zu werden. */
     const an=(b.id===aktivId);
-    return '<div onclick="_gtbZeileTipp(\''+escAttr(b.id)+'\')" style="display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:10px;padding:11px 11px;margin-bottom:7px;min-height:44px;cursor:pointer;'+(an?'box-shadow:inset 0 0 0 2px #3b6d11;':'')+'">'
+    return '<div onclick="_gtbZeileTipp(\''+_jsa(b.id)+'\')" style="display:flex;align-items:center;gap:9px;background:var(--bg3);border-radius:10px;padding:11px 11px;margin-bottom:7px;min-height:44px;cursor:pointer;'+(an?'box-shadow:inset 0 0 0 2px #3b6d11;':'')+'">'
       +'<div style="flex:1;min-width:0;">'
       +'<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);line-height:1.3;">'+esc(b.unter)+'</div>'
       +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;overflow-wrap:anywhere;">'+esc(b.titel)+'</div>'
@@ -15224,7 +15262,7 @@ function _ortSucheZeichnen(){
   if(!q){el.innerHTML='';return;}
   const tr=_gtbSuchen(q).slice(0,8);
   el.innerHTML=tr.length?tr.map(function(b){
-    return '<div onclick="_ortPasstWaehlen(\''+escAttr(b.id)+'\')" style="background:var(--bg3);border-radius:10px;padding:9px 11px;margin-bottom:6px;min-height:44px;box-sizing:border-box;cursor:pointer;">'
+    return '<div onclick="_ortPasstWaehlen(\''+_jsa(b.id)+'\')" style="background:var(--bg3);border-radius:10px;padding:9px 11px;margin-bottom:6px;min-height:44px;box-sizing:border-box;cursor:pointer;">'
       +'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);">'+esc(b.unter)+'</div>'
       +'<div style="font-size:calc(15px * var(--m-scale,1));color:var(--text);font-weight:600;overflow-wrap:anywhere;">'+esc(b.titel)+'</div></div>';
   }).join(''):'<div style="font-size:13px;color:var(--text2);padding:6px 2px;">Nichts gefunden</div>';
@@ -16146,8 +16184,8 @@ function _dpFotoSektionMob(t){
     h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin:12px 0 6px;background:var(--bg3);border:1px solid var(--border);border-left:4px solid '+col+';border-radius:0 8px 8px 0;">'
       +'<span style="width:24px;height:24px;border-radius:50%;background:'+col+';color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;">'+esc(_e.nr)+'</span>' /* v229: Gliederungsnummer */
       +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--m-scale,1));color:var(--text);">'+(_e.eltern?('🔍 Bereich '+esc(String(_e.eltern.nr!=null?_e.eltern.nr:'?'))+' · Pin '+esc(_e.nr)):('🗺 Dachplan-Pin '+esc(_e.nr)))+' · '+(LBL[p.status]||'')+(titel?' — '+esc(titel):(notiz?' — '+esc(notiz.length>40?notiz.slice(0,40)+'…':notiz):''))+' <span style="color:var(--text2);font-size:11px;">('+(p.fotos||[]).length+' Foto'+((p.fotos||[]).length!==1?'s':'')+')</span></span>'
-      +'<span onclick="_shrPinTeilen(\''+esc(String(p.id||''))+'\')" title="Alle Fotos dieses Pins teilen" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;cursor:pointer;">📤</span>' // v222
-      +'<span onclick="Dachplan.openPin(\''+esc(String(p.id||''))+'\')" title="Im Dachplan zeigen" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;cursor:pointer;">📍</span>'
+      +'<span onclick="_shrPinTeilen(\''+_jsa(String(p.id||''))+'\')" title="Alle Fotos dieses Pins teilen" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;cursor:pointer;">📤</span>' // v222
+      +'<span onclick="Dachplan.openPin(\''+_jsa(String(p.id||''))+'\')" title="Im Dachplan zeigen" style="flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text2);font-size:13px;cursor:pointer;">📍</span>'
       +'</div>'
       +_mtbPinFotoStreifen(p);
   }
@@ -18630,7 +18668,7 @@ function _mtbPinFotoStreifen(p){
   if(!fs.length)return '';
   let s='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 0 8px 34px;">';
   fs.forEach((fo,i)=>{
-    s+='<div onclick="_mtbPinFotoOpen(\''+esc(String(p.id||''))+'\','+i+')" style="position:relative;width:78px;height:78px;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);cursor:pointer;flex-shrink:0;">'
+    s+='<div onclick="_mtbPinFotoOpen(\''+_jsa(String(p.id||''))+'\','+i+')" style="position:relative;width:78px;height:78px;border-radius:8px;overflow:hidden;background:var(--bg3);border:1px solid var(--border);cursor:pointer;flex-shrink:0;">'
       +'<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;opacity:.35;">📷</span>'
       +'<img data-pinfoto="1" data-pkey="'+escAttr(fo.key||'')+'" data-pdrive="'+escAttr(fo.editedDriveId||fo.driveId||'')+'" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" onerror="this.style.display=\'none\'">'
       +(fo.caption?'<span style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:9px;line-height:1.3;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(fo.caption)+'</span>':'')
@@ -18643,7 +18681,7 @@ function _mtbPinZeile(p,nr){ // v229: nr = Gliederungsnummer („2" bzw. „2.1"
   const lbl=({rot:'Schaden',gelb:'Prüfen',gruen:'OK'})[p.status||'rot']||'';
   const txt=String(p.title||p.note||'').trim();
   const fn=(p.fotos||[]).length;
-  const pid=esc(String(p.id||''));
+  const pid=_jsa(String(p.id||''));
   const auf=_mtbPinOpen.has(String(p.id||''));
   const tap=fn?('_mtbTogglePinFotos(\''+pid+'\')'):('Dachplan.openPin(\''+pid+'\')');
   let s='<div onclick="'+tap+'" style="display:flex;align-items:center;gap:8px;padding:9px 10px;margin:4px 0;background:var(--bg3);border:1px solid var(--border);border-left:4px solid '+col+';border-radius:0 8px 8px 0;cursor:pointer;">'
@@ -18748,7 +18786,7 @@ function renderTagebuchTab(t){
       +'<span style="font-size:11px;color:var(--text2);white-space:nowrap;">'+teile.join(' · ')+'</span>'
       +'<span style="flex:1;height:1px;background:var(--border);"></span>'
       // v147: Fotos dieses Tages mit einem Tipp vorausgewählt ins Teilen-Fenster
-      +(fc?'<button onclick="_shrTagTeilen(\''+escAttr(key)+'\')" title="Fotos dieses Tages teilen" style="flex-shrink:0;padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;">📤</button>':'')
+      +(fc?'<button onclick="_shrTagTeilen(\''+_jsa(key)+'\')" title="Fotos dieses Tages teilen" style="flex-shrink:0;padding:5px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;">📤</button>':'')
       +'</div>';
     // Fotos den Notiz-Ankern zuordnen (wie Desktop b518)
     const anker=g.notiz.filter(x=>!_mtbIsSys(x.n.text)&&x.d);
@@ -18766,9 +18804,9 @@ function renderTagebuchTab(t){
       let s='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 4px;">';
       show.forEach(x=>{s+=_mtbFotoTile(x);});
       if(!open&&list.length>6){
-        s+='<div onclick="_mtbToggleMore(\''+gKey+'\')" style="width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;border:1.5px dashed var(--accent2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent2);font-size:13px;font-weight:700;flex-shrink:0;">+'+(list.length-6)+' mehr</div>';
+        s+='<div onclick="_mtbToggleMore(\''+_jsa(gKey)+'\')" style="width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;border:1.5px dashed var(--accent2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--accent2);font-size:13px;font-weight:700;flex-shrink:0;">+'+(list.length-6)+' mehr</div>';
       }else if(open&&list.length>6){
-        s+='<div onclick="_mtbToggleMore(\''+gKey+'\')" style="width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;border:1.5px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:13px;font-weight:600;flex-shrink:0;">− weniger</div>';
+        s+='<div onclick="_mtbToggleMore(\''+_jsa(gKey)+'\')" style="width:calc(33.33% - 5px);aspect-ratio:4/3;border-radius:8px;border:1.5px dashed var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);font-size:13px;font-weight:600;flex-shrink:0;">− weniger</div>';
       }
       return s+'</div>';
     };
@@ -19620,26 +19658,26 @@ function _ztlKastenHtml(){
     const bv=_ztlBlattVon(z);
     const anhDarf=(bv!=='p'&&typeof _ztlAnhDrop==='function'); // b1029: Privat-Blatt bekommt keine Anhänge
     const anhH=(typeof _ztlAnhHtml==='function')?_ztlAnhHtml(z):'';
-    let r='<li data-ztlid="'+_ztlAttr(z.id)+'" data-ztlbl="'+bv+'"'+(anhDarf?' ondragover="_ztlAnhDragUeber(event)" ondragleave="_ztlAnhDragWeg(event)" ondrop="_ztlAnhDrop(event,\''+_ztlAttr(z.id)+'\')"':'')+' style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">'
+    let r='<li data-ztlid="'+_ztlAttr(z.id)+'" data-ztlbl="'+bv+'"'+(anhDarf?' ondragover="_ztlAnhDragUeber(event)" ondragleave="_ztlAnhDragWeg(event)" ondrop="_ztlAnhDrop(event,\''+_jsa(z.id)+'\')"':'')+' style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">'
       +'<span style="font-size:12px;color:var(--text2);min-width:20px;text-align:right;flex-shrink:0;">'+(i+1)+'.</span>'
-      +'<span onclick="_ztlHaken(\''+_ztlAttr(z.id)+'\')" title="'+(z.erl?'Haken wegnehmen':'als erledigt abhaken')+'" style="width:24px;height:24px;border:2px solid '+(z.erl?'#639922':'var(--text2)')+';border-radius:6px;background:'+(z.erl?'#EAF3DE':'transparent')+';color:#3B6D11;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;flex-shrink:0;">'+(z.erl?'✓':'')+'</span>';
+      +'<span onclick="_ztlHaken(\''+_jsa(z.id)+'\')" title="'+(z.erl?'Haken wegnehmen':'als erledigt abhaken')+'" style="width:24px;height:24px;border:2px solid '+(z.erl?'#639922':'var(--text2)')+';border-radius:6px;background:'+(z.erl?'#EAF3DE':'transparent')+';color:#3B6D11;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;flex-shrink:0;">'+(z.erl?'✓':'')+'</span>';
     if(editId===z.id){
       const v=(editWert==null)?z.text:editWert;
       r+='<input id="ztlEditFeld" type="text" value="'+_ztlAttr(v)+'" autocomplete="off"'
-        +' onkeydown="if(event.key===\'Enter\')_ztlEditSichern(\''+_ztlAttr(z.id)+'\');if(event.key===\'Escape\')_ztlEditAbbruch()"'
+        +' onkeydown="if(event.key===\'Enter\')_ztlEditSichern(\''+_jsa(z.id)+'\');if(event.key===\'Escape\')_ztlEditAbbruch()"'
         +' style="flex:1;min-width:0;padding:6px 8px;border-radius:7px;border:1px solid #7F77DD;background:var(--bg3);color:var(--text);font-size:14px;">'
-        +'<span onclick="_ztlEditSichern(\''+_ztlAttr(z.id)+'\')" title="Änderung speichern" style="width:28px;height:28px;border-radius:7px;background:#639922;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;flex-shrink:0;">✓</span>';
+        +'<span onclick="_ztlEditSichern(\''+_jsa(z.id)+'\')" title="Änderung speichern" style="width:28px;height:28px;border-radius:7px;background:#639922;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;cursor:pointer;flex-shrink:0;">✓</span>';
     }else{
       r+=(anhH?'<span style="flex:1;min-width:0;display:flex;flex-direction:column;">':'') // b1029: Anhänge unter dem Text
-        +'<span ondblclick="_ztlEditStart(\''+_ztlAttr(z.id)+'\')" style="flex:1;min-width:0;font-size:14px;line-height:1.35;color:var(--text);word-break:break-word;'+(z.erl?'text-decoration:line-through;opacity:.55;':'')+'">'+_ztlEsc(z.text)+'</span>'
+        +'<span ondblclick="_ztlEditStart(\''+_jsa(z.id)+'\')" style="flex:1;min-width:0;font-size:14px;line-height:1.35;color:var(--text);word-break:break-word;'+(z.erl?'text-decoration:line-through;opacity:.55;':'')+'">'+_ztlEsc(z.text)+'</span>'
         +(anhH?anhH+'</span>':'')
         +(ds?'<span title="angelegt" style="font-size:11px;color:var(--text2);flex-shrink:0;white-space:nowrap;">'+_ztlEsc(ds)+'</span>':'')
-        +(anhDarf?'<span onclick="_ztlAnhWaehlen(\''+_ztlAttr(z.id)+'\')" title="Datei anhängen (Bild, PDF …) – oder die Datei auf die Zeile ziehen" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;flex-shrink:0;">📎</span>':'') // b1029
-        +'<span onclick="_ztlEditStart(\''+_ztlAttr(z.id)+'\')" title="Text ändern" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;flex-shrink:0;">✏️</span>'
-        +(reiter?('<span onclick="_ztlSchieben(\''+_ztlAttr(z.id)+'\')" title="'+((bv==='s'||bv==='p')?'zurück zu Jetzt':'nach Später schieben')+'" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:#7F77DD;cursor:pointer;flex-shrink:0;font-size:15px;font-weight:700;">'+((bv==='s'||bv==='p')?'←':'→')+'</span>'):'')
+        +(anhDarf?'<span onclick="_ztlAnhWaehlen(\''+_jsa(z.id)+'\')" title="Datei anhängen (Bild, PDF …) – oder die Datei auf die Zeile ziehen" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;flex-shrink:0;">📎</span>':'') // b1029
+        +'<span onclick="_ztlEditStart(\''+_jsa(z.id)+'\')" title="Text ändern" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;flex-shrink:0;">✏️</span>'
+        +(reiter?('<span onclick="_ztlSchieben(\''+_jsa(z.id)+'\')" title="'+((bv==='s'||bv==='p')?'zurück zu Jetzt':'nach Später schieben')+'" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:#7F77DD;cursor:pointer;flex-shrink:0;font-size:15px;font-weight:700;">'+((bv==='s'||bv==='p')?'←':'→')+'</span>'):'')
         +(sucht
           ?'<span title="Zum Verschieben erst die Suche leeren" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:var(--text2);opacity:.35;cursor:not-allowed;flex-shrink:0;font-size:16px;">≡</span>' // b906: in einer gefilterten Liste hat Ziehen keine feste Reihenfolge
-          :'<span onpointerdown="_ztlDragStart(event,\''+_ztlAttr(z.id)+'\')" title="Zum Verschieben ziehen (auch mit dem Finger)" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:var(--text2);cursor:grab;touch-action:none;flex-shrink:0;font-size:16px;">≡</span>');
+          :'<span onpointerdown="_ztlDragStart(event,\''+_jsa(z.id)+'\')" title="Zum Verschieben ziehen (auch mit dem Finger)" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;color:var(--text2);cursor:grab;touch-action:none;flex-shrink:0;font-size:16px;">≡</span>');
     }
     return r+'</li>';
   };
@@ -20115,8 +20153,8 @@ function _ztlAnhHtml(z){
   var h='<span style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;">';
   l.forEach(function(a){
     h+='<span style="display:inline-flex;align-items:center;max-width:100%;border:1px solid var(--border);border-radius:6px;background:var(--bg3);font-size:12px;overflow:hidden;">'
-      +'<span onclick="_ztlAnhOeffnen(\''+_ztlAttr(a.id)+'\')" title="'+_ztlAttr('Öffnen: '+a.name)+'" style="padding:2px 7px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;">'+_ztlAnhIcon(a)+' '+_ztlEsc(a.name)+'</span>'
-      +'<span onclick="_ztlAnhWeg(\''+_ztlAttr(z.id)+'\',\''+_ztlAttr(a.id)+'\')" title="Anhang wegnehmen (Datei kommt in den Drive-Papierkorb)" style="padding:2px 6px;cursor:pointer;color:var(--text2);border-left:1px solid var(--border);flex-shrink:0;">✕</span>'
+      +'<span onclick="_ztlAnhOeffnen(\''+_jsa(a.id)+'\')" title="'+_ztlAttr('Öffnen: '+a.name)+'" style="padding:2px 7px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;">'+_ztlAnhIcon(a)+' '+_ztlEsc(a.name)+'</span>'
+      +'<span onclick="_ztlAnhWeg(\''+_jsa(z.id)+'\',\''+_jsa(a.id)+'\')" title="Anhang wegnehmen (Datei kommt in den Drive-Papierkorb)" style="padding:2px 6px;cursor:pointer;color:var(--text2);border-left:1px solid var(--border);flex-shrink:0;">✕</span>'
       +'</span>';
   });
   if(lauf)h+='<span style="font-size:12px;color:#7F77DD;padding:2px 0;">⏳ lädt hoch…</span>';
@@ -20499,7 +20537,7 @@ function _qaObjektListeZeichnen(){
   if(_qaObjekt)h+='<div onclick="_qaObjektSetzen(\'\')" style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:14px;">✕ Ohne Objekt (normale Schnellnotiz)</div>';
   if(!liste.length)h+='<div style="padding:14px;color:var(--text2);font-size:14px;">Kein Objekt gefunden.'+(q?'':'<br>Objekt-Boards (🏠) werden am Desktop angelegt.')+'</div>';
   h+=liste.map(function(o){
-    return '<div onclick="_qaObjektSetzen(\''+o.id+'\')" style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer;">'
+    return '<div onclick="_qaObjektSetzen(\''+_jsa(o.id)+'\')" style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer;">'
       +'<div style="font-size:15px;font-weight:600;color:var(--text);">'+esc(o.title)+'</div>'
       +(o.adresse?'<div style="font-size:12px;color:var(--text2);margin-top:2px;">'+esc(o.adresse)+'</div>':'')
       +'</div>';
@@ -20577,7 +20615,7 @@ function _objNeuAusTask(taskId){
     +'<input id="objNeuTitel" type="text" value="'+esc(adr)+'" autocomplete="off" style="width:100%;box-sizing:border-box;padding:'+_tuMs(11)+';background:var(--bg3);color:var(--text);border:1.5px solid var(--accent);border-radius:10px;font-size:'+_tuMs(15)+';margin-bottom:'+_tuMs(10)+';">'
     +'<div style="font-size:'+_tuMs(11)+';color:var(--text2);margin-bottom:'+_tuMs(2)+';">Auf welches Board?</div>'
     +brd.map(function(b){
-        return '<div onclick="_objNeuAusTaskAnlegen(\''+esc(taskId)+'\',\''+esc(b)+'\')" style="padding:'+_tuMs(13)+' '+_tuMs(12)+';border:1px solid var(--border);border-radius:10px;margin-bottom:'+_tuMs(8)+';font-size:'+_tuMs(15)+';font-weight:600;color:var(--text);background:var(--bg3);">\uD83C\uDFE0 '+esc(b)+'</div>';
+        return '<div onclick="_objNeuAusTaskAnlegen(\''+_jsa(taskId)+'\',\''+_jsa(b)+'\')" style="padding:'+_tuMs(13)+' '+_tuMs(12)+';border:1px solid var(--border);border-radius:10px;margin-bottom:'+_tuMs(8)+';font-size:'+_tuMs(15)+';font-weight:600;color:var(--text);background:var(--bg3);">\uD83C\uDFE0 '+esc(b)+'</div>';
       }).join("")
     +'<button onclick="_objNeuAusTaskSchliessen()" style="width:100%;padding:'+_tuMs(12)+';margin-top:'+_tuMs(4)+';border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:'+_tuMs(14)+';">Abbrechen</button>'
   +'</div>';
@@ -20682,7 +20720,7 @@ function _qaObjektAuftragKnopf(t){
   try{
     var bn=findBoardByTaskId(t.id);
     if((boardTypes[bn]||'baustelle')!=='immobilie'||t.objektId)return '';
-    return '<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(46)+';font-size:'+_tuMs(15)+';font-weight:700;" onclick="_qaAuftragVomObjekt(\''+esc(t.id)+'\')">➕ Auftrag an diesem Objekt</button>';
+    return '<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(46)+';font-size:'+_tuMs(15)+';font-weight:700;" onclick="_qaAuftragVomObjekt(\''+_jsa(t.id)+'\')">➕ Auftrag an diesem Objekt</button>';
   }catch(e){return '';}
 }
 
@@ -20858,7 +20896,7 @@ function _qaObjektAuftragListe(t){
         var wo=e.archiv?'\uD83D\uDCE6 Archiv':(e.sichtbar?(esc(e.board)+(e.t.status?' \u00b7 '+esc(e.t.status):'')):'nur am PC');
         return '<div style="display:flex;align-items:center;gap:8px;padding:'+_tuMs(9)+' 2px '+_tuMs(9)+' '+_tuMs(20)+';border-top:0.5px solid var(--border);'
           +(e.sichtbar?'':'opacity:.55;')+'"'
-          +(e.sichtbar?' onclick="openDetail(\''+esc(e.t.id)+'\')"':'')+'>'
+          +(e.sichtbar?' onclick="openDetail(\''+_jsa(e.t.id)+'\')"':'')+'>'
           +'<span style="flex:1;min-width:0;">'
             +'<span style="display:block;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(e.t.title||'(ohne Titel)')+((_hier&&e.t.id===_hier)?' <span style="font-weight:400;color:var(--accent);">\u2190 hier</span>':'')+'</span>'
             +'<span style="display:block;font-size:'+_tuMs(11)+';color:var(--text2);">'+wo+(datum?' \u00b7 '+datum:'')+'</span>'
@@ -20887,8 +20925,8 @@ function _qaObjektRueckweg(t){
          NEUES daraus machen. Der zweite nur, wenn im Auftrag eine Adresse steht:
          ohne sie haette das Objekt keinen Namen. */
       var _hatAdr=!!String(t.adresse||'').trim();
-      return '<button class="add-btn" style="width:100%;margin:2px 0 6px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_objZuordnenMobOeffnen(\''+esc(t.id)+'\')">\u{1F3E0} Zu einem Objekt zuordnen …</button>'
-        +(_hatAdr?'<button class="add-btn" style="width:100%;margin:0 0 10px;min-height:'+_tuMs(42)+';font-size:'+_tuMs(13)+';" onclick="_objNeuAusTask(\''+esc(t.id)+'\')">\u{1F3E0} Neues Objekt daraus machen …</button>':'');
+      return '<button class="add-btn" style="width:100%;margin:2px 0 6px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_objZuordnenMobOeffnen(\''+_jsa(t.id)+'\')">\u{1F3E0} Zu einem Objekt zuordnen …</button>'
+        +(_hatAdr?'<button class="add-btn" style="width:100%;margin:0 0 10px;min-height:'+_tuMs(42)+';font-size:'+_tuMs(13)+';" onclick="_objNeuAusTask(\''+_jsa(t.id)+'\')">\u{1F3E0} Neues Objekt daraus machen …</button>':'');
     }
     if(!t||!t.objektId)return '';
     var offen=null;
@@ -20904,9 +20942,9 @@ function _qaObjektRueckweg(t){
        Franks Ausgangsfrage vom 30.08. ⛔ Kein zweiter Anlegeweg: es wird
        `_qaAuftragVomObjekt`s Weg genutzt (newTask mit vorgewaehltem Objekt, v181).
        Nur wenn die Objektkarte am Handy da ist - sonst gibt es nichts zu erben. */
-    var _weiter=offen?('<button class="add-btn" style="width:100%;margin:2px 0 6px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_qaWeitererAuftrag(\''+esc(t.objektId)+'\')">➕ Weiterer Auftrag hier</button>'):'';
+    var _weiter=offen?('<button class="add-btn" style="width:100%;margin:2px 0 6px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="_qaWeitererAuftrag(\''+_jsa(t.objektId)+'\')">➕ Weiterer Auftrag hier</button>'):'';
     if(!offen)return '<div style="margin:2px 0 10px;padding:'+_tuMs(9)+' '+_tuMs(12)+';border:1px solid var(--border);border-radius:10px;background:var(--bg3);font-size:'+_tuMs(13)+';color:var(--text2);">🏠 '+name+' <span style="opacity:.8;">· nur am PC</span></div>';
-    return _weiter+'<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="openDetail(\''+esc(t.objektId)+'\')">🏠 Zum Objekt: '+name+'</button>';
+    return _weiter+'<button class="add-btn" style="width:100%;margin:2px 0 10px;min-height:'+_tuMs(44)+';font-size:'+_tuMs(14)+';font-weight:700;" onclick="openDetail(\''+_jsa(t.objektId)+'\')">🏠 Zum Objekt: '+name+'</button>';
   }catch(e){console.warn('[v186] Rückweg:',e);return '';}
 }
 
@@ -21613,7 +21651,7 @@ function _fotoPendPanelRender(){
     else if(x.fo._uploadError)st='<span style="color:#e57373;">Fehler – wird erneut versucht</span>';
     else st=off?'<span style="color:var(--text2);">wartet auf Empfang</span>':'<span style="color:var(--text2);">wartet</span>';
     return '<div style="padding:6px 0;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px;">'
-      +'<div onclick="_fotoPendOpenTask(\''+escAttr(x.task.id||'')+'\')" style="flex:1;min-width:0;cursor:pointer;">'
+      +'<div onclick="_fotoPendOpenTask(\''+_jsa(x.task.id||'')+'\')" style="flex:1;min-width:0;cursor:pointer;">'
         +'<div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(x.task.title||'Task')+'</div>'
         +'<div style="font-size:12px;color:var(--text2);display:flex;gap:8px;">'+(zeit?'<span>'+zeit+'</span>':'')+st+'</div>'
       +'</div>'
@@ -21626,7 +21664,7 @@ function _fotoPendPanelRender(){
       // ⛔ Ungefaehrlich, weil _fotoPendEntfernen ausdruecklich rueckfragt, NUR den Verweis im
       //    Task entfernt und eine vorhandene Drive-Datei stehen laesst. Der Text der Rueckfrage
       //    richtet sich danach, ob das Bild hier zu liegen scheint.
-      +'<button onclick="_fotoPendEntfernen(\''+escAttr(x.task.id||'')+'\',\''+escAttr(key)+'\',event,'+(fremd?'0':'1')+')" title="Eintrag entfernen" style="flex-shrink:0;min-height:38px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">✕</button>'
+      +'<button onclick="_fotoPendEntfernen(\''+_jsa(x.task.id||'')+'\',\''+_jsa(key)+'\',event,'+(fremd?'0':'1')+')" title="Eintrag entfernen" style="flex-shrink:0;min-height:38px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer;">✕</button>'
       +'</div>';
   }).join('');
   if(list.length>20)h+='<div style="font-size:12px;color:var(--text2);padding:6px 0;">… und '+(list.length-20)+' weitere</div>';
