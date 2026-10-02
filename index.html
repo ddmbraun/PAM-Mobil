@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v321';
+const MOB_VERSION='v322';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -8787,7 +8787,7 @@ async function saveFile(){
                     // PC-exklusive Felder: Remote gewinnt immer (Mobile überschreibt sie nie)
                     // COMPAT-FIX: 'anfrageEingangDatum' ergänzt – Desktop-Only-Feld, das Mobile
                     // nie bearbeitet und das bei einem Konflikt-Merge sonst überschrieben würde.
-                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','anfrageEingangDatum','freieTermine','msMessageId','msConversationId','msThreadMessages','anrufWahlenAusgeblendetBis']; // v282: Ausblenden setzt nur der PC · Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
+                    const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','einsaetze','anfrageEingangDatum','freieTermine','msMessageId','msConversationId','msThreadMessages','anrufWahlenAusgeblendetBis']; // v322: einsaetze (Desktop b1059) steht weiter vorn - nur der PC bearbeitet es · v282: Ausblenden setzt nur der PC · Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
