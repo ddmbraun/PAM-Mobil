@@ -4903,7 +4903,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F14" charset="utf-8"></script>
+<script src="formulare.js?v=F15" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v331';
+const MOB_VERSION='v332';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -13053,15 +13053,16 @@ function renderDetail(t){
           const isWP=b.vorlage==='wartungsprotokoll';
           const isFS=b.vorlage==='feuchte'; // v291
           const bgi=(isFS&&b.fassung==='begehung'&&typeof _fsBgListeInfo==='function')?_fsBgListeInfo(b):null; // v331: neutral „n von m beantwortet“ + Raumnamen
-          const displayTitle=isWP?((b.kopf&&(b.kopf.objektAdresse||b.kopf.adresse))||b.titel||'Bericht'):(b.titel||'Bericht'); // v330: die Straße steht in kopf.objektAdresse
+          const lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,currentTask()):null; // F15/v332: Kürzel + Tooltip, Kartenname fett, Zusatz klein
+          const displayTitle=lz?lz.name:isWP?((b.kopf&&(b.kopf.objektAdresse||b.kopf.adresse))||b.titel||'Bericht'):(b.titel||'Bericht'); // v330: die Straße steht in kopf.objektAdresse
           const openFn=isWP?'_openWartungsprotokollMobil('+bi+')':isFS?'_openFeuchteprotokollMobil('+bi+')':'_openPruefformular('+bi+')';
-          const badge=isWP?'<span style="font-size:9px;background:#1a5c3a;color:#fff;padding:1px 4px;border-radius:3px;margin-right:4px;">WP</span>'
-            :isFS?'<span style="font-size:9px;background:#1f5f8b;color:#fff;padding:1px 4px;border-radius:3px;margin-right:4px;">💧</span>':'';
+          const badge=isWP?'<span title="'+esc(lz?lz.lang:'Wartungsprotokoll')+'" style="font-size:9px;background:#1a5c3a;color:#fff;padding:1px 4px;border-radius:3px;margin-right:4px;">'+esc(lz?lz.kurz:'WP')+'</span>'
+            :isFS?'<span'+(lz?' title="'+esc(lz.lang)+'"':'')+' style="font-size:9px;background:#1f5f8b;color:#fff;padding:1px 4px;border-radius:3px;margin-right:4px;">'+(lz?esc(lz.kurz):'💧')+'</span>':'';
           return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">'
             // v330: ein Tipp auf Name/Datum öffnet das Protokoll (bisher nur der kleine „Öffnen“-Knopf)
             +'<div data-pf-name="1" onclick="event.stopPropagation();'+openFn+'" title="Öffnen" style="flex:1;min-width:0;cursor:pointer;padding:4px 0;">'
             +'<div style="font-size:13px;font-weight:600;color:var(--text);">'+badge+esc(displayTitle)+'</div>'
-            +'<div style="font-size:11px;color:var(--text2);">'+esc(b.datum||'')+(bgi?esc(' · '+bgi.beantwortet+' von '+bgi.tot+' beantwortet'+(bgi.raeume?' · '+bgi.raeume:'')):'')+'</div>'
+            +'<div style="font-size:11px;color:var(--text2);">'+esc(b.datum||'')+(bgi?esc(' · '+bgi.beantwortet+' von '+bgi.tot+' beantwortet'):'')+(lz&&lz.sub?esc(' · '+lz.sub):'')+'</div>'
             +'</div>'
             +'<button onclick="event.stopPropagation();'+openFn+'" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid '+(isWP?'#1a5c3a':'var(--border)')+';background:'+(isWP?'rgba(26,92,58,.1)':'var(--bg3)')+';color:'+(isWP?'#1a5c3a':'var(--text)')+';cursor:pointer;">Öffnen</button>'
             +'<button onclick="event.stopPropagation();_deletePruefbericht('+bi+')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid rgba(231,76,60,.4);color:var(--red);background:transparent;cursor:pointer;">✕</button>'
