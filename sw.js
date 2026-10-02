@@ -1,7 +1,7 @@
 ﻿// Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v332';
+const CACHE_NAME = 'pam-mobil-v333';
 // Aenderungsnotizen stehen bewusst NICHT hier, sondern lokal in CHANGES.md -
 // diese Datei wird oeffentlich ausgeliefert (v183, Datenschutz; wie b646 am Desktop).
 
@@ -27,7 +27,7 @@ const THUMB_MAX = 300;   // bewusst vorsichtig: "verschlossene" Antworten werden
 const PRECACHE = [
   './',
   './index.html',
-  './formulare.js?v=F15',   // v307: gemeinsame Formular-Datei – Adresse GENAU wie in index.html (mit ?v=), sonst ohne Netz nicht da
+  './formulare.js?v=F16',   // v307: gemeinsame Formular-Datei – Adresse GENAU wie in index.html (mit ?v=), sonst ohne Netz nicht da
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
