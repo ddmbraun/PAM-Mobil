@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v338';
+const MOB_VERSION='v339';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10497,7 +10497,8 @@ function _anrufZeichnen(){
           +(ausMails?'✉ ':'')+esc(wer||'ohne Namen')+(ausMails?' · aus Mails, ungeprüft':'')+'</span>'
         :'')
       +((z&&typeof _wahlLetzte==='function'&&_wahlLetzte(z.t,e.nr))?'<span class="wahl-zuletzt" style="display:block;font-size:calc(12px * var(--m-scale,1));line-height:1.3;opacity:.8;margin-top:1px;">zuletzt gewählt '+esc(_wahlLetzte(z.t,e.nr))+'</span>':'')
-      +'</span></a>';
+      +'</span></a>'
+      +((z&&z.t&&typeof _anrufErgZeile==='function')?_anrufErgZeile(z,e):'');
   };
   el.innerHTML=liste.map(function(z){
     const n=_anrufNummern(z.t);
@@ -10566,7 +10567,7 @@ function _wahlMerken(taskId,nr,name){
       (t.kontakte||[]).forEach(function(c){if(!wer&&c&&(_wahlNorm(c.tel)===k||_wahlNorm(c.tel2)===k))wer=String(c.name||'').trim();});
       (((t._aufEinenBlick||{}).kontakte)||[]).forEach(function(p){if(!wer&&p&&_wahlNorm(p.nr)===k)wer=String(p.name||'').trim();});
     }
-    t.anrufWahlen.push({ts:new Date(jetzt).toISOString(),nr:String(nr).trim(),name:wer});
+    t.anrufWahlen.push({ts:new Date(jetzt).toISOString(),nr:String(nr).trim(),name:wer,von:'Handy'}); // v339: Gerät – die Kennung ts|nr bleibt gleich
     if(typeof scheduleSave==='function')scheduleSave();
     setTimeout(function(){
       try{
@@ -10598,6 +10599,137 @@ function _wahlenListe(t){
   return ((t&&Array.isArray(t.anrufWahlen))?t.anrufWahlen:[]).filter(function(w){return w&&w.ts;})
     .slice().sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
 }
+// ══ v339: GERÄT im Wahl-Vermerk + ANRUF-ERGEBNIS im Bautagebuch (Gegenstück PC b1079) ═══════
+/* Frank 02.10.2026: „einen erreicht, den anderen nicht – wie sage ich, welchen? … nachweisen, dass ich ihn fünfmal angerufen
+   habe.“ Nur Gedächtnisstütze, kein rechtssicherer Nachweis.
+   ⛔ Die Wahrheit steht in der BAUTAGEBUCH-ZEILE (t.notizVerlauf), kein eigenes Kartenfeld – dieselbe Zeilenform wie am PC:
+      „📞 Anruf · Name · Nummer · Gerät · Ergebnis[ · Notiz]“. Der PC liest sie mit _pamAnrufErgLesen und filtert sie
+      im Bautagebuch auf „📞 Anrufe“. Die Zeile beginnt NICHT mit „✓ “ (am PC Systemzeile). notizVerlauf wird beim Speichern
+      schon nach ts|text vereinigt (saveFile), eine neue Zeile kommt also sicher am PC an.
+   ⛔ Gerät = von der letzten Wahl dieser Nummer an der Karte (von:'Handy'/'PC'), sonst „–“.
+   ⛔ Keine Regex-Literale in diesen Funktionen: die Prüfsuiten schneiden sie mit einem Zeichenketten-Zähler aus. */
+function _wahlGeraet(w){return (w&&w.von==='Handy')?' 📱':((w&&w.von==='PC')?' 🖥':'');}
+const _ANRUF_ERG=[
+  {k:'termin',z:'Termin vereinbart',tipp:'✓ erreicht, Termin vereinbart',ok:true},
+  {k:'rueck',z:'erreicht, kein Termin',tipp:'✓ erreicht, kein Termin / ruft zurück',ok:true},
+  {k:'nicht',z:'nicht erreicht',tipp:'✗ nicht erreicht (niemand ging ran)',ok:false},
+  {k:'mailbox',z:'Mailbox / besetzt',tipp:'✗ Mailbox / besetzt',ok:false}
+];
+const _ANRUF_PRAEFIX='📞 Anruf · ';
+function _anrufErgSauber(s){return String(s==null?'':s).split(' · ').join(' – ').split('\n').join(' ').trim();}
+function _anrufErgText(name,nr,geraet,ergZ,notiz){
+  const teile=[_anrufErgSauber(name)||'–',_anrufErgSauber(nr),geraet||'–',ergZ];
+  const n=_anrufErgSauber(notiz);
+  if(n)teile.push(n);
+  return _ANRUF_PRAEFIX+teile.join(' · ');
+}
+function _anrufErgLesen(text){
+  const s=String(text==null?'':text);
+  if(s.indexOf(_ANRUF_PRAEFIX)!==0)return null;
+  const p=s.slice(_ANRUF_PRAEFIX.length).split(' · ');
+  if(p.length<4)return null;
+  const e=_ANRUF_ERG.find(function(x){return x.z===p[3];});
+  if(!e)return null;
+  return {name:p[0],nr:p[1],geraet:p[2],erg:e,notiz:p.slice(4).join(' · ')};
+}
+function _anrufErgListe(t,nr){
+  const k=nr?_wahlNorm(nr):'';
+  const out=[];
+  ((t&&Array.isArray(t.notizVerlauf))?t.notizVerlauf:[]).forEach(function(n){
+    if(!n||!n.ts)return;
+    const r=_anrufErgLesen(n.text); if(!r)return;
+    if(k&&_wahlNorm(r.nr)!==k)return;
+    r.ts=String(n.ts); out.push(r);
+  });
+  out.sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
+  return out;
+}
+function _anrufErgStatus(t,nr){
+  const l=_anrufErgListe(t,nr); if(!l.length)return null;
+  const neu=l[0],kurz=_wahlZeit(neu.ts,true);
+  if(neu.erg.ok)return {ok:true,text:'✓ '+neu.erg.z+' · '+kurz+(neu.notiz?' · '+neu.notiz:'')};
+  let z=0; for(let i=0;i<l.length&&!l[i].erg.ok;i++)z++;
+  return {ok:false,text:'✗ '+z+' × nicht erreicht · zuletzt '+kurz};
+}
+function _anrufErgGeraet(t,nr){
+  const k=_wahlNorm(nr); if(!k)return '–';
+  const w=_wahlenListe(t).find(function(x){return _wahlNorm(x.nr)===k;});
+  return (w&&w.von)?w.von:'–';
+}
+// Zeile unter einer Nummer in der Anrufliste: Status (falls vorhanden) + Knopf „✎ Ergebnis“
+function _anrufErgZeile(z,e){
+  const st=_anrufErgStatus(z.t,e.nr);
+  return '<div class="anruf-erg-zeile" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:3px 2px 0;">'
+    +(st?'<span class="anruf-erg" style="font-size:calc(13px * var(--m-scale,1));font-weight:700;line-height:1.3;color:'+(st.ok?'#0F6E56':'#A32D2D')+';overflow-wrap:anywhere;">'+esc(st.text)+'</span>':'')
+    +'<button type="button" class="anruf-erg-btn" onclick="_anrufErgDialog(\''+_jsa(z.id)+'\',\''+_jsa(e.nr)+'\',\''+_jsa(e.name)+'\',\''+_jsa(e.rolle)+'\')" '
+    +'style="min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));cursor:pointer;">✎ Ergebnis</button>'
+    +'</div>';
+}
+function _anrufErgDialog(taskId,nr,name,rolle){
+  const t=_wahlKarte(taskId); if(!t)return;
+  const alt=document.getElementById('anrufErgDlg'); if(alt)alt.remove();
+  const ov=document.createElement('div');
+  ov.id='anrufErgDlg';
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick=function(ev){if(ev.target===ov)ov.remove();};
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg);color:var(--text);border-radius:16px 16px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));width:100%;max-width:520px;box-sizing:border-box;';
+  const kopf=document.createElement('div');
+  kopf.style.cssText='font-size:calc(16px * var(--m-scale,1));font-weight:700;overflow-wrap:anywhere;';
+  kopf.textContent='📞 Ergebnis: '+([name,rolle].filter(Boolean).join(' · ')||nr);
+  const unter=document.createElement('div');
+  unter.style.cssText='font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:2px 0 10px;overflow-wrap:anywhere;';
+  unter.textContent=nr+' · '+(t.title||'(ohne Titel)')+' · Gerät: '+_anrufErgGeraet(t,nr);
+  box.appendChild(kopf); box.appendChild(unter);
+  let gewaehlt=null; const knoepfe=[];
+  _ANRUF_ERG.forEach(function(e){
+    const b=document.createElement('button');
+    b.type='button'; b.className='anruf-erg-wahl'; b.setAttribute('data-erg',e.k);
+    b.style.cssText='display:block;width:100%;text-align:left;margin:6px 0;min-height:46px;padding:10px 12px;border-radius:11px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));cursor:pointer;';
+    b.textContent=e.tipp;
+    b.onclick=function(){
+      gewaehlt=e;
+      knoepfe.forEach(function(x){const an=x===b;x.style.borderColor=an?'#1a6fc4':'var(--border)';x.style.background=an?'rgba(26,111,196,.18)':'var(--bg3)';x.style.fontWeight=an?'700':'400';});
+    };
+    knoepfe.push(b); box.appendChild(b);
+  });
+  const notiz=document.createElement('input');
+  notiz.type='text'; notiz.id='anrufErgNotiz'; notiz.autocomplete='off';
+  notiz.placeholder='Notiz (freiwillig), z. B. Termin 07.10., 9 Uhr';
+  notiz.style.cssText='width:100%;box-sizing:border-box;margin-top:8px;min-height:44px;padding:8px 10px;font-size:16px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);';
+  box.appendChild(notiz);
+  const zeile=document.createElement('div');
+  zeile.style.cssText='display:flex;gap:10px;margin-top:12px;';
+  const abbr=document.createElement('button');
+  abbr.type='button'; abbr.textContent='Abbrechen';
+  abbr.style.cssText='flex:1;min-height:46px;border-radius:11px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));cursor:pointer;';
+  abbr.onclick=function(){ov.remove();};
+  const ok=document.createElement('button');
+  ok.type='button'; ok.id='anrufErgSpeichern'; ok.textContent='Speichern';
+  ok.style.cssText='flex:1;min-height:46px;border-radius:11px;border:none;background:#1a6fc4;color:#fff;font-size:calc(15px * var(--m-scale,1));font-weight:700;cursor:pointer;';
+  ok.onclick=function(){
+    if(!gewaehlt){if(typeof toast==='function')toast('Bitte ein Ergebnis wählen','warn',2500);return;}
+    _anrufErgSpeichern(taskId,nr,name,rolle,gewaehlt.k,notiz.value);
+    ov.remove();
+  };
+  notiz.onkeydown=function(ev){if(ev.key==='Enter'){ev.preventDefault();ok.onclick();}};
+  zeile.appendChild(abbr); zeile.appendChild(ok); box.appendChild(zeile);
+  ov.appendChild(box); document.body.appendChild(ov);
+}
+function _anrufErgSpeichern(taskId,nr,name,rolle,erg,notiz){
+  try{
+    const t=_wahlKarte(taskId); if(!t)return false;
+    const e=_ANRUF_ERG.find(function(x){return x.k===erg;}); if(!e)return false;
+    const wer=[name,rolle].filter(Boolean).join(' (')+(rolle&&name?')':'');
+    const text=_anrufErgText(wer||name,nr,_anrufErgGeraet(t,nr),e.z,notiz);
+    if(!Array.isArray(t.notizVerlauf))t.notizVerlauf=[];
+    t.notizVerlauf.push({ts:new Date().toISOString(),text:text});
+    if(typeof scheduleSave==='function')scheduleSave();
+    if(typeof _anrufZeichnen==='function')_anrufZeichnen();
+    if(typeof toast==='function')toast('📞 Ins Bautagebuch eingetragen: '+e.z,'ok',3000);
+    return true;
+  }catch(err){console.warn('[v339] Anruf-Ergebnis:',err);return false;}
+}
 function _wahlLetzte(t,nr){
   const k=_wahlNorm(nr); if(!k)return '';
   const w=_wahlenListe(t).find(function(x){return _wahlNorm(x.nr)===k;});
@@ -10610,7 +10742,7 @@ function _wahlKontaktText(t,k){
   const beide=!!(nT&&nT2&&nT!==nT2);
   const seine=_wahlenListe(t).filter(function(w){const n=_wahlNorm(w.nr);return !!n&&(n===nT||n===nT2);});
   if(!seine.length)return '';
-  return '📞 gewählt: '+seine.slice(0,3).map(function(w){return _wahlZeit(w.ts,false)+(beide?(_wahlNorm(w.nr)===nT2?' (Tel. 2)':' (Telefon)'):'');}).join(' · ')
+  return '📞 gewählt: '+seine.slice(0,3).map(function(w){return _wahlZeit(w.ts,false)+(beide?(_wahlNorm(w.nr)===nT2?' (Tel. 2)':' (Telefon)'):'')+(typeof _wahlGeraet==='function'?_wahlGeraet(w):'');}).join(' · ')
     +(seine.length>3?' · + '+(seine.length-3)+' weitere':'');
 }
 function _wahlKontaktZeile(k,i){
@@ -10728,7 +10860,7 @@ function _wahlZeichnen(el){
       +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin:2px 0 6px;overflow-wrap:anywhere;">'+esc(t.title||'(ohne Titel)')+'</div>';
     s+=zeig.map(function(w){
       return '<div class="wahl-zeile" style="font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.4;padding:4px 0;border-top:1px solid var(--border);">'
-        +'<b>'+esc(_wahlZeit(w.ts,false))+'</b><br><span style="color:var(--text2);">📞 '+(w.name?esc(_anrufEinzeilig(w.name))+' · ':'')+esc(w.nr||'')+'</span></div>';
+        +'<b>'+esc(_wahlZeit(w.ts,false))+'</b><br><span style="color:var(--text2);">📞 '+(w.name?esc(_anrufEinzeilig(w.name))+' · ':'')+esc(w.nr||'')+esc(typeof _wahlGeraet==='function'?_wahlGeraet(w):'')+'</span></div>';
     }).join('');
     if(x.wahlen.length>3)s+='<button class="wahl-mehr" onclick="_wahlAufklappen(\''+_jsa(t.id)+'\')" style="background:none;border:none;color:#1a6fc4;font-size:calc(13.5px * var(--m-scale,1));padding:8px 0 2px;cursor:pointer;">'+(offen?'weniger':'+ '+(x.wahlen.length-3)+' weitere')+'</button>';
     s+=(x.art==='karte')

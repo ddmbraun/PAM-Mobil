@@ -1,7 +1,7 @@
 ﻿// Service Worker - PAM Mobil
 // Google-APIs werden NIEMALS gecacht.
 
-const CACHE_NAME = 'pam-mobil-v338';
+const CACHE_NAME = 'pam-mobil-v339';
 // Aenderungsnotizen stehen bewusst NICHT hier, sondern lokal in CHANGES.md -
 // diese Datei wird oeffentlich ausgeliefert (v183, Datenschutz; wie b646 am Desktop).
 
