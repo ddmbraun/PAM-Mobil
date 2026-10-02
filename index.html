@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v339';
+const MOB_VERSION='v340';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10651,9 +10651,10 @@ function _anrufErgStatus(t,nr){
   let z=0; for(let i=0;i<l.length&&!l[i].erg.ok;i++)z++;
   return {ok:false,text:'✗ '+z+' × nicht erreicht · zuletzt '+kurz};
 }
-function _anrufErgGeraet(t,nr){
+// v340: Gerät der gewählten Wahl (wahlTs) – ohne wahlTs die neueste Wahl dieser Nummer
+function _anrufErgGeraet(t,nr,wahlTs){
   const k=_wahlNorm(nr); if(!k)return '–';
-  const w=_wahlenListe(t).find(function(x){return _wahlNorm(x.nr)===k;});
+  const w=_wahlenListe(t).find(function(x){return _wahlNorm(x.nr)===k&&(!wahlTs||String(x.ts)===String(wahlTs));});
   return (w&&w.von)?w.von:'–';
 }
 // Zeile unter einer Nummer in der Anrufliste: Status (falls vorhanden) + Knopf „✎ Ergebnis“
@@ -10665,7 +10666,28 @@ function _anrufErgZeile(z,e){
     +'style="min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));cursor:pointer;">✎ Ergebnis</button>'
     +'</div>';
 }
-function _anrufErgDialog(taskId,nr,name,rolle){
+/* v340: Die Uhrzeit der Anruf-Zeile ist die Zeit der WAHL (Franks Wunsch), nicht die des Eintragens – wie am PC (b1080).
+   ⛔ „Verbraucht“ ist eine Wahl, zu der es schon eine Anruf-Zeile mit GENAU ihrer Zeit und Nummer gibt: fünf Wahlen -> fünf Zeilen.
+      Zeilen aus v339 tragen noch die Eintragezeit und verbrauchen keine Wahl. Ohne offene Wahl gilt „jetzt“ wie vorher. */
+function _anrufErgOffeneWahlen(t,nr){
+  const k=_wahlNorm(nr); if(!k)return [];
+  const benutzt={};
+  _anrufErgListe(t,nr).forEach(function(x){benutzt[x.ts]=true;});
+  return _wahlenListe(t).filter(function(w){return _wahlNorm(w.nr)===k&&!benutzt[String(w.ts)];});
+}
+// Das Ergebnis, das zu genau dieser Wahl eingetragen wurde (oder null) – für den Reiter „Gewählt“
+function _anrufErgZuWahl(t,w){
+  if(!t||!w||!w.ts)return null;
+  return _anrufErgListe(t,w.nr).find(function(x){return x.ts===String(w.ts);})||null;
+}
+// Zeile im Reiter „Gewählt“: das Ergebnis, falls eingetragen, sonst der Knopf „✎ Ergebnis“ (merkt sich die Zeit dieser Wahl)
+function _anrufErgWahlZelle(t,w){
+  const z=_anrufErgZuWahl(t,w);
+  if(z)return '<span class="wahl-erg" style="display:inline-block;margin-top:3px;font-size:calc(13px * var(--m-scale,1));font-weight:700;color:'+(z.erg.ok?'#0F6E56':'#A32D2D')+';">'+(z.erg.ok?'✓ ':'✗ ')+esc(z.erg.z)+'</span>';
+  return '<button type="button" class="wahl-erg-btn" onclick="_anrufErgDialog(\''+_jsa(t.id)+'\',\''+_jsa(w.nr||'')+'\',\''+_jsa(w.name||'')+'\',\'\',\''+_jsa(w.ts||'')+'\')" '
+    +'style="display:block;margin-top:4px;min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));cursor:pointer;">✎ Ergebnis</button>';
+}
+function _anrufErgDialog(taskId,nr,name,rolle,vorWahlTs){
   const t=_wahlKarte(taskId); if(!t)return;
   const alt=document.getElementById('anrufErgDlg'); if(alt)alt.remove();
   const ov=document.createElement('div');
@@ -10673,14 +10695,34 @@ function _anrufErgDialog(taskId,nr,name,rolle){
   ov.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;';
   ov.onclick=function(ev){if(ev.target===ov)ov.remove();};
   const box=document.createElement('div');
-  box.style.cssText='background:var(--bg);color:var(--text);border-radius:16px 16px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));width:100%;max-width:520px;box-sizing:border-box;';
+  box.style.cssText='background:var(--bg);color:var(--text);border-radius:16px 16px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom,0px));width:100%;max-width:520px;box-sizing:border-box;max-height:92vh;overflow-y:auto;';
   const kopf=document.createElement('div');
   kopf.style.cssText='font-size:calc(16px * var(--m-scale,1));font-weight:700;overflow-wrap:anywhere;';
   kopf.textContent='📞 Ergebnis: '+([name,rolle].filter(Boolean).join(' · ')||nr);
   const unter=document.createElement('div');
-  unter.style.cssText='font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:2px 0 10px;overflow-wrap:anywhere;';
-  unter.textContent=nr+' · '+(t.title||'(ohne Titel)')+' · Gerät: '+_anrufErgGeraet(t,nr);
+  unter.style.cssText='font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:2px 0 8px;overflow-wrap:anywhere;';
   box.appendChild(kopf); box.appendChild(unter);
+  // Welcher Anruf? – die offenen Wahlen dieser Nummer, die neueste (oder die angetippte) ist vorgewählt
+  const offene=_anrufErgOffeneWahlen(t,nr);
+  const lab=document.createElement('div');
+  lab.style.cssText='font-size:calc(13px * var(--m-scale,1));font-weight:600;margin:2px 0 4px;';
+  lab.textContent='Welcher Anruf?';
+  const sel=document.createElement('select');
+  sel.id='anrufErgWahl';
+  sel.style.cssText='width:100%;box-sizing:border-box;min-height:44px;padding:8px 10px;font-size:16px;margin-bottom:6px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);';
+  offene.forEach(function(w){
+    const o=document.createElement('option');
+    o.value=String(w.ts);
+    o.textContent=_wahlZeit(w.ts,false)+(w.von==='Handy'?' · Handy':(w.von==='PC'?' · PC':''));
+    sel.appendChild(o);
+  });
+  const jetzt=document.createElement('option');
+  jetzt.value=''; jetzt.textContent=offene.length?'jetzt (ohne vermerkte Wahl)':'jetzt (keine Wahl vermerkt)';
+  sel.appendChild(jetzt);
+  sel.value=(vorWahlTs&&offene.some(function(w){return String(w.ts)===String(vorWahlTs);}))?String(vorWahlTs):(offene.length?String(offene[0].ts):'');
+  const zeigeUnter=function(){unter.textContent=nr+' · '+(t.title||'(ohne Titel)')+' · Gerät: '+_anrufErgGeraet(t,nr,sel.value);};
+  sel.onchange=zeigeUnter; zeigeUnter();
+  box.appendChild(lab); box.appendChild(sel);
   let gewaehlt=null; const knoepfe=[];
   _ANRUF_ERG.forEach(function(e){
     const b=document.createElement('button');
@@ -10709,26 +10751,27 @@ function _anrufErgDialog(taskId,nr,name,rolle){
   ok.style.cssText='flex:1;min-height:46px;border-radius:11px;border:none;background:#1a6fc4;color:#fff;font-size:calc(15px * var(--m-scale,1));font-weight:700;cursor:pointer;';
   ok.onclick=function(){
     if(!gewaehlt){if(typeof toast==='function')toast('Bitte ein Ergebnis wählen','warn',2500);return;}
-    _anrufErgSpeichern(taskId,nr,name,rolle,gewaehlt.k,notiz.value);
+    _anrufErgSpeichern(taskId,nr,name,rolle,gewaehlt.k,notiz.value,sel.value);
     ov.remove();
   };
   notiz.onkeydown=function(ev){if(ev.key==='Enter'){ev.preventDefault();ok.onclick();}};
   zeile.appendChild(abbr); zeile.appendChild(ok); box.appendChild(zeile);
   ov.appendChild(box); document.body.appendChild(ov);
 }
-function _anrufErgSpeichern(taskId,nr,name,rolle,erg,notiz){
+function _anrufErgSpeichern(taskId,nr,name,rolle,erg,notiz,wahlTs){
   try{
     const t=_wahlKarte(taskId); if(!t)return false;
     const e=_ANRUF_ERG.find(function(x){return x.k===erg;}); if(!e)return false;
     const wer=[name,rolle].filter(Boolean).join(' (')+(rolle&&name?')':'');
-    const text=_anrufErgText(wer||name,nr,_anrufErgGeraet(t,nr),e.z,notiz);
+    const ts=wahlTs?String(wahlTs):''; // v340: Zeit der Wahl; leer = jetzt
+    const text=_anrufErgText(wer||name,nr,_anrufErgGeraet(t,nr,ts),e.z,notiz);
     if(!Array.isArray(t.notizVerlauf))t.notizVerlauf=[];
-    t.notizVerlauf.push({ts:new Date().toISOString(),text:text});
+    t.notizVerlauf.push({ts:ts||new Date().toISOString(),text:text});
     if(typeof scheduleSave==='function')scheduleSave();
     if(typeof _anrufZeichnen==='function')_anrufZeichnen();
-    if(typeof toast==='function')toast('📞 Ins Bautagebuch eingetragen: '+e.z,'ok',3000);
+    if(typeof toast==='function')toast('📞 Ins Bautagebuch eingetragen: '+e.z+(ts?' · '+_wahlZeit(ts,true):''),'ok',3000);
     return true;
-  }catch(err){console.warn('[v339] Anruf-Ergebnis:',err);return false;}
+  }catch(err){console.warn('[v340] Anruf-Ergebnis:',err);return false;}
 }
 function _wahlLetzte(t,nr){
   const k=_wahlNorm(nr); if(!k)return '';
@@ -10860,7 +10903,9 @@ function _wahlZeichnen(el){
       +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin:2px 0 6px;overflow-wrap:anywhere;">'+esc(t.title||'(ohne Titel)')+'</div>';
     s+=zeig.map(function(w){
       return '<div class="wahl-zeile" style="font-size:calc(14px * var(--m-scale,1));color:var(--text);line-height:1.4;padding:4px 0;border-top:1px solid var(--border);">'
-        +'<b>'+esc(_wahlZeit(w.ts,false))+'</b><br><span style="color:var(--text2);">📞 '+(w.name?esc(_anrufEinzeilig(w.name))+' · ':'')+esc(w.nr||'')+esc(typeof _wahlGeraet==='function'?_wahlGeraet(w):'')+'</span></div>';
+        +'<b>'+esc(_wahlZeit(w.ts,false))+'</b><br><span style="color:var(--text2);">📞 '+(w.name?esc(_anrufEinzeilig(w.name))+' · ':'')+esc(w.nr||'')+esc(typeof _wahlGeraet==='function'?_wahlGeraet(w):'')+'</span>'
+        +((typeof _anrufErgWahlZelle==='function')?_anrufErgWahlZelle(t,w):'') // v340: Ergebnis oder Knopf
+        +'</div>';
     }).join('');
     if(x.wahlen.length>3)s+='<button class="wahl-mehr" onclick="_wahlAufklappen(\''+_jsa(t.id)+'\')" style="background:none;border:none;color:#1a6fc4;font-size:calc(13.5px * var(--m-scale,1));padding:8px 0 2px;cursor:pointer;">'+(offen?'weniger':'+ '+(x.wahlen.length-3)+' weitere')+'</button>';
     s+=(x.art==='karte')
