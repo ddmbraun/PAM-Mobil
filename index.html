@@ -4903,7 +4903,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F25" charset="utf-8"></script>
+<script src="formulare.js?v=F27" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v346';
+const MOB_VERSION='v348';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -13319,6 +13319,7 @@ function renderDetail(t){
             +'<div style="font-size:11px;color:var(--text2);">'+esc(b.datum||'')+(bgi?esc(' · '+bgi.beantwortet+' von '+bgi.tot+' beantwortet'):'')+(lz&&lz.sub?esc(' · '+lz.sub):'')+'</div>'
             +'</div>'
             +'<button onclick="event.stopPropagation();'+openFn+'" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid '+(isWP?'#1a5c3a':'var(--border)')+';background:'+(isWP?'rgba(26,92,58,.1)':'var(--bg3)')+';color:'+(isWP?'#1a5c3a':'var(--text)')+';cursor:pointer;">Öffnen</button>'
+            +(b.schlank?'<button onclick="event.stopPropagation();_fsProtokollUmbenennen('+bi+')" title="Umbenennen" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;">✏</button>':'') // F26/v347: Besichtigung 2 umbenennen
             +'<button onclick="event.stopPropagation();_deletePruefbericht('+bi+')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid rgba(231,76,60,.4);color:var(--red);background:transparent;cursor:pointer;">✕</button>'
             +'</div>';
         }).join('')
