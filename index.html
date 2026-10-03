@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v341';
+const MOB_VERSION='v342';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11935,7 +11935,13 @@ function _bauHeuteFotos(t){
 function _bauNotizKurz(t){
   const v=(t&&t.notizVerlauf)||[];
   if(!v.length)return 'noch keine';
-  const letzte=v[v.length-1];
+  // v342: der NEUESTE Eintrag nach Uhrzeit, nicht der zuletzt eingetragene (Anruf-Zeilen tragen die Zeit der Wahl, nicht die des Eintragens).
+  //        Ohne einen einzigen ISO-Zeitstempel (Altbestand) bleibt es beim zuletzt eingetragenen.
+  let letzte=v[v.length-1],beste=-1;
+  v.forEach(function(n){
+    const r=String((n&&n.ts)||'');
+    if(/^\d{4}-\d{2}-\d{2}T/.test(r)){const ms=Date.parse(r);if(!isNaN(ms)&&ms>beste){beste=ms;letzte=n;}}
+  });
   let zeit='';
   try{
     const roh=String((letzte&&letzte.ts)||'');
@@ -15091,7 +15097,14 @@ function renderNotizen(list){
   // Offene Notizen zuerst (umgekehrt chron.), erledigte nach unten
   const open=roh.filter(x=>!x.n.done);
   const done=roh.filter(x=>!!x.n.done);
-  const sorted=[...open.slice().reverse(),...done.slice().reverse()];
+  // v342: im Filter „📞 Anrufe“ nach UHRZEIT sortiert (neueste oben) – die Zeile trägt die Zeit der Wahl, nicht die des Eintragens. Der Original-Index i bleibt erhalten.
+  //        Die Ansicht „Alle“ bleibt wie bisher (Reihenfolge des Eintragens), damit sich normale Notizen nicht anders sortieren.
+  const neuerZuerst=function(a,b){
+    const x=Date.parse(a.n&&a.n.ts),y=Date.parse(b.n&&b.n.ts);
+    if(isNaN(x)||isNaN(y)||x===y)return b.i-a.i;
+    return y-x;
+  };
+  const sorted=nurAnruf?[...open.slice().sort(neuerZuerst),...done.slice().sort(neuerZuerst)]:[...open.slice().reverse(),...done.slice().reverse()];
   const kopf=(hatAnruf&&typeof _bauNotizChips==='function')?(_bauNotizChips(nurAnruf)+(nurAnruf&&typeof _bauAnrufSumme==='function'?_bauAnrufSumme(list):'')):'';
   return kopf+sorted.map(({n,i})=>{
     const isDone=!!n.done;
