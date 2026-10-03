@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v340';
+const MOB_VERSION='v341';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10453,6 +10453,7 @@ function _anrufMenuZahl(){
 }
 function _anrufBlattAuf(){
   const b=document.getElementById('anrufBlatt');if(!b)return;
+  _anrufAlleKarten={}; // v341: übrige Kontakte beim Öffnen wieder eingeklappt
   b.style.display='block';
   _anrufZeichnen();
 }
@@ -10485,10 +10486,12 @@ function _anrufZeichnen(){
     const stil=e.markiert
       ?'background:#1a6fc4;color:#fff;border:1px solid #1a6fc4;'
       :'background:var(--bg2);color:var(--text);border:1px solid var(--border);';
-    return '<a href="'+escAttr(_anrufTelHref(e.nr))+'"'+(z?' data-wahl-task="'+escAttr(z.id)+'" data-wahl-nr="'+escAttr(e.nr)+'"':'')+' onclick="event.stopPropagation()" '
+    const _es=(z&&z.t&&typeof _anrufErgStatus==='function')?_anrufErgStatus(z.t,e.nr):null; // v341
+    const fertig=!!(_es&&_es.ok);
+    return '<a class="anruf-feld'+(fertig?' anruf-fertig':'')+'" href="'+escAttr(_anrufTelHref(e.nr))+'"'+(z?' data-wahl-task="'+escAttr(z.id)+'" data-wahl-nr="'+escAttr(e.nr)+'"':'')+' onclick="event.stopPropagation()" '
       +'title="'+escAttr((e.markiert?'Anruf-Kontakt · ':'')+(ausMails?'aus Mails gelesen · ':'')+'wählen: '+e.nr)+'" '
       +'style="display:flex;align-items:center;gap:10px;min-height:46px;padding:7px 12px;margin-top:7px;border-radius:11px;text-decoration:none;'
-      +stil+(ausMails?'border-style:dashed;':'')+'">'
+      +stil+(ausMails?'border-style:dashed;':'')+(fertig?'opacity:.6;':'')+'">'
       +'<span style="font-size:17px;line-height:1;flex-shrink:0;">📞</span>'
       +'<span style="min-width:0;">'
       +'<span style="display:block;font-size:calc(16px * var(--m-scale,1));font-weight:700;line-height:1.25;overflow-wrap:anywhere;">'+esc(e.nr)+'</span>'
@@ -10506,8 +10509,14 @@ function _anrufZeichnen(){
     let h='<div style="background:var(--bg3);border-radius:12px;padding:11px;margin-bottom:9px;'+(z.nurPc?'opacity:.82;':'')+'">'
       +'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.3;overflow-wrap:anywhere;">'+kopf+'</div>'
       +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin-top:2px;overflow-wrap:anywhere;">'+esc(z.titel)+'</div>';
+    // v341: sind Kontakte mit dem Haken „📞 Anruf“ markiert, stehen NUR die da (wie am PC seit b1083); die übrigen auf Tipp
+    const _mk=n.liste.filter(function(e){return e.markiert;});
+    const _nurMk=_mk.length>0&&_mk.length<n.liste.length;
+    const _alle=!!(typeof _anrufAlleKarten!=='undefined'&&_anrufAlleKarten[String(z.id)]);
+    const _sicht=(_nurMk&&!_alle)?_mk:n.liste;
     if(n.liste.length){
-      h+=n.liste.map(function(e){return pille(e,n.quelle,z);}).join('');
+      h+=_sicht.map(function(e){return pille(e,n.quelle,z);}).join('');
+      if(_nurMk)h+='<button type="button" class="anruf-mehr" onclick="_anrufToggleAlle(\''+_jsa(z.id)+'\')" title="Die übrigen Kontakte dieser Karte (ohne Haken 📞 Anruf) ein- oder ausblenden" style="display:block;width:100%;margin-top:7px;min-height:42px;padding:8px;border:none;background:none;color:#1a6fc4;font-size:calc(14px * var(--m-scale,1));text-align:left;cursor:pointer;">'+(_alle?'weniger anzeigen':'＋ '+(n.liste.length-_mk.length)+' weitere Kontakte anzeigen')+'</button>';
     }else{
       h+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin-top:7px;line-height:1.4;">Keine Nummer hinterlegt — weder im Kontakte-Kasten noch aus Mails.</div>';
     }
@@ -10664,6 +10673,8 @@ function _anrufErgZeile(z,e){
     +(st?'<span class="anruf-erg" style="font-size:calc(13px * var(--m-scale,1));font-weight:700;line-height:1.3;color:'+(st.ok?'#0F6E56':'#A32D2D')+';overflow-wrap:anywhere;">'+esc(st.text)+'</span>':'')
     +'<button type="button" class="anruf-erg-btn" onclick="_anrufErgDialog(\''+_jsa(z.id)+'\',\''+_jsa(e.nr)+'\',\''+_jsa(e.name)+'\',\''+_jsa(e.rolle)+'\')" '
     +'style="min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));cursor:pointer;">✎ Ergebnis</button>'
+    +((st&&st.ok)?'':'<button type="button" class="anruf-erreicht-btn" onclick="_anrufErreicht(\''+_jsa(z.id)+'\',\''+_jsa(e.nr)+'\',\''+_jsa(e.name)+'\',\''+_jsa(e.rolle)+'\')" title="Du hast diese Person erreicht: trägt „erreicht, kein Termin“ mit der Uhrzeit deines Anrufs ins Bautagebuch ein" '
+    +'style="min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid #0F6E56;background:var(--bg2);color:#0F6E56;font-size:calc(13px * var(--m-scale,1));font-weight:600;cursor:pointer;">✓ erreicht</button>')
     +'</div>';
 }
 /* v340: Die Uhrzeit der Anruf-Zeile ist die Zeit der WAHL (Franks Wunsch), nicht die des Eintragens – wie am PC (b1080).
@@ -10772,6 +10783,64 @@ function _anrufErgSpeichern(taskId,nr,name,rolle,erg,notiz,wahlTs){
     if(typeof toast==='function')toast('📞 Ins Bautagebuch eingetragen: '+e.z+(ts?' · '+_wahlZeit(ts,true):''),'ok',3000);
     return true;
   }catch(err){console.warn('[v340] Anruf-Ergebnis:',err);return false;}
+}
+// ══ v341: Handy an den PC-Stand b1083/b1084 angleichen + Filter „📞 Anrufe“ im Verlauf ═══════════════════
+/* Frank 03.10.2026: „ja ausblenden, bau“ (Vorschlag P15 + P11 aus OFFENE_PUNKTE.md).
+   ⛔ Nur ANZEIGE und Bautagebuch-Zeilen, kein neues Kartenfeld, anrufOffen bleibt unangetastet (Grundsatz v277: das Handy hakt nicht ab).
+   ⛔ (a) Reiter „Offen“: sind Kontakte mit dem Haken „📞 Anruf“ markiert, stehen NUR die da; die übrigen auf Tipp („＋ N weitere“, nur für
+      diese Sitzung gemerkt, beim Öffnen der Liste wieder zu). Ohne Markierung stehen alle da, sonst hätte die Karte keine Nummer.
+   ⛔ (b) „✓ erreicht“ = dieselbe Zeile wie „✎ Ergebnis“ mit „erreicht, kein Termin“ und der Zeit der NEUESTEN OFFENEN Wahl (ohne Wahl: jetzt).
+      Grau wird nur das NUMMERNFELD (Lehre PC b1085: ganze Pille blass wirkte wie gesperrt).
+   ⛔ (c) Filter im Verlauf: Original-Index i bleibt erhalten (✕ und Abhaken treffen sonst die falsche Zeile). Die Zeilen-Chips erscheinen nur, wenn
+      die Karte mindestens eine Anruf-Zeile hat; beim Wechsel der Karte springt der Filter auf „Alle“.
+   ⛔ Keine Regex-Literale in diesen Funktionen: die Prüfsuiten schneiden sie mit einem Zeichenketten-Zähler aus. */
+var _anrufAlleKarten={};
+function _anrufToggleAlle(id){
+  id=String(id||''); if(!id)return;
+  _anrufAlleKarten[id]=!_anrufAlleKarten[id];
+  if(typeof _anrufZeichnen==='function')_anrufZeichnen();
+}
+function _anrufErreicht(taskId,nr,name,rolle){
+  try{
+    const t=_wahlKarte(taskId); if(!t)return false;
+    const offene=_anrufErgOffeneWahlen(t,nr);
+    const ts=offene.length?String(offene[0].ts):''; // leer = jetzt (keine Wahl vermerkt)
+    return _anrufErgSpeichern(taskId,nr,name,rolle,'rueck','',ts);
+  }catch(err){console.warn('[v341] erreicht:',err);return false;}
+}
+var _bauNotizFilter='alle';
+var _bauNotizFilterTask='';
+function _bauNotizSetFilter(f){
+  _bauNotizFilter=(f==='anruf')?'anruf':'alle';
+  const t=(typeof currentTask==='function')?currentTask():null; if(!t)return;
+  const a=document.getElementById('bauNotizList'); if(a)a.innerHTML=renderNotizen(t.notizVerlauf||[]);
+  const b=document.getElementById('notizList'); if(b)b.innerHTML=renderNotizen(t.notizVerlauf||[]);
+}
+// „Gießler · 0172…: 3 Anrufe · 3 × nicht erreicht“ – gezählt werden die Anruf-Zeilen im Verlauf (Franks Angaben), wortgleich zum PC
+function _bauAnrufSumme(list){
+  const je={},reihe=[];
+  (list||[]).forEach(function(n){
+    const r=_anrufErgLesen(n&&n.text); if(!r)return;
+    const k=_wahlNorm(r.nr)||r.name;
+    if(!je[k]){je[k]={name:r.name,nr:r.nr,n:0,ok:0,nicht:0};reihe.push(je[k]);}
+    const z=je[k]; z.n++; if(r.erg.ok)z.ok++; else z.nicht++;
+  });
+  if(!reihe.length)return '';
+  let h='<div class="bau-anruf-summe" style="font-size:calc(13px * var(--m-scale,1));color:var(--text);background:var(--bg3);border-radius:10px;padding:8px 10px;margin:4px 0 8px;line-height:1.55;">';
+  reihe.forEach(function(z){
+    h+='<div><b>'+esc(z.name)+'</b> · '+esc(z.nr)+': '+z.n+(z.n===1?' Anruf':' Anrufe')
+      +(z.nicht?' · <span style="color:#A32D2D;">'+z.nicht+' × nicht erreicht</span>':'')
+      +(z.ok?' · <span style="color:#0F6E56;">'+z.ok+' × erreicht</span>':'')+'</div>';
+  });
+  return h+'</div>';
+}
+// Chip-Zeile „Alle · 📞 Anrufe“ über dem Verlauf (nur wenn die Karte Anruf-Zeilen hat)
+function _bauNotizChips(nurAnruf){
+  const st=function(an){return 'min-height:38px;padding:6px 14px;border-radius:19px;border:1px solid '+(an?'#1a6fc4':'var(--border)')+';background:'+(an?'#1a6fc4':'var(--bg2)')+';color:'+(an?'#fff':'var(--text)')+';font-size:calc(13.5px * var(--m-scale,1));font-weight:600;cursor:pointer;';};
+  return '<div class="bau-notiz-chips" style="display:flex;gap:8px;margin:0 0 8px;">'
+    +'<button type="button" class="bau-notiz-chip" data-chip="alle" onclick="_bauNotizSetFilter(\'alle\')" style="'+st(!nurAnruf)+'">Alle</button>'
+    +'<button type="button" class="bau-notiz-chip" data-chip="anruf" onclick="_bauNotizSetFilter(\'anruf\')" style="'+st(nurAnruf)+'">📞 Anrufe</button>'
+    +'</div>';
 }
 function _wahlLetzte(t,nr){
   const k=_wahlNorm(nr); if(!k)return '';
@@ -15013,11 +15082,18 @@ function _tagBearbeiten(idx){
 // ══ NOTIZEN (chronologisch) ══
 function renderNotizen(list){
   if(!list||!list.length)return '<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Einträge.</div>';
+  // v341: Filter „📞 Anrufe“ – nur wenn die Karte Anruf-Zeilen hat; der Original-Index i bleibt erhalten (✕ und Abhaken)
+  const _anr=typeof _anrufErgLesen==='function';
+  const hatAnruf=_anr&&list.some(function(n){return !!_anrufErgLesen(n&&n.text);});
+  if(typeof _bauNotizFilterTask!=='undefined'&&typeof currentTaskId!=='undefined'&&_bauNotizFilterTask!==currentTaskId){_bauNotizFilter='alle';_bauNotizFilterTask=currentTaskId;}
+  const nurAnruf=!!(hatAnruf&&typeof _bauNotizFilter!=='undefined'&&_bauNotizFilter==='anruf');
+  const roh=list.map((n,i)=>({n,i})).filter(x=>!nurAnruf||!!_anrufErgLesen(x.n&&x.n.text));
   // Offene Notizen zuerst (umgekehrt chron.), erledigte nach unten
-  const open=list.map((n,i)=>({n,i})).filter(x=>!x.n.done);
-  const done=list.map((n,i)=>({n,i})).filter(x=>!!x.n.done);
+  const open=roh.filter(x=>!x.n.done);
+  const done=roh.filter(x=>!!x.n.done);
   const sorted=[...open.slice().reverse(),...done.slice().reverse()];
-  return sorted.map(({n,i})=>{
+  const kopf=(hatAnruf&&typeof _bauNotizChips==='function')?(_bauNotizChips(nurAnruf)+(nurAnruf&&typeof _bauAnrufSumme==='function'?_bauAnrufSumme(list):'')):'';
+  return kopf+sorted.map(({n,i})=>{
     const isDone=!!n.done;
     // v108: Antippen der Notiz öffnet Lese-Popup; Erledigt-Kreis in hellem Blau (accent2, seit v107 ist accent dunkel)
     return '<div class="notiz-entry" style="'+(isDone?'opacity:.55;':'')+'">'
