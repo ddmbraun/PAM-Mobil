@@ -4919,7 +4919,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v366';
+const MOB_VERSION='v367';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10490,32 +10490,54 @@ function _anrufZeichnen(){
       :'background:var(--bg2);color:var(--text);border:1px solid var(--border);';
     const _es=(z&&z.t&&typeof _anrufErgStatus==='function')?_anrufErgStatus(z.t,e.nr):null; // v341
     const fertig=!!(_es&&_es.ok);
+    // v367: Zeit des Anrufs nur ausschreiben, wenn sie nicht ohnehin als „zuletzt gewählt“ darübersteht; die Notiz immer
+    const _zulT=(z&&typeof _wahlLetzte==='function')?String(_wahlLetzte(z.t,e.nr)||''):'';
+    const _rest=_es?[((!_es.zeit||(_zulT&&_zulT.indexOf(_es.zeit)>=0))?'':((_es.ok?'Anruf vom ':'zuletzt ')+_es.zeit)),(_es.notiz?'Notiz: '+_es.notiz:'')].filter(Boolean).join(' · '):'';
     return '<a class="anruf-feld'+(fertig?' anruf-fertig':'')+'" href="'+escAttr(_anrufTelHref(e.nr))+'"'+(z?' data-wahl-task="'+escAttr(z.id)+'" data-wahl-nr="'+escAttr(e.nr)+'"':'')+' onclick="event.stopPropagation()" '
       +'title="'+escAttr((e.markiert?'Anruf-Kontakt · ':'')+(ausMails?'aus Mails gelesen · ':'')+'wählen: '+e.nr)+'" '
       +'style="display:flex;align-items:center;gap:10px;min-height:46px;padding:7px 12px;margin-top:7px;border-radius:11px;text-decoration:none;'
       +stil+(ausMails?'border-style:dashed;':'')+(fertig?'opacity:.6;':'')+'">'
       +'<span style="font-size:17px;line-height:1;flex-shrink:0;">📞</span>'
-      +'<span style="min-width:0;">'
+      +'<span style="min-width:0;flex:1;">'
+      +'<span style="display:flex;align-items:center;gap:4px 8px;flex-wrap:wrap;">' // v367: Nummer und Schild in EINER Zeile – das Schild nimmt dem Namen darunter keine Breite
       +'<span style="display:block;font-size:calc(16px * var(--m-scale,1));font-weight:700;line-height:1.25;overflow-wrap:anywhere;">'+esc(e.nr)+'</span>'
+      +((z&&z.t&&typeof _anrufSchild==='function')?_anrufSchild(_es):'')
+      +'</span>'
       +((wer||ausMails)
         ?'<span style="display:block;font-size:calc(12.5px * var(--m-scale,1));line-height:1.3;opacity:.85;overflow-wrap:anywhere;">'
           +(ausMails?'✉ ':'')+esc(wer||'ohne Namen')+(ausMails?' · aus Mails, ungeprüft':'')+'</span>'
         :'')
       +((z&&typeof _wahlLetzte==='function'&&_wahlLetzte(z.t,e.nr))?'<span class="wahl-zuletzt" style="display:block;font-size:calc(12px * var(--m-scale,1));line-height:1.3;opacity:.8;margin-top:1px;">zuletzt gewählt '+esc(_wahlLetzte(z.t,e.nr))+'</span>':'')
-      +'</span></a>'
+      +(_rest?'<span class="anruf-erg-rest" style="display:block;font-size:calc(12px * var(--m-scale,1));line-height:1.3;opacity:.8;overflow-wrap:anywhere;">'+esc(_rest)+'</span>':'')
+      +'</span>'
+      +'</a>'
       +((z&&z.t&&typeof _anrufErgZeile==='function')?_anrufErgZeile(z,e):'');
   };
   el.innerHTML=liste.map(function(z){
     const n=_anrufNummern(z.t);
     const kopf=[z.board,z.status].filter(Boolean).map(function(x){return esc(x);}).join(' · ');
-    let h='<div style="background:var(--bg3);border-radius:12px;padding:11px;margin-bottom:9px;'+(z.nurPc?'opacity:.82;':'')+'">'
-      +'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.3;overflow-wrap:anywhere;">'+kopf+'</div>'
-      +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin-top:2px;overflow-wrap:anywhere;">'+esc(z.titel)+'</div>';
     // v341: sind Kontakte mit dem Haken „📞 Anruf“ markiert, stehen NUR die da (wie am PC seit b1083); die übrigen auf Tipp
     const _mk=n.liste.filter(function(e){return e.markiert;});
     const _nurMk=_mk.length>0&&_mk.length<n.liste.length;
     const _alle=!!(typeof _anrufAlleKarten!=='undefined'&&_anrufAlleKarten[String(z.id)]);
     const _sicht=(_nurMk&&!_alle)?_mk:n.liste;
+    // v367: EINE Termin-Zeile je Karte unter dem Titel – der Hinweis der neuesten „Termin vereinbart“-Zeile der sichtbaren Nummern (bis v366 als Text unter dem Wählfeld). Liest nur.
+    let _tOben=null;
+    _sicht.forEach(function(e){
+      const s=(z.t&&typeof _anrufErgStatus==='function')?_anrufErgStatus(z.t,e.nr):null;
+      if(s&&s.ok&&s.k==='termin'&&typeof _anrufTerminHinweisHtml==='function'&&(!_tOben||String(s.ts)>String(_tOben.ts)))_tOben={ts:s.ts,name:e.name,zeit:s.zeit||''};
+    });
+    let _tZeile='';
+    if(_tOben){
+      const _th=(typeof _anrufTerminHinweis==='function')?_anrufTerminHinweis(z.t,_tOben.ts):null;
+      _tZeile='<div class="anruf-terminzeile" style="margin-top:7px;padding:3px 9px;background:var(--bg2);border-left:3px solid '+((_th&&_th.art==='datum')?'#1a6fc4':'#BA7517')+';font-size:calc(13px * var(--m-scale,1));line-height:1.4;color:var(--text);overflow-wrap:anywhere;">📅 '
+        +_anrufTerminHinweisHtml(z.t,_tOben.ts,true)
+        +'<span style="color:var(--text2);"> · Anruf vom '+esc(_tOben.zeit)+(_tOben.name?' · '+esc(_tOben.name):'')+'</span></div>';
+    }
+    let h='<div style="background:var(--bg3);border-radius:12px;padding:11px;margin-bottom:9px;'+(z.nurPc?'opacity:.82;':'')+'">'
+      +'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.3;overflow-wrap:anywhere;">'+kopf+'</div>'
+      +'<div style="font-size:calc(16px * var(--m-scale,1));color:var(--text);font-weight:600;line-height:1.35;margin-top:2px;overflow-wrap:anywhere;">'+esc(z.titel)+'</div>'
+      +_tZeile;
     if(n.liste.length){
       h+=_sicht.map(function(e){return pille(e,n.quelle,z);}).join('');
       if(_nurMk)h+='<button type="button" class="anruf-mehr" onclick="_anrufToggleAlle(\''+_jsa(z.id)+'\')" title="Die übrigen Kontakte dieser Karte (ohne Haken 📞 Anruf) ein- oder ausblenden" style="display:block;width:100%;margin-top:7px;min-height:42px;padding:8px;border:none;background:none;color:#1a6fc4;font-size:calc(14px * var(--m-scale,1));text-align:left;cursor:pointer;">'+(_alle?'weniger anzeigen':'＋ '+(n.liste.length-_mk.length)+' weitere Kontakte anzeigen')+'</button>';
@@ -10658,9 +10680,10 @@ function _anrufErgListe(t,nr){
 function _anrufErgStatus(t,nr){
   const l=_anrufErgListe(t,nr); if(!l.length)return null;
   const neu=l[0],kurz=_wahlZeit(neu.ts,true);
-  if(neu.erg.ok)return {ok:true,k:neu.erg.k,ts:neu.ts,text:'✓ '+neu.erg.z+' · Anruf vom '+kurz+(neu.notiz?' · '+neu.notiz:'')};
+  // v367: kurz/zeit/notiz = dieselbe Aussage in Teilen, für das Schild im Wählfeld (text bleibt, wie er war) – wie PC b1121
+  if(neu.erg.ok)return {ok:true,k:neu.erg.k,ts:neu.ts,text:'✓ '+neu.erg.z+' · Anruf vom '+kurz+(neu.notiz?' · '+neu.notiz:''),kurz:'✓ '+neu.erg.z,zeit:kurz,notiz:neu.notiz||''};
   let z=0; for(let i=0;i<l.length&&!l[i].erg.ok;i++)z++;
-  return {ok:false,text:'✗ '+z+' × nicht erreicht · zuletzt '+kurz};
+  return {ok:false,text:'✗ '+z+' × nicht erreicht · zuletzt '+kurz,kurz:'✗ '+z+' × nicht erreicht',zeit:kurz,notiz:''};
 }
 // v340: Gerät der gewählten Wahl (wahlTs) – ohne wahlTs die neueste Wahl dieser Nummer
 function _anrufErgGeraet(t,nr,wahlTs){
@@ -10668,19 +10691,25 @@ function _anrufErgGeraet(t,nr,wahlTs){
   const w=_wahlenListe(t).find(function(x){return _wahlNorm(x.nr)===k&&(!wahlTs||String(x.ts)===String(wahlTs));});
   return (w&&w.von)?w.von:'–';
 }
-// Zeile unter einer Nummer in der Anrufliste: Status (falls vorhanden) + Knopf „✎ Ergebnis“
+// Zeile unter einer Nummer in der Anrufliste: die Knöpfe. v367: der Stand steht als Schild IM Wählfeld (_anrufSchild), der Termin-Hinweis einmal oben in der Karte;
+// die Knöpfe teilen sich die Breite gleich auf (flex:1), statt je nach Textlänge umzubrechen.
 function _anrufErgZeile(z,e){
   const st=_anrufErgStatus(z.t,e.nr);
-  return '<div class="anruf-erg-zeile" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:3px 2px 0;">'
-    +(st?'<span class="anruf-erg" style="font-size:calc(13px * var(--m-scale,1));font-weight:700;line-height:1.3;color:'+(st.ok?'#0F6E56':'#A32D2D')+';overflow-wrap:anywhere;">'+esc(st.text)+'</span>':'')
-    +((st&&st.ok&&st.k==='termin'&&typeof _anrufTerminHinweisHtml==='function')?_anrufTerminHinweisHtml(z.t,st.ts):'')
+  return '<div class="anruf-erg-zeile" style="display:flex;align-items:stretch;gap:6px;flex-wrap:wrap;margin:4px 0 0;">'
     +'<button type="button" class="anruf-erg-btn" onclick="_anrufErgDialog(\''+_jsa(z.id)+'\',\''+_jsa(e.nr)+'\',\''+_jsa(e.name)+'\',\''+_jsa(e.rolle)+'\')" '
-    +'style="min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));cursor:pointer;">✎ Ergebnis</button>'
+    +'style="flex:1;min-height:38px;padding:6px 8px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));white-space:nowrap;cursor:pointer;">✎ Ergebnis</button>'
     +((st&&st.ok)?'':'<button type="button" class="anruf-erreicht-btn" onclick="_anrufErreicht(\''+_jsa(z.id)+'\',\''+_jsa(e.nr)+'\',\''+_jsa(e.name)+'\',\''+_jsa(e.rolle)+'\')" title="Du hast diese Person erreicht: trägt „erreicht, kein Termin“ mit der Uhrzeit deines Anrufs ins Bautagebuch ein" '
-    +'style="min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid #0F6E56;background:var(--bg2);color:#0F6E56;font-size:calc(13px * var(--m-scale,1));font-weight:600;cursor:pointer;">✓ erreicht</button>')
+    +'style="flex:1;min-height:38px;padding:6px 8px;border-radius:9px;border:1px solid #0F6E56;background:var(--bg2);color:#0F6E56;font-size:calc(13px * var(--m-scale,1));font-weight:600;white-space:nowrap;cursor:pointer;">✓ erreicht</button>')
     +((typeof _wahlHandDialog==='function')?'<button type="button" class="wahl-hand-btn" onclick="_wahlHandDialog(\''+_jsa(z.id)+'\',\''+_jsa(e.nr)+'\',\''+_jsa(e.name)+'\',\''+_jsa(e.rolle)+'\')" title="Du hast diese Nummer direkt im Telefon gewählt, nicht über PAM: trägt die Wahl mit Datum und Uhrzeit nach" '
-    +'style="min-height:38px;padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));cursor:pointer;">＋ gewählt</button>':'')
+    +'style="flex:1;min-height:38px;padding:6px 8px;border-radius:9px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));white-space:nowrap;cursor:pointer;">＋ gewählt</button>':'')
     +'</div>';
+}
+/* v367: Schild mit dem Stand, im Wählfeld rechts neben der Nummer. Eigener Grund (var(--bg2)), damit es auch im blauen Feld des Anruf-Kontakts lesbar ist.
+   Der Stand hängt an Zeichen und Text (✓ / ✗ / „noch offen“), nicht an Rot/Grün. */
+function _anrufSchild(st){
+  const grund='margin-left:auto;flex-shrink:0;font-size:calc(11.5px * var(--m-scale,1));font-weight:700;line-height:1.3;padding:2px 7px;border-radius:6px;white-space:nowrap;';
+  if(!st)return '<span class="anruf-offen" style="'+grund+'background:var(--bg2);color:var(--text);border:1px solid var(--text2);">noch offen</span>';
+  return '<span class="anruf-erg" style="'+grund+(st.ok?'background:var(--bg2);color:var(--text2);border:1px solid var(--border);':'background:#FCEBEB;color:#A32D2D;border:1px solid #F09595;')+'">'+esc(st.kurz||st.text)+'</span>';
 }
 /* v340: Die Uhrzeit der Anruf-Zeile ist die Zeit der WAHL (Franks Wunsch), nicht die des Eintragens – wie am PC (b1080).
    ⛔ „Verbraucht“ ist eine Wahl, zu der es schon eine Anruf-Zeile mit GENAU ihrer Zeit und Nummer gibt: fünf Wahlen -> fünf Zeilen.
@@ -10951,8 +10980,10 @@ function _anrufTerminHinweis(t,anrufTs){
   if(ohne)return {art:'ohne',text:'→ Termin noch ohne Datum'};
   return {art:'fehlt',text:'→ noch kein Termin in der Karte'};
 }
-function _anrufTerminHinweisHtml(t,anrufTs){
+// v367: oben=true = für die Termin-Zeile oben in der Karte der Anrufliste – ohne Pfeil, Farbe vom Text der Zeile
+function _anrufTerminHinweisHtml(t,anrufTs,oben){
   const h=_anrufTerminHinweis(t,anrufTs); if(!h)return '';
+  if(oben)return '<span class="anruf-terminhinweis" data-art="'+h.art+'" style="font-weight:700;color:var(--text);overflow-wrap:anywhere;">'+esc(h.text.split('→ ').join(''))+'</span>';
   return '<span class="anruf-terminhinweis" data-art="'+h.art+'" style="flex-basis:100%;font-size:calc(13px * var(--m-scale,1));font-weight:700;line-height:1.3;color:'+(h.art==='datum'?'var(--text)':'#854F0B')+';overflow-wrap:anywhere;">'+esc(h.text)+'</span>';
 }
 // Datum (JJJJ-MM-TT) und Uhrzeit (HH:MM) aus der Rückfrage → Date in Ortszeit, oder null
