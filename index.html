@@ -4933,7 +4933,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v369';
+const MOB_VERSION='v370';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9525,7 +9525,7 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
         _wpMobRenderFotos(bericht,grid);
 
         let ok=0,fail=0;
-        _fotoUploadInFlight++; // v301: Sperre wie v143 – der Abgleich wartet
+        _fotoUploadInFlight++;if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370 // v301: Sperre wie v143 – der Abgleich wartet
         try{
         for(const {file,fo} of _wpBehalten){ // v301: nacheinander (v78-Regel), nicht mehr alle gleichzeitig
           const live=_wpFotoLive(_wpTaskId,bericht,fo); // v301: Ergebnis IMMER an den Live-Eintrag
@@ -9556,7 +9556,7 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
           }
         }
         }finally{
-          _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);
+          _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370
           _fotoPendUpdate();
         }
         if(fail===0)toast('✓ '+ok+' Foto'+(ok!==1?'s':'')+' in Drive gespeichert','success',2500);
@@ -9744,7 +9744,7 @@ async function _mobRetryPendingUploads(opts){
     }
     return {gesamt:0,ok:0,geheilt:0,woanders:0,fehler:0,ohneOrdner};
   }
-  _mobRetryUploadsBusy=true;
+  _mobRetryUploadsBusy=true;if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370
   const b={gesamt:pending.length,ok:0,geheilt:0,woanders:0,fehler:0,ohneOrdner};
   try{
     _fotoPendUpdate();
@@ -9778,7 +9778,7 @@ async function _mobRetryPendingUploads(opts){
     if(teile.length)toast(teile.join(' · '),b.fehler?'info':'success',4000);
     if(b.woanders)toast('📱 '+b.woanders+' Foto'+(b.woanders!==1?'s':'')+' weder hier noch in Drive gefunden – auf dem Aufnahme-Gerät PAM öffnen, oder den Eintrag über die Leuchte entfernen','info',7000);
     if(b.ohneOrdner)toast('❗ '+b.ohneOrdner+' Foto'+(b.ohneOrdner!==1?'s':'')+' ohne Ziel-Ordner (Drive-Ordner im Task oder Standard-Fotoordner fehlt)','error',6000);
-  }finally{_mobRetryUploadsBusy=false;_fotoPendUpdate();}
+  }finally{_mobRetryUploadsBusy=false;if(typeof _fotoWakeSync==='function')_fotoWakeSync();_fotoPendUpdate();} // v370
   return b;
 }
 // v148: Datei in Drive wiederfinden und den Eintrag daran hängen. Rettet die Sackgasse
@@ -16723,7 +16723,7 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   const _taskId=t.id;
   // v143: Upload-Sperre – solange Fotos übernommen/hochgeladen werden, darf der Poll
   // den Remote-Stand NICHT über die Boards laden (Ursache Feld-Fotoverlust 30.07.).
-  _fotoUploadInFlight++;
+  _fotoUploadInFlight++;if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370
   try{
 
   // ── Schritt 1 (v78): Fotos SOFORT anzeigen (ObjectURL), DANN verkleinern + sichern ──
@@ -16948,7 +16948,7 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   if(success&&failed)toast('⚠ '+success+' hochgeladen, '+failed+' lokal gespeichert','info');
   else if(!success&&failed)toast('⚠ Upload fehlgeschlagen – Foto lokal gespeichert','info');
   }finally{
-    _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);
+    _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370
     if(_fotoUploadInFlight===0&&_fotoSaveAusstehend){_fotoSaveAusstehend=false;try{forceSave();}catch(e){console.warn('[uploadFoto] Nachspeichern:',e);}} // v368 (B)
     _fotoPendUpdate();
   }
@@ -20850,7 +20850,7 @@ async function _submitQuickAdd(){
   // und hatte das Poll-Loch noch: solange hier gearbeitet wird, darf der Poll die Boards
   // nicht ersetzen; Ergebnisse gehen an den LIVE-Eintrag (_fotoLive); Fotos werden IMMER
   // zuerst lokal verankert (Eintrag + Gerätespeicher inkl. taskId + Save), erst DANN Uploads.
-  _fotoUploadInFlight++;
+  _fotoUploadInFlight++;if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370
   try{
   // v62: sofort speichern + zurück zur Liste (kein Auto-Öffnen mehr)
   forceSave();
@@ -20964,7 +20964,7 @@ async function _submitQuickAdd(){
   if(_failCount)toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
   else toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen','success');
   }finally{
-    _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);
+    _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370
     _fotoPendUpdate();
   }
 }
@@ -21423,6 +21423,12 @@ async function _fotoWakeProbe(){
   }catch(e){_fotoWakeStatusSetzen('Probe verweigert: '+((e&&e.name)||'')+' '+((e&&e.message)||''));}
 }
 function _fotoWakeAktiv(){return !!_fotoWakeLock&&typeof _fotoWakeLock.release==='function';}
+/* v370: Die Sperre folgt dem Upload selbst. Bis v369 hing sie an der Warnleuchte, und die prüft nebenbei,
+   ob die Bilddaten des Fotos schon im Gerätespeicher liegen – beim frischen Foto im Moment der Prüfung
+   noch nicht, bei der nächsten Prüfung war das Foto längst oben. Ergebnis am iPhone 06.10. (v369-Feld):
+   Probe „erhalten", beim Foto aber „noch nicht angefordert". Jetzt: jede Stelle, die einen Upload beginnt
+   oder beendet (drei Hochlade-Wege + das Nachladen über die Warnleuchte), ruft _fotoWakeSync(). */
+function _fotoWakeSync(){try{_fotoWakeSetzen(_fotoUploadInFlight>0||_mobRetryUploadsBusy);}catch(e){}}
 function _fotoWakeSetzen(an){
   _fotoWakeWunsch=!!an;
   try{
@@ -21457,8 +21463,7 @@ function _fotoPendUpdate(){
     const list=_fotoPendList();
     const n=list.length;
     const off=navigator.onLine===false;
-    // v368 (C): wach nur, solange HIER Fotos offen sind UND gerade hochgeladen wird
-    try{_fotoWakeSetzen(n>0&&!off&&(_fotoUploadInFlight>0||_mobRetryUploadsBusy)&&list.some(x=>_fotoIstHier(x.fo)));}catch(e){}
+    // v370: die Wachsperre steuert nicht mehr die Warnleuchte, sondern der Upload selbst (_fotoWakeSync)
     if(n===0){
       if(_fotoPendLastCount>0){
         // Übergang „offen → alles durch": kurz grün bestätigen, dann ausblenden
