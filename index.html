@@ -4826,6 +4826,12 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
              aufsuchte. Diese Ablage wächst als einzige unbegrenzt – „Zwischenspeicher
              leeren" lässt sie ausdrücklich stehen (zu Recht: es sind die Dateien fürs
              Dach). Deshalb hier Übersicht und ein Sammel-Freigeben. -->
+        <!-- v369: Diagnose für die Wachsperre (v368 C) – am iPhone am 06.10. nicht nachgewiesen -->
+        <div class="field"><label>Bildschirm wach halten (beim Foto-Upload)</label>
+          <div id="settWake" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--text2);line-height:1.5">–</div>
+          <button class="inline-btn" style="width:100%;min-height:44px;margin-top:6px;font-size:14px;" onclick="_fotoWakeProbe()">🔦 Jetzt 10 Sekunden testen</button>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;">Steht hier „verweigert“ oder „nicht unterstützt“, gibt das Gerät die Sperre nicht – dann diesen Text Claude zeigen.</div>
+        </div>
         <div class="field"><label>Offline mitgenommen</label>
           <div id="settOffline" style="padding:10px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2);line-height:1.5">wird ermittelt…</div>
           <button class="inline-btn" style="width:100%;min-height:44px;margin-top:6px;font-size:14px;" onclick="_offlineAllesFreigeben()">📴 Alle Offline-Kopien freigeben</button>
@@ -4927,7 +4933,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v368';
+const MOB_VERSION='v369';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -16804,9 +16810,9 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   /* v368 (B): Der Upload EINES Fotos als eigener Baustein – unverändert der Rumpf der bisherigen
      Schleife (v300). Zwei Wege rufen ihn: sofort je Foto (Schalter „ohne Nachfrage" an) oder wie
      bisher nacheinander nach der Entscheidung (Schalter aus). */
-  let success=0,failed=0,lastErr='',_zaehlBasis=fotoObjs.length;
+  let success=0,failed=0,lastErr='',_zaehlBasis=fotoObjs.length,_fh=0; // v369: _fh zählt das Hochladen, _fi das Übernehmen
   const _einsHoch=async({file,fo})=>{
-    _fi++;setSaveInd('saving','Foto '+_fi+'/'+_zaehlBasis+' hochladen…');
+    _fh++;setSaveInd('saving','Foto '+_fh+'/'+_zaehlBasis+' hochladen…'); // v369: eigener Zähler – Frank sah „22/17“, weil Übernahme und Upload gleichzeitig an _fi drehten
     try{
       /* v300 (C): Der Drive-Name wird EINMAL festgelegt und gemerkt – an der Karte und im
          Gerätespeicher. Geht die Rückmeldung verloren, sucht das Nachladen genau diese Datei
@@ -16908,7 +16914,6 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   // Vorher: alle parallel ohne Anzeige (Speicherdruck bei vielen großen Dateien).
   // v143: Schreibziel ist IMMER der LIVE-Eintrag (_fotoLive) – der Zwischen-Save
   // kann die Task-/Foto-Referenzen durch den Konflikt-Merge ersetzt haben.
-  _fi=0;
   if(_sofort){ try{await _kette;}catch(e){console.warn('[uploadFoto] Kette:',e);} }
   else if(_canUpload&&folderId)for(const o of _behalten){ await _einsHoch(o); }
 
@@ -18943,10 +18948,26 @@ const DEFAULT_FOTO_FOLDER_KEY='ptpm_default_foto_folder';
    Bild wirft Frank danach über ✕ an der Kachel weg, weitere Fotos über den Kamera-Knopf.
    Aus (Standard) = der Weg von v191 bleibt unverändert. */
 const FOTO_OHNE_FRAGE_KEY='ptpm_foto_ohne_frage';
-function _fotoOhneFrage(){try{return localStorage.getItem(FOTO_OHNE_FRAGE_KEY)==='1';}catch(e){return false;}}
+/* v369: Sitzungs-Merker. Am 06.10. meldete das iPhone „Gerätespeicher voll" (Browser-Speicher, Notsicherung
+   3,5 MB) – ein verweigertes Schreiben hätte der Setzer bis v368 verschluckt und trotzdem „gemerkt" gemeldet.
+   Jetzt: erst schreiben, dann zurücklesen; klappt es nicht, gilt der Schalter wenigstens bis zum nächsten
+   App-Start, und die Meldung sagt das. `var`, nicht `let`: wird auch vor dieser Zeile schon gelesen. */
+var _fotoOhneFrageMem=null;
+function _fotoOhneFrage(){
+  if(_fotoOhneFrageMem===true||_fotoOhneFrageMem===false)return _fotoOhneFrageMem;
+  try{return localStorage.getItem(FOTO_OHNE_FRAGE_KEY)==='1';}catch(e){return false;}
+}
 function _fotoOhneFrageSetzen(an){
-  try{localStorage.setItem(FOTO_OHNE_FRAGE_KEY,an?'1':'0');}catch(e){}
-  toast(an?'📷 Fotos werden ohne Nachfrage behalten':'📷 Nach jedem Foto wird wieder gefragt','info',3000);
+  an=!!an;
+  let gespeichert=false;
+  try{
+    localStorage.setItem(FOTO_OHNE_FRAGE_KEY,an?'1':'0');
+    gespeichert=(localStorage.getItem(FOTO_OHNE_FRAGE_KEY)===(an?'1':'0'));
+  }catch(e){gespeichert=false;}
+  _fotoOhneFrageMem=an;
+  if(gespeichert)toast(an?'📷 Fotos werden ohne Nachfrage behalten':'📷 Nach jedem Foto wird wieder gefragt','info',3000);
+  else toast('⚠ Einstellung nur bis zum nächsten App-Start gemerkt – der Browser-Speicher nimmt nichts mehr an (Notsicherung zu groß)','error',8000);
+  return gespeichert;
 }
 const QUICK_PARENT_KEY='ptpm_quicknote_folder';
 // v62: temporär per 📍-Button erfasster Standort (vor dem Anlegen der Notiz)
@@ -21034,6 +21055,7 @@ function openSettings(){
   _loadQuickBoardSelect();
   try{const el=document.getElementById('defaultFotoFolderInput');if(el)el.value=localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'';}catch(e){}
   try{const _c=document.getElementById('fotoOhneFrageChk');if(_c)_c.checked=_fotoOhneFrage();}catch(e){} // v368 (A)
+  try{const _w=document.getElementById('settWake');if(_w)_w.textContent=_fotoWakeDiagnoseText();}catch(e){} // v369
   // Versionsnummer aus Service-Worker-Cache-Namen auslesen (z.B. "pam-mobil-v9" → "v9")
   (async()=>{
     try{
@@ -21377,26 +21399,53 @@ function _fotoIstHier(fo){
    bei der Rückkehr holt visibilitychange sie zurück, falls noch Fotos laufen. Geräte ohne
    Wachsperre (alte Browser) merken nichts: jeder Aufruf ist abgesichert. */
 let _fotoWakeLock=null,_fotoWakeWunsch=false;
+/* v369: Diagnose. Am 06.10. zeigte das Band am iPhone 16 Pro Max (iOS 26) nie „Bildschirm bleibt an" –
+   warum, war von außen nicht zu sehen. Jeder Schritt der Sperre hinterlässt jetzt einen Stand, der in den
+   Einstellungen steht (Feld „Bildschirm wach halten"), dazu eine Probe per Knopf. Erst messen, dann reparieren. */
+let _fotoWakeStatus='noch nicht angefordert';
+function _fotoWakeStatusSetzen(s){
+  try{_fotoWakeStatus=s+' ('+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+')';}catch(e){_fotoWakeStatus=s;}
+  try{const el=document.getElementById('settWake');if(el)el.textContent=_fotoWakeDiagnoseText();}catch(e){}
+}
+function _fotoWakeDiagnoseText(){
+  const api=!!(navigator.wakeLock&&typeof navigator.wakeLock.request==='function');
+  let modus='Browser-Tab';
+  try{if(navigator.standalone===true||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches))modus='Startbildschirm-App';}catch(e){}
+  let sichtbar='?';try{sichtbar=document.visibilityState;}catch(e){}
+  return 'Unterstützt: '+(api?'ja':'nein')+' · Modus: '+modus+' · Sichtbar: '+sichtbar+' · Zuletzt: '+_fotoWakeStatus+(_fotoWakeAktiv()?' · JETZT AKTIV':'');
+}
+async function _fotoWakeProbe(){
+  if(!(navigator.wakeLock&&typeof navigator.wakeLock.request==='function')){_fotoWakeStatusSetzen('Probe: nicht unterstützt');return;}
+  try{
+    const l=await navigator.wakeLock.request('screen');
+    _fotoWakeStatusSetzen('Probe: erhalten – 10 s aktiv');
+    setTimeout(()=>{try{l.release();}catch(e){}_fotoWakeStatusSetzen('Probe: nach 10 s losgelassen');},10000);
+  }catch(e){_fotoWakeStatusSetzen('Probe verweigert: '+((e&&e.name)||'')+' '+((e&&e.message)||''));}
+}
 function _fotoWakeAktiv(){return !!_fotoWakeLock&&typeof _fotoWakeLock.release==='function';}
 function _fotoWakeSetzen(an){
   _fotoWakeWunsch=!!an;
   try{
-    if(!navigator.wakeLock||typeof navigator.wakeLock.request!=='function')return;
+    if(!navigator.wakeLock||typeof navigator.wakeLock.request!=='function'){if(an)_fotoWakeStatusSetzen('nicht unterstützt');return;}
     if(an){
-      if(_fotoWakeLock||document.visibilityState!=='visible')return;
+      if(_fotoWakeLock)return;
+      if(document.visibilityState!=='visible'){_fotoWakeStatusSetzen('App nicht sichtbar – nicht angefordert');return;}
+      _fotoWakeStatusSetzen('angefordert');
       const p=navigator.wakeLock.request('screen');
       _fotoWakeLock=p; // Platzhalter gegen eine zweite Anforderung, solange die erste läuft
       p.then(l=>{
         _fotoWakeLock=l;
-        try{l.addEventListener('release',()=>{if(_fotoWakeLock===l)_fotoWakeLock=null;});}catch(e){}
+        _fotoWakeStatusSetzen('aktiv');
+        try{l.addEventListener('release',()=>{if(_fotoWakeLock===l){_fotoWakeLock=null;_fotoWakeStatusSetzen('vom System losgelassen');}});}catch(e){}
         if(!_fotoWakeWunsch){try{l.release();}catch(e){}}
-      }).catch(()=>{_fotoWakeLock=null;});
+      }).catch(e=>{_fotoWakeLock=null;_fotoWakeStatusSetzen('verweigert: '+((e&&e.name)||'')+' '+((e&&e.message)||''));});
     }else if(_fotoWakeLock){
       const l=_fotoWakeLock;_fotoWakeLock=null;
       if(typeof l.then==='function')l.then(x=>{try{x.release();}catch(e){}}).catch(()=>{});
       else{try{l.release();}catch(e){}}
+      _fotoWakeStatusSetzen('losgelassen (Fotos fertig)');
     }
-  }catch(e){}
+  }catch(e){_fotoWakeStatusSetzen('Fehler: '+((e&&e.message)||e));}
 }
 document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'&&_fotoWakeWunsch&&!_fotoWakeLock)_fotoWakeSetzen(true);
