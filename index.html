@@ -4852,6 +4852,14 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
           <input type="url" id="defaultFotoFolderInput" placeholder="https://drive.google.com/drive/folders/…" style="width:100%;box-sizing:border-box;padding:10px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;" autocomplete="off" oninput="_saveDefaultFotoFolder()">
           <div style="font-size:12px;color:var(--text2);margin-top:4px;">Fallback wenn im Task kein Foto-Ordner hinterlegt ist.</div>
         </div>
+        <!-- v368 (A): Schalter – kein Behalten-Dialog nach der Aufnahme -->
+        <div class="field"><label>📷 Nach dem Foto</label>
+          <label style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--bg3);border-radius:8px;font-size:14px;color:var(--text);min-height:44px;cursor:pointer;">
+            <input type="checkbox" id="fotoOhneFrageChk" style="width:22px;height:22px;flex:none;" onchange="_fotoOhneFrageSetzen(this.checked)">
+            <span>Ohne Nachfrage behalten und sofort hochladen</span>
+          </label>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px;">Aus: nach jeder Aufnahme die Frage Verwerfen / Behalten. An: kein Dialog – das Bild hängt sofort an der Karte und geht hoch. Misslungenes Bild: ✕ an der Kachel. Weiteres Foto: Kamera-Knopf.</div>
+        </div>
       </div>
     </div>
     <div class="sect open">
@@ -4919,7 +4927,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v367';
+const MOB_VERSION='v368';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11923,6 +11931,14 @@ function _showSchnellFotoPreview(fo, t, opt){
   if(!liste.length){if(_fertig)_fertig();return versprechen;}
   // Alle Fotos dieses Stapels starten unentschieden.
   liste.forEach(f=>{if(f&&!f._entscheidung)f._entscheidung='';});
+  /* v368 (A): Schalter „ohne Nachfrage" an → kein Dialog. Alle Bilder des Stapels gelten als
+     behalten, das Versprechen ist sofort erfüllt – uploadFoto, Wartungsprotokoll und Dachplan-Pin
+     laufen damit ohne Halt weiter. Gilt für alle drei Aufrufer gleich (ein Dialog, eine Regel). */
+  if(typeof _fotoOhneFrage==='function'&&_fotoOhneFrage()&&!opt.frageImmer){
+    liste.forEach(f=>{if(f&&!f._entscheidung)f._entscheidung='behalten';});
+    if(_fertig){_fertig();_fertig=null;}
+    return versprechen;
+  }
   let idx=0;
   let prev=document.getElementById('schnellFotoPreview');
   if(prev)prev.remove();
@@ -16785,64 +16801,12 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   // v174: Verkleinern (v78) + GPS-Auffüllung (v145) + Warnung (v146) wohnen jetzt im
   // gemeinsamen Baustein _fotoUebernahme – dieselbe Behandlung bekommen damit auch
   // Schnellnotiz, Wartungs-Foto (v173), Dachplan-Pins und Wartungsprotokoll.
-  let _fi=0;
-  for(const o of fotoObjs){
-    /* ⛔ v191: Ein bereits verworfenes Foto wird gar nicht erst gesichert. Sonst legte
-       _mobPhotoSave hier einen frischen Geräte-Eintrag OHNE Erledigt-Vermerk an — und
-       die Waisen-Rettung hängte das eben verworfene Bild später wieder an den Task.
-       Genau dieser Ablauf war einer der zwei Wege, über die ein Verwerfen bis v190
-       rückgängig gemacht wurde. */
-    if(o.fo._entscheidung==='verworfen')continue;
-    _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' wird übernommen…');
-    const u=await _fotoUebernahme(o.file);
-    o.file=u.file;
-    o.fo.size=o.file.size||o.fo.size;
-    o.fo.mimeType=o.file.type||o.fo.mimeType;
-    if(o.file.name)o.fo.name=o.file.name;
-    try{
-      const dataUrl=u.dataUrl||await _fileToDataUrl(o.file);
-      // v143: taskId mitspeichern – verwaiste Fotos (App-Kill vor dem Task-Save)
-      // können damit beim nächsten Start wieder an ihren Task gehängt werden.
-      // v300: dazu Aufnahmezeit, Größe und Leistung – vor dem Upload wird nicht mehr nach Drive
-      // gespeichert, nach einem App-Absturz ist das hier die einzige Quelle der Waisen-Rettung.
-      await _mobPhotoSave(o.fo.localKey,dataUrl,{taskId:_taskId,name:o.fo.name||'',fotoTs:o.fo.ts||'',size:o.file.size||0,tuLeistung:o.fo.tuLeistung||null});
-      // v191: Wurde WÄHREND des Verkleinerns verworfen, den Eintrag gleich wieder weg.
-      if(o.fo._entscheidung==='verworfen'){try{await _mobPhotoDelete(o.fo.localKey);}catch(e2){}}
-    }catch(e){console.warn('[uploadFoto] localKey save:',e);}
-  }
-
-  // ── Schritt 1b (v143): Zwischenstand SOFORT sichern, VOR den Uploads ──────
-  // App-Kill während der Kamera (Samsung-Speicherdruck) kostete vorher den ganzen Stapel.
-  /* ⛔ v300 (Befund 22.09.2026, Freigabe Frank „bau ABC"): Hier wurde zusätzlich die GANZE
-     Datendatei nach Drive gespeichert (2,4 MB), und das Foto wartete darauf – gemessen lagen zwei
-     Drittel der Wartezeit VOR dem Senden. Jetzt geht das Foto zuerst, die Datendatei einmal danach
-     (forceSave unten). Gesichert ist das Foto trotzdem schon hier: im Gerätespeicher samt Karte,
-     Aufnahmezeit, Größe und Leistung (_mobPhotoSave oben) und im lokalen Backup. Stirbt die App,
-     hängt die Waisen-Rettung es beim nächsten Start vollständig wieder an. */
-  _saveMobileBackup();
-  clearTimeout(saveTimer); // v300: anstehendes Speichern nicht neben das Foto legen – forceSave unten nimmt es mit
-
-  /* ⛔ v191 — DAS TOR. Ab hier geht es nach Drive, und ab hier erst.
-     Bis v190 lief der Upload los, während der Dialog noch offen stand: „Behalten"
-     startete nichts, „Verwerfen" kam zu spät. Jetzt wartet der Upload auf die
-     Entscheidung. Das Bild ist zu diesem Zeitpunkt bereits im Gerät gesichert (v300:
-     mit allem, was die Waisen-Rettung braucht) — es kann also nichts verloren gehen,
-     während wir warten. Wer die App weglegt, ohne zu entscheiden, dessen Foto gilt als
-     behalten und wird von der Warnleuchte nachgeladen: im Zweifel behalten. */
-  try{await _entscheidung;}catch(e){console.warn('[uploadFoto] Entscheidung:',e);}
-  const _behalten=fotoObjs.filter(o=>o.fo._entscheidung!=='verworfen');
-  if(_behalten.length<fotoObjs.length){
-    const _weg=fotoObjs.length-_behalten.length;
-    toast('🗑 '+_weg+' Foto'+(_weg!==1?'s':'')+' verworfen – nicht hochgeladen','info',3000);
-  }
-
-  // ── Schritt 2 (v78): Upload sequenziell mit Fortschrittsanzeige ────────────
-  // Vorher: alle parallel ohne Anzeige (Speicherdruck bei vielen großen Dateien).
-  // v143: Schreibziel ist IMMER der LIVE-Eintrag (_fotoLive) – der Zwischen-Save
-  // kann die Task-/Foto-Referenzen durch den Konflikt-Merge ersetzt haben.
-  let success=0,failed=0,lastErr='';_fi=0;
-  if(_canUpload&&folderId)for(const {file,fo} of _behalten){
-    _fi++;setSaveInd('saving','Foto '+_fi+'/'+_behalten.length+' hochladen…');
+  /* v368 (B): Der Upload EINES Fotos als eigener Baustein – unverändert der Rumpf der bisherigen
+     Schleife (v300). Zwei Wege rufen ihn: sofort je Foto (Schalter „ohne Nachfrage" an) oder wie
+     bisher nacheinander nach der Entscheidung (Schalter aus). */
+  let success=0,failed=0,lastErr='',_zaehlBasis=fotoObjs.length;
+  const _einsHoch=async({file,fo})=>{
+    _fi++;setSaveInd('saving','Foto '+_fi+'/'+_zaehlBasis+' hochladen…');
     try{
       /* v300 (C): Der Drive-Name wird EINMAL festgelegt und gemerkt – an der Karte und im
          Gerätespeicher. Geht die Rückmeldung verloren, sucht das Nachladen genau diese Datei
@@ -16882,7 +16846,71 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
       console.error('Foto-Upload-Fehler:',e);
     }
     _fotoPendUpdate();
+  };
+  /* v368 (B): Schalter an → jedes Foto geht los, sobald es verkleinert und im Gerät gesichert ist,
+     während das nächste noch verkleinert wird. Eine Kette, nie zwei Uploads gleichzeitig (v78-Regel). */
+  const _sofort=(typeof _fotoOhneFrage==='function')&&_fotoOhneFrage()&&_canUpload&&!!folderId;
+  let _kette=Promise.resolve();
+  let _fi=0;
+  for(const o of fotoObjs){
+    /* ⛔ v191: Ein bereits verworfenes Foto wird gar nicht erst gesichert. Sonst legte
+       _mobPhotoSave hier einen frischen Geräte-Eintrag OHNE Erledigt-Vermerk an — und
+       die Waisen-Rettung hängte das eben verworfene Bild später wieder an den Task.
+       Genau dieser Ablauf war einer der zwei Wege, über die ein Verwerfen bis v190
+       rückgängig gemacht wurde. */
+    if(o.fo._entscheidung==='verworfen')continue;
+    _fi++;setSaveInd('saving','Foto '+_fi+'/'+fotoObjs.length+' wird übernommen…');
+    const u=await _fotoUebernahme(o.file);
+    o.file=u.file;
+    o.fo.size=o.file.size||o.fo.size;
+    o.fo.mimeType=o.file.type||o.fo.mimeType;
+    if(o.file.name)o.fo.name=o.file.name;
+    try{
+      const dataUrl=u.dataUrl||await _fileToDataUrl(o.file);
+      // v143: taskId mitspeichern – verwaiste Fotos (App-Kill vor dem Task-Save)
+      // können damit beim nächsten Start wieder an ihren Task gehängt werden.
+      // v300: dazu Aufnahmezeit, Größe und Leistung – vor dem Upload wird nicht mehr nach Drive
+      // gespeichert, nach einem App-Absturz ist das hier die einzige Quelle der Waisen-Rettung.
+      await _mobPhotoSave(o.fo.localKey,dataUrl,{taskId:_taskId,name:o.fo.name||'',fotoTs:o.fo.ts||'',size:o.file.size||0,tuLeistung:o.fo.tuLeistung||null});
+      // v191: Wurde WÄHREND des Verkleinerns verworfen, den Eintrag gleich wieder weg.
+      if(o.fo._entscheidung==='verworfen'){try{await _mobPhotoDelete(o.fo.localKey);}catch(e2){}}
+    }catch(e){console.warn('[uploadFoto] localKey save:',e);}
+    if(_sofort&&o.fo._entscheidung!=='verworfen'){const _o=o;_kette=_kette.then(()=>_einsHoch(_o));} // v368 (B)
   }
+
+  // ── Schritt 1b (v143): Zwischenstand SOFORT sichern, VOR den Uploads ──────
+  // App-Kill während der Kamera (Samsung-Speicherdruck) kostete vorher den ganzen Stapel.
+  /* ⛔ v300 (Befund 22.09.2026, Freigabe Frank „bau ABC"): Hier wurde zusätzlich die GANZE
+     Datendatei nach Drive gespeichert (2,4 MB), und das Foto wartete darauf – gemessen lagen zwei
+     Drittel der Wartezeit VOR dem Senden. Jetzt geht das Foto zuerst, die Datendatei einmal danach
+     (forceSave unten). Gesichert ist das Foto trotzdem schon hier: im Gerätespeicher samt Karte,
+     Aufnahmezeit, Größe und Leistung (_mobPhotoSave oben) und im lokalen Backup. Stirbt die App,
+     hängt die Waisen-Rettung es beim nächsten Start vollständig wieder an. */
+  _saveMobileBackup();
+  clearTimeout(saveTimer); // v300: anstehendes Speichern nicht neben das Foto legen – forceSave unten nimmt es mit
+
+  /* ⛔ v191 — DAS TOR. Ab hier geht es nach Drive, und ab hier erst.
+     Bis v190 lief der Upload los, während der Dialog noch offen stand: „Behalten"
+     startete nichts, „Verwerfen" kam zu spät. Jetzt wartet der Upload auf die
+     Entscheidung. Das Bild ist zu diesem Zeitpunkt bereits im Gerät gesichert (v300:
+     mit allem, was die Waisen-Rettung braucht) — es kann also nichts verloren gehen,
+     während wir warten. Wer die App weglegt, ohne zu entscheiden, dessen Foto gilt als
+     behalten und wird von der Warnleuchte nachgeladen: im Zweifel behalten. */
+  try{await _entscheidung;}catch(e){console.warn('[uploadFoto] Entscheidung:',e);}
+  const _behalten=fotoObjs.filter(o=>o.fo._entscheidung!=='verworfen');
+  _zaehlBasis=_behalten.length||fotoObjs.length; // v368 (B)
+  if(_behalten.length<fotoObjs.length){
+    const _weg=fotoObjs.length-_behalten.length;
+    toast('🗑 '+_weg+' Foto'+(_weg!==1?'s':'')+' verworfen – nicht hochgeladen','info',3000);
+  }
+
+  // ── Schritt 2 (v78): Upload sequenziell mit Fortschrittsanzeige ────────────
+  // Vorher: alle parallel ohne Anzeige (Speicherdruck bei vielen großen Dateien).
+  // v143: Schreibziel ist IMMER der LIVE-Eintrag (_fotoLive) – der Zwischen-Save
+  // kann die Task-/Foto-Referenzen durch den Konflikt-Merge ersetzt haben.
+  _fi=0;
+  if(_sofort){ try{await _kette;}catch(e){console.warn('[uploadFoto] Kette:',e);} }
+  else if(_canUpload&&folderId)for(const o of _behalten){ await _einsHoch(o); }
 
   // ── Schritt 3: Ergebnis ───────────────────────────────────────────────────
   // v143: Task per ID frisch nachschlagen + alle Fotos des Stapels sicherstellen –
@@ -16900,7 +16928,10 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
      Genau nach dem Fotografieren ist der eine Moment, in dem der Kasten offen gehört.
      Dieselbe Bauart wie bei den sieben Aufklapp-Stellen aus v188: nur AUF, nie zu. */
   if(_behalten.length&&_currentDetailTab==='bau')_mOpenSections['bau_Fotos']=true;
-  forceSave();
+  /* v368 (B): Jede Kamera-Aufnahme ist ein eigener uploadFoto-Lauf und speicherte je einmal die
+     ganze Datendatei (3,5 MB). Läuft noch ein anderer Stapel, speichert der LETZTE für alle. */
+  if(_fotoUploadInFlight>1){_fotoSaveAusstehend=true;}
+  else{_fotoSaveAusstehend=false;forceSave();}
   if(currentTaskId===_taskId){
     renderDetail(_tl);
     if(_currentDetailTab==='bau'){renderBaudokuTab(_tl);}
@@ -16913,6 +16944,7 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
   else if(!success&&failed)toast('⚠ Upload fehlgeschlagen – Foto lokal gespeichert','info');
   }finally{
     _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);
+    if(_fotoUploadInFlight===0&&_fotoSaveAusstehend){_fotoSaveAusstehend=false;try{forceSave();}catch(e){console.warn('[uploadFoto] Nachspeichern:',e);}} // v368 (B)
     _fotoPendUpdate();
   }
 }
@@ -18906,6 +18938,16 @@ function _skizzeZoom(idx){
 // ══ TASK ANLEGEN / LÖSCHEN ══
 const QUICK_BOARD_KEY='ptpm_quick_board';
 const DEFAULT_FOTO_FOLDER_KEY='ptpm_default_foto_folder';
+/* v368 (A): Schalter „Fotos ohne Nachfrage behalten" (Frank 06.10.2026). An = nach der Aufnahme kein
+   Dialog Verwerfen/Behalten mehr; jedes Bild gilt als behalten und geht sofort hoch. Ein misslungenes
+   Bild wirft Frank danach über ✕ an der Kachel weg, weitere Fotos über den Kamera-Knopf.
+   Aus (Standard) = der Weg von v191 bleibt unverändert. */
+const FOTO_OHNE_FRAGE_KEY='ptpm_foto_ohne_frage';
+function _fotoOhneFrage(){try{return localStorage.getItem(FOTO_OHNE_FRAGE_KEY)==='1';}catch(e){return false;}}
+function _fotoOhneFrageSetzen(an){
+  try{localStorage.setItem(FOTO_OHNE_FRAGE_KEY,an?'1':'0');}catch(e){}
+  toast(an?'📷 Fotos werden ohne Nachfrage behalten':'📷 Nach jedem Foto wird wieder gefragt','info',3000);
+}
 const QUICK_PARENT_KEY='ptpm_quicknote_folder';
 // v62: temporär per 📍-Button erfasster Standort (vor dem Anlegen der Notiz)
 let _qaStandort=null;
@@ -20991,6 +21033,7 @@ function openSettings(){
   document.getElementById('settUserEmail').textContent=userEmail||'(unbekannt)';
   _loadQuickBoardSelect();
   try{const el=document.getElementById('defaultFotoFolderInput');if(el)el.value=localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'';}catch(e){}
+  try{const _c=document.getElementById('fotoOhneFrageChk');if(_c)_c.checked=_fotoOhneFrage();}catch(e){} // v368 (A)
   // Versionsnummer aus Service-Worker-Cache-Namen auslesen (z.B. "pam-mobil-v9" → "v9")
   (async()=>{
     try{
@@ -21229,6 +21272,7 @@ document.addEventListener('visibilitychange',()=>{
 //  orange = lädt/wartet, grau = kein Empfang, rot = Fehler, kurz grün = alles durch.
 // ══════════════════════════════════════════════
 let _fotoUploadInFlight=0; // uploadFoto läuft → pollForChanges darf die Boards nicht ersetzen
+let _fotoSaveAusstehend=false; // v368 (B): ein Stapel hat sein Speichern dem letzten laufenden überlassen
 let _fotoPendLastCount=0;
 // v148: EINE gemeinsame Quelle für Warnleuchte UND Nachladen. Vorher zählte die Leuchte
 // über ALLE Boards (auch ausgeblendete + vom Spaltenfilter versteckte), das Nachladen sah
@@ -21326,6 +21370,37 @@ function _fotoPendRefreshKeys(){
 function _fotoIstHier(fo){
   return !_fotoPendLocalKeys||_fotoPendLocalKeys.has(fo.localKey||fo.key); // v211: Dachplan-Fotos heißen `key`
 }
+/* v368 (C): Bildschirm wach halten, solange Fotos dieses Geräts hochladen (Frank 06.10.2026).
+   Apple hält die Web-App an, sobald das iPhone sich sperrt – der Upload stand dann (gemessen
+   17.09.: 65 Minuten). Mit der Wachsperre bleibt der Bildschirm an, bis alles oben ist; danach
+   wird sie sofort losgelassen. Beim Verlassen der App nimmt das System die Sperre selbst weg,
+   bei der Rückkehr holt visibilitychange sie zurück, falls noch Fotos laufen. Geräte ohne
+   Wachsperre (alte Browser) merken nichts: jeder Aufruf ist abgesichert. */
+let _fotoWakeLock=null,_fotoWakeWunsch=false;
+function _fotoWakeAktiv(){return !!_fotoWakeLock&&typeof _fotoWakeLock.release==='function';}
+function _fotoWakeSetzen(an){
+  _fotoWakeWunsch=!!an;
+  try{
+    if(!navigator.wakeLock||typeof navigator.wakeLock.request!=='function')return;
+    if(an){
+      if(_fotoWakeLock||document.visibilityState!=='visible')return;
+      const p=navigator.wakeLock.request('screen');
+      _fotoWakeLock=p; // Platzhalter gegen eine zweite Anforderung, solange die erste läuft
+      p.then(l=>{
+        _fotoWakeLock=l;
+        try{l.addEventListener('release',()=>{if(_fotoWakeLock===l)_fotoWakeLock=null;});}catch(e){}
+        if(!_fotoWakeWunsch){try{l.release();}catch(e){}}
+      }).catch(()=>{_fotoWakeLock=null;});
+    }else if(_fotoWakeLock){
+      const l=_fotoWakeLock;_fotoWakeLock=null;
+      if(typeof l.then==='function')l.then(x=>{try{x.release();}catch(e){}}).catch(()=>{});
+      else{try{l.release();}catch(e){}}
+    }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'&&_fotoWakeWunsch&&!_fotoWakeLock)_fotoWakeSetzen(true);
+});
 function _fotoPendUpdate(){
   try{
     const {b,p}=_fotoPendEnsureEls();
@@ -21333,6 +21408,8 @@ function _fotoPendUpdate(){
     const list=_fotoPendList();
     const n=list.length;
     const off=navigator.onLine===false;
+    // v368 (C): wach nur, solange HIER Fotos offen sind UND gerade hochgeladen wird
+    try{_fotoWakeSetzen(n>0&&!off&&(_fotoUploadInFlight>0||_mobRetryUploadsBusy)&&list.some(x=>_fotoIstHier(x.fo)));}catch(e){}
     if(n===0){
       if(_fotoPendLastCount>0){
         // Übergang „offen → alles durch": kurz grün bestätigen, dann ausblenden
@@ -21352,7 +21429,7 @@ function _fotoPendUpdate(){
       }else{
         const h=hier.length;
         if(off){bg='#546e7a';txt='📴 '+h+' Foto'+(h!==1?'s':'')+' warten auf Empfang';}
-        else if(busy){bg='#c77700';txt='📤 '+h+' Foto'+(h!==1?'s':'')+' werden gesichert…';}
+        else if(busy){bg='#c77700';txt='📤 '+h+' Foto'+(h!==1?'s':'')+' werden gesichert…'+(_fotoWakeAktiv()?' · Bildschirm bleibt an':'');} // v368 (C)
         else if(hasErr){bg='#c62828';txt='⚠ '+h+' Foto'+(h!==1?'s':'')+' nicht gesichert – antippen';}
         else{bg='#c77700';txt='📤 '+h+' Foto'+(h!==1?'s':'')+' noch nicht gesichert – antippen';}
         if(nw>0)txt+=' (+'+nw+' anderes Gerät)';
