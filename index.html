@@ -4933,7 +4933,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v370';
+const MOB_VERSION='v371';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -21428,23 +21428,51 @@ function _fotoWakeAktiv(){return !!_fotoWakeLock&&typeof _fotoWakeLock.release==
    noch nicht, bei der nächsten Prüfung war das Foto längst oben. Ergebnis am iPhone 06.10. (v369-Feld):
    Probe „erhalten", beim Foto aber „noch nicht angefordert". Jetzt: jede Stelle, die einen Upload beginnt
    oder beendet (drei Hochlade-Wege + das Nachladen über die Warnleuchte), ruft _fotoWakeSync(). */
-function _fotoWakeSync(){try{_fotoWakeSetzen(_fotoUploadInFlight>0||_mobRetryUploadsBusy);}catch(e){}}
-function _fotoWakeSetzen(an){
+var _fotoWakeQuelle='Upload'; // v371: letzte Quelle der Anforderung (var: wird auch vor dieser Zeile gelesen)
+var _fotoWakeVorabBis=0;      // v371: bis wann die Vorab-Sperre aus dem Fingertipp gehalten wird
+function _fotoWakeSync(){try{_fotoWakeSetzen(_fotoUploadInFlight>0||_mobRetryUploadsBusy||Date.now()<_fotoWakeVorabBis,'Upload');}catch(e){}}
+/* v371: Apple gibt die Sperre in der Startbildschirm-App nur aus einer Berührung heraus (iPhone 16 Pro Max,
+   iOS 26.6.2, 06.10.: Probe per Knopf „erhalten", Anforderung aus dem Upload „NotAllowedError Permission was
+   denied"). Deshalb zwei Wege, beide innerhalb des Fingertipps:
+   1) Vorab: Jeder Tipp, der ein Datei-Feld öffnet (Kamera, Galerie, Dachplan, Wartungsprotokoll, Blitz-Foto –
+      `inp.click()` löst ein Klick-Ereignis am Feld aus, das hier oben ankommt), fordert die Sperre an und
+      hält sie bis zu 2 Minuten, auch wenn noch kein Upload läuft. Bei Galerie-Stapeln bleibt die Seite
+      sichtbar, die Sperre überlebt die Auswahl. Öffnet sich die Kamera, nimmt das System sie weg.
+   2) Nachholen: Solange Fotos laufen und keine Sperre da ist, holt jede Berührung sie zurück (der Tipp auf
+      den Kamera-Knopf fürs nächste Foto reicht). Nach dem allerletzten Kamera-Foto ohne weiteren Tipp gibt
+      es keine Sperre – das ist Apples Grenze, nicht PAMs. */
+function _fotoWakeVorab(){
+  try{
+    _fotoWakeVorabBis=Date.now()+120000;
+    _fotoWakeSetzen(true,'Fingertipp Foto');
+    setTimeout(function(){try{_fotoWakeSync();}catch(e){}},120500);
+  }catch(e){}
+}
+document.addEventListener('click',function(e){
+  try{
+    const el=(e&&e.target&&typeof e.target.closest==='function')?e.target.closest('input[type="file"]'):null;
+    if(el){_fotoWakeVorab();return;}
+    if(_fotoWakeWunsch&&!_fotoWakeLock)_fotoWakeSetzen(true,'Berührung');
+  }catch(err){}
+},true);
+document.addEventListener('touchend',function(){try{if(_fotoWakeWunsch&&!_fotoWakeLock)_fotoWakeSetzen(true,'Berührung');}catch(err){}},true);
+function _fotoWakeSetzen(an,quelle){
   _fotoWakeWunsch=!!an;
+  if(an&&quelle)_fotoWakeQuelle=quelle; // v371: woher kam die Anforderung – steht im Diagnosefeld
   try{
     if(!navigator.wakeLock||typeof navigator.wakeLock.request!=='function'){if(an)_fotoWakeStatusSetzen('nicht unterstützt');return;}
     if(an){
       if(_fotoWakeLock)return;
       if(document.visibilityState!=='visible'){_fotoWakeStatusSetzen('App nicht sichtbar – nicht angefordert');return;}
-      _fotoWakeStatusSetzen('angefordert');
+      _fotoWakeStatusSetzen('angefordert ('+_fotoWakeQuelle+')');
       const p=navigator.wakeLock.request('screen');
       _fotoWakeLock=p; // Platzhalter gegen eine zweite Anforderung, solange die erste läuft
       p.then(l=>{
         _fotoWakeLock=l;
-        _fotoWakeStatusSetzen('aktiv');
+        _fotoWakeStatusSetzen('aktiv ('+_fotoWakeQuelle+')');
         try{l.addEventListener('release',()=>{if(_fotoWakeLock===l){_fotoWakeLock=null;_fotoWakeStatusSetzen('vom System losgelassen');}});}catch(e){}
         if(!_fotoWakeWunsch){try{l.release();}catch(e){}}
-      }).catch(e=>{_fotoWakeLock=null;_fotoWakeStatusSetzen('verweigert: '+((e&&e.name)||'')+' '+((e&&e.message)||''));});
+      }).catch(e=>{_fotoWakeLock=null;_fotoWakeStatusSetzen('verweigert ('+_fotoWakeQuelle+'): '+((e&&e.name)||'')+' '+((e&&e.message)||''));});
     }else if(_fotoWakeLock){
       const l=_fotoWakeLock;_fotoWakeLock=null;
       if(typeof l.then==='function')l.then(x=>{try{x.release();}catch(e){}}).catch(()=>{});
