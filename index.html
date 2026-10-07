@@ -4660,6 +4660,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     <div id="anrufReiter" style="display:flex;gap:8px;margin:0 2px 10px;">
       <button id="anrufReiterOffen" onclick="_anrufReiterWahl('offen')" style="flex:1;min-height:42px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-weight:700;font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📞 Offen</button>
       <button id="anrufReiterGewaehlt" onclick="_anrufReiterWahl('gewaehlt')" style="flex:1;min-height:42px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:400;font-size:calc(14px * var(--m-scale,1));cursor:pointer;">🕘 Gewählt</button>
+      <button id="anrufReiterTisch" onclick="_anrufReiterWahl('tisch')" title="Anrufe am Tischtelefon im Büro – aus dem Anruf-Monitor" style="flex:1;min-height:42px;padding:0 4px;white-space:nowrap;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text2);font-weight:400;font-size:calc(14px * var(--m-scale,1));cursor:pointer;">☎ Tischtelefon</button>
     </div>
     <div id="anrufListe"></div>
     <button onclick="_anrufBlattZu()" style="width:100%;margin-top:10px;min-height:46px;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">Schließen</button>
@@ -4938,7 +4939,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v372';
+const MOB_VERSION='v373';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10595,7 +10596,10 @@ function _anrufZeichnen(){
   const el=document.getElementById('anrufListe');if(!el)return;
   // v282: zwei Reiter. typeof, weil test_v277 _anrufZeichnen allein ausführt.
   const _gew=(typeof _anrufReiter!=='undefined'&&_anrufReiter==='gewaehlt'&&typeof _wahlZeichnen==='function');
-  if(typeof _anrufReiterKnoepfe==='function')_anrufReiterKnoepfe(_gew);
+  // v373: dritter Reiter – die Anrufsammlung des Monitors. typeof, weil aeltere Suiten _anrufZeichnen allein ausfuehren.
+  const _tisch=(typeof _anrufReiter!=='undefined'&&_anrufReiter==='tisch'&&typeof _tischZeichnen==='function');
+  if(typeof _anrufReiterKnoepfe==='function')_anrufReiterKnoepfe(_tisch?'tisch':_gew);
+  if(_tisch){_tischZeichnen(el);return;}
   if(_gew){_wahlZeichnen(el);return;}
   const liste=_anrufSammle();
   const kz=document.getElementById('anrufKopfZahl');
@@ -11201,16 +11205,189 @@ function _wahlHandDialog(taskId,nr,name,rolle){
 }
 
 function _anrufReiterWahl(r){
-  _anrufReiter=(r==='gewaehlt')?'gewaehlt':'offen';
+  _anrufReiter=(r==='gewaehlt')?'gewaehlt':(r==='tisch')?'tisch':'offen'; // v373: dritter Reiter
   _anrufZeichnen();
 }
 function _anrufReiterKnoepfe(gew){
-  [['anrufReiterOffen',!gew],['anrufReiterGewaehlt',!!gew]].forEach(function(p){
+  const r=(gew===true)?'gewaehlt':(gew===false||gew==null)?'offen':String(gew); // v373: true/false wie bisher, sonst der Name
+  [['anrufReiterOffen',r==='offen'],['anrufReiterGewaehlt',r==='gewaehlt'],['anrufReiterTisch',r==='tisch']].forEach(function(p){
     const b=document.getElementById(p[0]); if(!b||!b.style)return;
     b.style.background=p[1]?'var(--bg3)':'transparent';
     b.style.color=p[1]?'var(--text)':'var(--text2)';
     b.style.fontWeight=p[1]?'700':'400';
   });
+}
+// ══ v373: REITER „☎ TISCHTELEFON" – die Anrufsammlung des Anruf-Monitors (Werkzeug 10) ═══════
+/* Frank 06.10.2026: „eine Kopie von dem Monitor … von unterwegs ansehen". Der Monitor am Büro-PC schreibt jeden
+   Anruf des Tischtelefons in eine Datei auf Drive (00_App-Daten/Anruf-Monitor/anrufe.json) – seit Monitor v029 samt
+   Name, Quelle und PAM-Karte, dazu Haken „erledigt" und „ausgeblendet" sowie die eigenen Nummern. Das Handy LIEST
+   diese Datei nur. Abhaken und Ausblenden bleiben am PC.
+   ⛔ Nichts davon landet in workboard.json. Der Reiter braucht Netz und den Drive-Zugang (drive.readonly).
+   ⛔ Die Datei schreibt nicht PAM, sondern der Monitor über Drive-Desktop – darum erst den Ordner „Anruf-Monitor"
+      suchen und darin die Datei (der Dateiname allein wäre nicht eindeutig). Die Kennung wird gemerkt; bei 404
+      (Datei neu angelegt) wird einmal neu gesucht. */
+let _tischDaten=null;      // {stand, anrufe:[...], eigeneNummern:[...], geladen:ms}
+let _tischLadeFehler='';
+let _tischLaedt=false;
+let _tischAlleZeigen=false; // ausgeblendete + eigene Nummern mit anzeigen
+const _TISCH_DATEI_KEY='pam_tisch_datei';
+const _TISCH_ZEIGEN=200;
+// Dieselbe Nummer in zwei Schreibweisen (+49 361… = 0361…) – wie nummerSchluessel im Monitor, nur fürs Inland
+function _tischNorm(nr){
+  let s=String(nr==null?'':nr).replace(/[^0-9+]/g,'');
+  if(s.indexOf('+49')===0)s='0'+s.slice(3); else if(s.indexOf('0049')===0)s='0'+s.slice(4);
+  return s.replace(/\+/g,'');
+}
+async function _tischDateiSuchen(){
+  const h={headers:{Authorization:'Bearer '+gdriveToken}};
+  const qO="name='Anruf-Monitor' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+  const rO=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(qO)+'&fields=files(id%2Cname)',h);
+  if(!rO.ok)throw new Error('Ordner suchen: HTTP '+rO.status);
+  const ordner=((await rO.json()).files||[]);
+  for(const o of ordner){
+    if(!o||!o.id)continue;
+    const q="'"+o.id+"' in parents and name='anrufe.json' and trashed=false";
+    const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)+'&fields=files(id%2Cname%2CmodifiedTime)&orderBy=modifiedTime%20desc',h);
+    if(!r.ok)continue;
+    const f=((await r.json()).files||[])[0];
+    if(f&&f.id)return f.id;
+  }
+  return '';
+}
+async function _tischLaden(erzwingen){
+  if(_tischLaedt)return false;
+  if(!erzwingen&&_tischDaten&&Date.now()-_tischDaten.geladen<60000)return true;
+  _tischLaedt=true;_tischLadeFehler='';
+  try{
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)throw new Error('kein Netz');
+    if(!(await ensureToken()))throw new Error('keine Drive-Anmeldung');
+    let id='';
+    try{id=localStorage.getItem(_TISCH_DATEI_KEY)||'';}catch(e){}
+    for(let versuch=0;versuch<2;versuch++){
+      if(!id){
+        id=await _tischDateiSuchen();
+        if(!id)throw new Error('anrufe.json nicht auf Drive gefunden – läuft der Anruf-Monitor am Büro-PC?');
+        try{localStorage.setItem(_TISCH_DATEI_KEY,id);}catch(e){}
+      }
+      const r=await fetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media&_='+Date.now(),{headers:{Authorization:'Bearer '+gdriveToken,'Cache-Control':'no-cache'},cache:'no-store'});
+      if(r.status===404&&versuch===0){id='';try{localStorage.removeItem(_TISCH_DATEI_KEY);}catch(e){}continue;}
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const j=await r.json();
+      if(!j||!Array.isArray(j.anrufe))throw new Error('Datei hat einen unbekannten Aufbau');
+      _tischDaten={stand:String(j.stand||''),anrufe:j.anrufe,eigeneNummern:(Array.isArray(j.eigeneNummern)?j.eigeneNummern:[]).map(_tischNorm),geladen:Date.now()};
+      return true;
+    }
+    throw new Error('Datei nicht gefunden');
+  }catch(e){_tischLadeFehler=String((e&&e.message)||e);return false;}
+  finally{_tischLaedt=false;}
+}
+// Karten nach Nummer und nach Kennung – aus allen Töpfen (sichtbar, nur-PC-Boards, weggefilterte Spalten)
+function _tischKartenIndex(){
+  const nachNr={},nachId={};
+  const durch=function(topf,nurPc){
+    Object.keys(topf||{}).forEach(function(bn){
+      if(!bn||bn.charAt(0)==='_'||!Array.isArray(topf[bn]))return;
+      topf[bn].forEach(function(t){
+        if(!t||!t.id||t.archiviert)return;
+        if(!nachId[t.id])nachId[t.id]={id:t.id,board:bn,nurPc:!!nurPc};
+        let n=null;try{n=_anrufNummern(t);}catch(e){n=null;}
+        ((n&&n.liste)||[]).forEach(function(e){
+          const k=_tischNorm(e.nr);if(!k)return;
+          if(!nachNr[k]||(nachNr[k].nurPc&&!nurPc))nachNr[k]={id:t.id,name:e.name,nurPc:!!nurPc};
+        });
+      });
+    });
+  };
+  try{durch(boards,false);durch(hiddenBoards,true);durch(_mobileFilteredOut,true);}catch(e){console.warn('[v373] Kartenindex:',e);}
+  return {nachNr:nachNr,nachId:nachId};
+}
+// Aufbereiten wie am PC: neueste zuerst; „nicht zurückgerufen" = entgangen, ohne Haken, ohne späteren Anruf derselben Nummer
+function _tischAufbereiten(daten,alleZeigen){
+  const anrufe=((daten&&daten.anrufe)||[]).filter(function(a){return a&&a.nummer&&a.zeit;}).slice().sort(function(a,b){return b.zeit-a.zeit;});
+  const eigene={};((daten&&daten.eigeneNummern)||[]).forEach(function(k){if(k)eigene[k]=1;});
+  const spaeter={}; // Nummer → Zeit des neuesten angenommenen/gewählten Anrufs
+  anrufe.forEach(function(a){if(a.art==='entgangen')return;const k=_tischNorm(a.nummer);if(k&&!(k in spaeter))spaeter[k]=a.zeit;});
+  const raus=[];let versteckt=0,offen=0;
+  anrufe.forEach(function(a){
+    const k=_tischNorm(a.nummer);
+    const eigen=!!(k&&eigene[k]);
+    const weg=!!a.aus||eigen;
+    if(weg&&!alleZeigen){versteckt++;return;}
+    const zurueck=!!(a.art==='entgangen'&&!a.erledigt&&k&&spaeter[k]>a.zeit);
+    const rot=!!(a.art==='entgangen'&&!a.erledigt&&!zurueck&&!weg);
+    if(rot)offen++;
+    raus.push({a:a,k:k,eigen:eigen,weg:weg,rot:rot,zurueck:zurueck});
+  });
+  return {zeilen:raus.slice(0,_TISCH_ZEIGEN),versteckt:versteckt,offen:offen,gesamt:raus.length};
+}
+function _tischTag(ms){
+  const d=new Date(ms),h=new Date();
+  const t0=function(x){return new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();};
+  const diff=Math.round((t0(h)-t0(d))/86400000);
+  const wt=['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()];
+  const dat=('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'.'+d.getFullYear();
+  return diff===0?'Heute':diff===1?'Gestern':(wt+', '+dat);
+}
+function _tischUhr(ms){const d=new Date(ms);return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
+function _tischDauer(s){s=Number(s)||0;if(!s)return '';const m=Math.floor(s/60);return m?(m+' min'+(s%60?' '+(s%60)+' s':'')):(s+' s');}
+function _tischToggleAlle(){_tischAlleZeigen=!_tischAlleZeigen;_anrufZeichnen();}
+function _tischNeuLaden(){_tischLaden(true).then(function(){_anrufZeichnen();});_anrufZeichnen();}
+function _tischZeichnen(el){
+  const kz=document.getElementById('anrufKopfZahl');
+  const klein='font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);line-height:1.4;';
+  const knopf='min-height:40px;padding:6px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(13px * var(--m-scale,1));cursor:pointer;';
+  if(!_tischDaten){
+    if(kz)kz.textContent='';
+    if(_tischLaedt||!_tischLadeFehler){
+      el.innerHTML='<div style="'+klein+'padding:12px 2px;">Lade die Anrufe vom Tischtelefon …</div>';
+      if(!_tischLaedt)_tischLaden(false).then(function(){if(_anrufReiter==='tisch')_anrufZeichnen();});
+      return;
+    }
+    el.innerHTML='<div style="'+klein+'padding:12px 2px;">☎ Tischtelefon nicht geladen: '+esc(_tischLadeFehler)+'</div>'
+      +'<button type="button" class="tisch-neu" onclick="_tischNeuLaden()" style="'+knopf+'">↻ Noch einmal laden</button>';
+    return;
+  }
+  const idx=_tischKartenIndex();
+  const auf=_tischAufbereiten(_tischDaten,_tischAlleZeigen);
+  if(kz)kz.textContent=auf.offen?(auf.offen===1?'1 nicht zurückgerufen':auf.offen+' nicht zurückgerufen'):(auf.gesamt?auf.gesamt+' Anrufe':'');
+  const standMs=_tischDaten.stand?Date.parse(_tischDaten.stand):NaN;
+  let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;">'
+    +'<span style="'+klein+'flex:1;min-width:0;">Stand '+(isNaN(standMs)?'?':esc(_tischTag(standMs)+' '+_tischUhr(standMs)))+(_tischLadeFehler?' · ⚠ '+esc(_tischLadeFehler):'')+' · Haken setzt der PC</span>'
+    +'<button type="button" class="tisch-neu" onclick="_tischNeuLaden()" style="'+knopf+'">'+(_tischLaedt?'… lädt':'↻ Neu laden')+'</button></div>';
+  if(!auf.zeilen.length){
+    h+='<div style="'+klein+'padding:12px 2px;">'+(auf.versteckt?'Alle '+auf.versteckt+' Anrufe sind ausgeblendet.':'Noch kein Anruf in der Sammlung.')+'</div>';
+  }
+  let tag='';
+  auf.zeilen.forEach(function(z){
+    const a=z.a;
+    const t=_tischTag(a.zeit);
+    if(t!==tag){tag=t;h+='<div class="tisch-tag" style="font-size:calc(13px * var(--m-scale,1));font-weight:700;color:var(--text);margin:10px 2px 4px;">'+esc(t)+'</div>';}
+    // Symbol durch FORM, nicht nur Farbe (Farbschwäche, wie Monitor v028): entgangen ✕, angenommen ✓, gewählt ↗
+    const sym=a.art==='entgangen'?(a.erledigt?'✓':'✕'):a.art==='angenommen'?'✓':a.art==='gewaehlt'?'↗':'•';
+    const symStil=a.art==='entgangen'
+      ?(z.rot?'background:#c2410c;color:#fff;border:2px solid #c2410c;':'background:transparent;color:var(--text2);border:2px dashed var(--border);')
+      :a.art==='angenommen'?'background:#1a6fc4;color:#fff;border:2px solid #1a6fc4;':'background:transparent;color:#1a6fc4;border:2px solid #1a6fc4;';
+    const artText=a.art==='entgangen'?(a.erledigt?'entgangen · ✓ erledigt':z.zurueck?'entgangen · später erreicht':z.rot?'entgangen · nicht zurückgerufen':'entgangen')
+      :a.art==='angenommen'?'angenommen':a.art==='gewaehlt'?'gewählt':String(a.art||'');
+    const karte=(a.karte&&idx.nachId[a.karte])?idx.nachId[a.karte]:(z.k&&idx.nachNr[z.k])?idx.nachNr[z.k]:null;
+    const name=String(a.name||(karte&&karte.name)||a.nameVomTelefon||'').trim();
+    const quelle=a.name?String(a.quelle||''):(karte?'PAM':(a.nameVomTelefon?'vom Telefon':''));
+    const leitung=String(a.leitung||'').replace(/^Buero-/,'');
+    const nebenzeile=[_tischUhr(a.zeit),artText,a.dauer?_tischDauer(a.dauer):'',leitung,quelle,z.eigen?'eigene Nummer':'',a.aus?'ausgeblendet':''].filter(Boolean).join(' · ');
+    h+='<div class="tisch-zeile'+(z.rot?' tisch-rot':'')+'" style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;margin-bottom:6px;border-radius:11px;background:var(--bg3);'+(z.rot?'border-left:5px solid #c2410c;':'')+((z.weg||a.erledigt)?'opacity:.6;':'')+'">'
+      +'<span title="'+escAttr(artText)+'" style="flex-shrink:0;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;line-height:1;margin-top:2px;'+symStil+'">'+sym+'</span>'
+      +'<span style="min-width:0;flex:1;">'
+      +'<span style="display:block;font-size:calc(15.5px * var(--m-scale,1));font-weight:700;line-height:1.25;color:var(--text);overflow-wrap:anywhere;">'+(name?esc(name):'<span style="font-weight:400;color:var(--text2);">unbekannt</span>')+'</span>'
+      +'<span style="display:block;'+klein+'">'+esc(nebenzeile)+'</span>'
+      +'<a class="anruf-feld" href="'+escAttr(_anrufTelHref(a.nummer))+'"'+((karte&&!karte.nurPc)?' data-wahl-task="'+escAttr(karte.id)+'" data-wahl-nr="'+escAttr(a.nummer)+'"':'')+' onclick="event.stopPropagation()" title="'+escAttr('wählen: '+a.nummer)+'" style="display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:5px 12px;margin-top:6px;border-radius:10px;text-decoration:none;background:var(--bg2);color:var(--text);border:1px solid var(--border);font-size:calc(14.5px * var(--m-scale,1));font-weight:600;">📞 '+esc(a.nummer)+'</a>'
+      +(karte?(karte.nurPc
+        ?'<span style="display:block;'+klein+'margin-top:5px;">💻 Karte nur am PC</span>'
+        :'<button type="button" onclick="_anrufKarteAuf(\''+_jsa(karte.id)+'\')" style="display:block;margin-top:6px;'+knopf+'">📂 Karte öffnen</button>'):'')
+      +'</span></div>';
+  });
+  if(auf.gesamt>_TISCH_ZEIGEN)h+='<div style="'+klein+'padding:6px 2px;">Die neuesten '+_TISCH_ZEIGEN+' von '+auf.gesamt+' Anrufen. Ältere stehen am PC im Monitor.</div>';
+  if(auf.versteckt||_tischAlleZeigen)h+='<button type="button" class="tisch-alle" onclick="_tischToggleAlle()" style="display:block;width:100%;margin-top:8px;'+knopf+'">'+(_tischAlleZeigen?'👁 Ausgeblendete und eigene Nummern wieder verbergen':'👁 '+auf.versteckt+' ausgeblendete zeigen')+'</button>';
+  el.innerHTML=h;
 }
 function _wahlAufklappen(id){
   _wahlOffen[id]=!_wahlOffen[id];
