@@ -4939,7 +4939,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v375';
+const MOB_VERSION='v376';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -4990,6 +4990,7 @@ function _buildMobileSaveObj(){
   if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes};
   if(_remoteBoardOrder.length)obj._boardOrder=_remoteBoardOrder.slice(); // v182
   obj._lastWriter=_lastWriterInfo(); // v220: Schreib-Kennzeichen – Position wie beim Drive-Speichern (Reihenfolge-Regel v215)
+  if(typeof _remotePcEinstellungen!=='undefined'&&_remotePcEinstellungen)obj._pcEinstellungen=JSON.parse(JSON.stringify(_remotePcEinstellungen)); // v376: unverändert durchreichen – NACH _lastWriter wie Desktop b1127
   // v182: gleiche Reihenfolge + Einmischung wie beim Drive-Speichern – vorher fehlten
   // dem Backup die weggefilterten Tasks, und die Töpfe standen nacheinander
   const _alleB={};
@@ -8285,6 +8286,7 @@ async function findOrPickFile(){
 let _remoteBoardStatuses={}; // wird vom Desktop gesetzt, Mobil schreibt es unverändert zurück
 let _remoteArchivedTasks=[]; // v215: Archiv-Ablage des Desktops – Mobil reicht sie unverändert durch (ließe es das Feld weg, wäre das PC-Archiv nach einem Handy-Speichern leer)
 let _remoteBoardOrder=[];    // v182: Board-Reihenfolge (Desktop-Merkfeld b643) – Mobil reicht sie durch und schreibt danach sortiert
+let _remotePcEinstellungen=null; // v376: PC-Einstellungen (Desktop b1127, z. B. 🏢-Zeile je Board) – das Handy liest sie nicht, reicht sie nur unverändert durch
 let boardTypes={}; // 'baustelle' | 'notiz' | 'email' | 'immobilie' pro Board-Name
 // ⛔ v205: Der Kommentar nannte hier bis heute nur „baustelle | notiz" — und genau
 // so verhielt sich die Anzeige auch: Die Board-Symbole kannten `email` zwar, aber
@@ -8347,6 +8349,8 @@ function _applyMobileFilter(data){
   mobileStatusFilter=(data._mobileStatusFilter&&typeof data._mobileStatusFilter==='object')?{...data._mobileStatusFilter}:{};
   _remoteBoardStatuses=(data._boardStatuses&&typeof data._boardStatuses==='object')?{...data._boardStatuses}:{};
   _remoteBoardOrder=Array.isArray(data._boardOrder)?data._boardOrder.slice():[]; // v182
+  // v376: Fach vorhanden → merken; fehlt es → bisherigen Stand behalten (wie _archivedTasks v237), damit das Handy es nie löscht
+  if(data._pcEinstellungen&&typeof data._pcEinstellungen==='object'&&!Array.isArray(data._pcEinstellungen))_remotePcEinstellungen=JSON.parse(JSON.stringify(data._pcEinstellungen));
   boardTypes=(data._boardTypes&&typeof data._boardTypes==='object'&&Object.keys(data._boardTypes).length)?{...data._boardTypes}:{};
   // ── AUTO-MIGRATION: fehlende boardTypes aus Boardname ergänzen ──
   {const _np=/aufgab|notiz|todo|to[\s_-]do/i;
@@ -9017,6 +9021,7 @@ async function saveFile(){
               _remoteBoardStatuses={...remote._boardStatuses};
             if(Array.isArray(remote._archivedTasks))_remoteArchivedTasks=remote._archivedTasks.slice(); // v215
             if(Array.isArray(remote._boardOrder))_remoteBoardOrder=remote._boardOrder.slice(); // v182: Reihenfolge-Merkfeld aus Remote übernehmen
+            if(remote._pcEinstellungen&&typeof remote._pcEinstellungen==='object'&&!Array.isArray(remote._pcEinstellungen))_remotePcEinstellungen=JSON.parse(JSON.stringify(remote._pcEinstellungen)); // v376: neuester PC-Stand gewinnt
             // Board-Typen (Baustelle/Aufgaben) aus Remote übernehmen
             if(remote._boardTypes&&typeof remote._boardTypes==='object'&&Object.keys(remote._boardTypes).length)
               boardTypes={...remote._boardTypes};
@@ -9059,6 +9064,7 @@ async function saveFile(){
     if(Object.keys(boardTypes||{}).length)obj._boardTypes={...boardTypes}; // Board-Typen (baustelle/notiz) nicht verlieren
     if(_remoteBoardOrder.length)obj._boardOrder=_remoteBoardOrder.slice(); // v182: Reihenfolge-Merkfeld (b643) unverändert zurückgeben
     obj._lastWriter=_lastWriterInfo(); // v220: Schreib-Kennzeichen (Geisterschreiber-Lehre) – Desktop b729 stempelt genauso
+    if(typeof _remotePcEinstellungen!=='undefined'&&_remotePcEinstellungen)obj._pcEinstellungen=JSON.parse(JSON.stringify(_remotePcEinstellungen)); // v376: PC-Einstellungen (Desktop b1127) unverändert zurückgeben – ohne diese Zeile löschte jedes Handy-Speichern sie
     // v182: Boards in der Desktop-Reihenfolge zurückschreiben. Vorher schrieb Mobil erst
     // die versteckten, dann die sichtbaren Töpfe – jedes Handy-Speichern baute damit die
     // Datei-Reihenfolge um, und am Desktop „sprangen" die Boards nach dem nächsten Laden.
