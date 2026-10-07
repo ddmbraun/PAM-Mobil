@@ -4939,7 +4939,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v373';
+const MOB_VERSION='v374';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -16401,6 +16401,36 @@ function _attachNachOrdnerMob(list){
   });
   return namen.map(n=>({name:n,items:m.get(n),mehrere:namen.length>1}));
 }
+// ── v374: Links als Dokument (Frank 07.10.2026; am PC Desktop b1123) ──────────────────────
+// Ein Link ist eine Windows-Internetverknüpfung (.url) im Dokumente-Ordner der Karte. Der PC
+// legt sie an und schreibt die Adresse zusätzlich in den Eintrag (a.webLink). Das Handy liest
+// NUR dieses Feld – es lädt die Datei nie aus Drive. Fehlt die Adresse noch (Datei z. B. von Hand
+// in den Ordner gelegt), kommt sie mit dem nächsten 🔄 Abgleich am PC.
+// ⛔ Geöffnet werden nur http/https-Adressen (eine .url kann javascript: oder file: tragen).
+// ⛔ „🔗 In PAM öffnen.url" (Desktop b713) ist PAMs eigene Rücksprung-Datei – KEIN Link hier.
+const _MOB_WL_GRUPPE='🔗 Links';
+const _MOB_PAM_LINKDATEI='🔗 In PAM öffnen.url'; // = _PAM_LINKDATEI_NAME am PC (test_v374 vergleicht)
+function _mobWebLinkSicher(u){
+  const s=String(u==null?'':u).trim();
+  if(!/^https?:[/][/]/i.test(s))return '';
+  try{const x=new URL(s);return ((x.protocol==='http:'||x.protocol==='https:')&&x.hostname)?x.href:'';}catch(e){return '';}
+}
+function _mobIstWebLink(a){
+  if(!a)return false;
+  const n=String(a.name||a.filename||'');
+  if(n===_MOB_PAM_LINKDATEI)return false;
+  return !!a.webLink||/[.]url$/i.test(n);
+}
+function _mobWebLinkName(a){return String((a&&(a.name||a.filename))||'Link').replace(/[.]url$/i,'')||'Link';}
+function _mobWebLinkDomain(u){
+  const s=_mobWebLinkSicher(u);if(!s)return '';
+  try{return new URL(s).hostname.replace(/^www[.]/i,'');}catch(e){return '';}
+}
+function _mobWebLinkOeffnen(a){
+  const ziel=a?_mobWebLinkSicher(a.webLink):'';
+  if(!ziel){toast('Adresse noch nicht bekannt – am PC den Link einmal öffnen oder 🔄 abgleichen','info');return;}
+  window.open(ziel,'_blank','noopener');
+}
 let _attachGrpZu={}; // zugeklappte Ordner-Gruppen, pro Sitzung: 'taskId|Ordnername' → true
 function _attachGrpToggle(el){
   const key=el&&el.dataset?el.dataset.grpkey:'';
@@ -16435,16 +16465,42 @@ function renderAttachmentsMob(list){
       +'<button class="inline-btn" style="padding:6px 10px;font-size:12px" onclick="event.stopPropagation();downloadAttachMob('+i+')">↓</button>'
       +'</div>';
   };
-  const grp=_attachNachOrdnerMob(list);
-  if(!grp.length)return '';
-  if(!grp[0].mehrere)return grp[0].items.map(x=>zeile(x.a,x.i)).join('');
+  // v374: ein Link (.url) – Antippen öffnet die Seite; kein ↓, kein Vorschaubild
+  const zeileWl=(a,i)=>{
+    const dom=_mobWebLinkDomain(a.webLink);
+    return '<div class="attach-row-mob" data-wl="'+i+'" onclick="openAttachMob('+i+')" style="cursor:pointer">'
+      +'<div class="attach-icon-mob">🔗</div>'
+      +'<div class="attach-meta-mob">'
+        +'<div class="attach-name-mob">'+esc(_mobWebLinkName(a))+'</div>'
+        +'<div class="attach-size-mob" style="color:var(--accent2);">'+(dom?esc(dom)+' ↗':'Adresse noch nicht bekannt')+'</div>' // --accent2 = Schrift-Blau; --accent ist Knopf-Blau (im Dunkeln unlesbar, Kontrast 1,9)
+      +'</div>'
+      +'</div>';
+  };
+  // v374 (wie Desktop b1123, Franks Entwurf 2): Links stehen in der eigenen Gruppe „🔗 Links"
+  // ganz oben, NICHT zusätzlich in ihrem Ordner. Der Listenplatz i bleibt der Originalplatz.
+  const wl=[];
+  const grp=_attachNachOrdnerMob(list).map(g=>{
+    const rest=g.items.filter(x=>{if(_mobIstWebLink(x.a)){wl.push(x);return false;}return true;});
+    return {name:g.name,items:rest,mehrere:g.mehrere};
+  }).filter(g=>g.items.length);
+  wl.sort((x,y)=>x.i-y.i);
+  if(!grp.length&&!wl.length)return '';
+  // ohne Links wie bisher: nur EIN Ordner → flache Liste ohne Ordner-Kopf
+  if(!wl.length&&!grp[0].mehrere)return grp[0].items.map(x=>zeile(x.a,x.i)).join('');
   const t=currentTask();const tid=t?t.id:'';
-  return grp.map(g=>{
+  const kopf=(key,zu,titel,n)=>'<div data-grpkey="'+escAttr(key)+'" onclick="_attachGrpToggle(this)" style="display:flex;align-items:center;gap:6px;padding:7px 4px 5px;font-size:12px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;">'
+      +'<span style="font-size:10px;transition:transform .15s;'+(zu?'':'transform:rotate(90deg);')+'">▶</span>'
+      +titel+' <span style="font-weight:400;color:var(--text2);">('+n+')</span></div>';
+  let h='';
+  if(wl.length){
+    const key=tid+'|'+_MOB_WL_GRUPPE;
+    const zu=!!_attachGrpZu[key];
+    h+=kopf(key,zu,esc(_MOB_WL_GRUPPE),wl.length)+(zu?'':wl.map(x=>zeileWl(x.a,x.i)).join(''));
+  }
+  return h+grp.map(g=>{
     const key=tid+'|'+g.name;
     const zu=!!_attachGrpZu[key];
-    return '<div data-grpkey="'+escAttr(key)+'" onclick="_attachGrpToggle(this)" style="display:flex;align-items:center;gap:6px;padding:7px 4px 5px;font-size:12px;font-weight:700;color:var(--accent);border-bottom:1px solid var(--border);cursor:pointer;user-select:none;">'
-      +'<span style="font-size:10px;transition:transform .15s;'+(zu?'':'transform:rotate(90deg);')+'">▶</span>'
-      +'📂 '+esc(g.name)+' <span style="font-weight:400;color:var(--text2);">('+g.items.length+')</span></div>'
+    return kopf(key,zu,'📂 '+esc(g.name),g.items.length)
       +(zu?'':g.items.map(x=>zeile(x.a,x.i)).join(''));
   }).join('');
 }
@@ -16500,12 +16556,13 @@ function _openAttachThumbnailGridMob(){
     if(g.mehrere)inhalt+='<div style="grid-column:1/-1;font-size:12px;font-weight:700;color:var(--accent2);padding:10px 2px 2px;">📂 '+esc(g.name)+' <span style="font-weight:400;color:#999;">('+g.items.length+')</span></div>';
     g.items.forEach(x=>{
       const a=x.a;
+      const wl=_mobIstWebLink(a); // v374: Link-Kachel mit 🔗, ohne Vorschaubild, Name ohne .url
       inhalt+='<div onclick="_attGridOeffnen('+x.i+')" style="cursor:pointer;">'
         +'<div style="position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:#222;display:flex;align-items:center;justify-content:center;font-size:34px;">'
-          +attachIconMob(_attachTypMob(a))
-          +'<img class="attach-thumb-ovl" data-att-prev="'+x.i+'" alt="" style="border-radius:0;">'
+          +(wl?'🔗':attachIconMob(_attachTypMob(a)))
+          +(wl?'':'<img class="attach-thumb-ovl" data-att-prev="'+x.i+'" alt="" style="border-radius:0;">')
         +'</div>'
-        +'<div style="font-size:11px;color:#ddd;line-height:1.25;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;">'+esc(a.name||'Datei')+'</div>'
+        +'<div style="font-size:11px;color:#ddd;line-height:1.25;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;">'+esc(wl?_mobWebLinkName(a):(a.name||'Datei'))+'</div>'
         +'</div>';
     });
   });
@@ -16523,6 +16580,9 @@ function _attGridOeffnen(i){
   openAttachMob(i);
 }
 function openAttachMob(i){
+  // v374: Link → Seite öffnen statt Vorschau der .url-Datei
+  const t=currentTask();const a=(t&&t.attachments)?t.attachments[i]:null;
+  if(_mobIstWebLink(a)){_mobWebLinkOeffnen(a);return;}
   _openAttachGalleryMob(i);
 }
 // ── v165: E-MAILS AM HANDY ───────────────────────────────────────────────────
