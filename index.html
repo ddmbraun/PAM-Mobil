@@ -4959,7 +4959,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v380';
+const MOB_VERSION='v381';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -12340,8 +12340,14 @@ function _showSchnellFotoPreview(fo, t, opt){
   if(typeof _fotoOhneFrage==='function'&&_fotoOhneFrage()&&!opt.frageImmer){
     liste.forEach(f=>{if(f&&!f._entscheidung)f._entscheidung='behalten';});
     if(_fertig){_fertig();_fertig=null;}
+    /* v381: Ohne Dialog fehlte auch „📷 Weiteres Foto“ – jedes weitere Bild hieß wieder
+       „📷 Foto“ → „📷 Kamera“ (Befund Frank 08.10., Besichtigung am Tablet). Jetzt kommt nach
+       einer KAMERA-Aufnahme eine schmale Leiste ohne Behalten-Frage. Nach Galerie-Bildern
+       nicht (Hausregel v191). Sie hält nichts auf: das Versprechen ist oben schon erfüllt. */
+    if(kannWeiteres&&typeof _fotoWeiterLeiste==='function')_fotoWeiterLeiste(opt,kameraFeld,liste.length);
     return versprechen;
   }
+  if(typeof _fotoWeiterLeisteWeg==='function')_fotoWeiterLeisteWeg(); // v381: eine alte Leiste räumt der Dialog weg
   let idx=0;
   let prev=document.getElementById('schnellFotoPreview');
   if(prev)prev.remove();
@@ -12486,6 +12492,59 @@ function _showSchnellFotoPreview(fo, t, opt){
   zeige();
   document.body.appendChild(prev);
   return versprechen;
+}
+
+/* ── v381: Leiste „📷 Weiteres Foto · Fertig“ bei Schalter „ohne Nachfrage“ ─────────────
+   Kein Fenster, keine Frage: das Bild ist schon behalten und geht hoch. „📷 Weiteres Foto“
+   öffnet die Kamera auf DEMSELBEN Weg wie der Knopf im Dialog (eigener `weiteresFn` des
+   Aufrufers zuerst, sonst sein Kamerafeld) – beim Formular hängt das Foto damit wieder an
+   der Stelle, von der aus fotografiert wurde (v353).
+   ⛔ Die Leiste sperrt den Bildschirm nicht. Darum geht sie beim ersten Tipp DANEBEN weg:
+      wer im Formular weitermacht oder es schließt, soll nicht später über eine liegen
+      gebliebene Leiste in ein Protokoll fotografieren, das gar nicht mehr offen ist.
+   Höhe 200 px über dem Rand: frei von der Fußleiste der Formulare und von den Meldungen
+   (ab 90 px; die Standort-Warnung nach dem Foto ist vierzeilig und lag in der Browserprobe
+   bei 150 px über „Fertig“). EINE Zeile am Handy: deshalb kein eigener Text „behalten“ –
+   das Vorschaubild an der Stelle zeigt es, die Zahl steht im Titel der Leiste.
+   Stapelhöhe 100000 wie der Dialog (über Formular 99998 und Dachplan 99990). 60 s wie die
+   Leistungs-Leiste aus v189 (mit Handschuhen waren 12 s zu knapp). */
+var _fotoWeiterLeisteAus=null;
+function _fotoWeiterLeisteWeg(){
+  if(typeof _fotoWeiterLeisteAus==='function'){try{_fotoWeiterLeisteAus();}catch(e){}}
+  _fotoWeiterLeisteAus=null;
+  const alt=document.getElementById('fotoWeiterLeiste');if(alt)alt.remove();
+}
+function _fotoWeiterLeiste(opt,kameraFeld,anzahl){
+  _fotoWeiterLeisteWeg();
+  const bar=document.createElement('div');
+  bar.id='fotoWeiterLeiste';
+  /* ⛔ Nicht mit left:50% + translateX zentrieren: dann darf die Leiste nur die halbe Breite
+     nutzen und bricht am Handy in eine schmale Spalte um (gemessen 188 px bei 375 px). */
+  bar.style.cssText='position:fixed;left:0;right:0;margin:0 auto;width:fit-content;bottom:calc(200px + env(safe-area-inset-bottom,0px));z-index:100000;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 24px);box-sizing:border-box;padding:10px 12px;border-radius:14px;background:rgba(20,22,30,.94);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.45);';
+  bar.title='✓ '+(anzahl>1?anzahl+' Fotos':'Foto')+' behalten';bar.setAttribute('aria-label',bar.title);
+  const mk=(t,bg)=>{const b=document.createElement('button');b.type='button';b.textContent=t;
+    b.style.cssText='min-height:44px;padding:10px 18px;border-radius:10px;border:none;background:'+bg+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;white-space:nowrap;';
+    return b;};
+  const btnMehr=mk('📷 Weiteres Foto','#2e4fc4');
+  const btnFertig=mk('✓ Fertig','rgba(255,255,255,.18)');
+  btnMehr.onclick=function(){
+    _fotoWeiterLeisteWeg();
+    // ⚠ typeof-Wache wie im Dialog: Prüfsuiten schneiden diesen Rückruf einzeln aus (test_v209-Lehre)
+    if(typeof opt!=='undefined'&&opt&&typeof opt.weiteresFn==='function'){
+      try{opt.weiteresFn();}catch(e){console.warn('[Foto-Leiste] Weiteres:',e);}
+      return;
+    }
+    var inp=document.getElementById(kameraFeld);if(inp)inp.click();
+  };
+  btnFertig.onclick=function(){_fotoWeiterLeisteWeg();};
+  bar.appendChild(btnMehr);bar.appendChild(btnFertig);
+  document.body.appendChild(bar);
+  const daneben=function(ev){try{if(!bar.contains(ev.target))_fotoWeiterLeisteWeg();}catch(e){}};
+  const uhr=setTimeout(_fotoWeiterLeisteWeg,60000);
+  // erst im nächsten Takt lauschen – sonst könnte der auslösende Tipp selbst die Leiste schließen
+  const lauschUhr=setTimeout(function(){document.addEventListener('pointerdown',daneben,true);},0);
+  _fotoWeiterLeisteAus=function(){clearTimeout(uhr);clearTimeout(lauschUhr);document.removeEventListener('pointerdown',daneben,true);};
+  return bar;
 }
 
 // v153: _vorschauBleibt=true, wenn die Vorschau selbst weiterblättert (Serie) – sonst
