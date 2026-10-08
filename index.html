@@ -480,6 +480,26 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .row-times input[type=time]{flex:1;min-width:0}
 .row-desc{display:flex;gap:6px;align-items:center}
 .row-desc input[type=text]{flex:1;min-width:0}
+/* v377 (Termine wie am PC, Desktop b1125–b1132): EINE Liste nach Zeit in der Karte, ruhige Textzeilen auf der Kartenliste.
+   Farbe nur für ⚠ überfällig (immer mit Zeichen + Wort). */
+.mt-gr{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);margin:12px 0 2px;}
+.mt-gr:first-child{margin-top:2px;}
+.mt-gr.warn{color:var(--red,#E24B4A);}
+.mt-z{display:grid;grid-template-columns:minmax(58px,auto) auto minmax(0,1fr) 16px;gap:8px;align-items:center;min-height:42px;padding:4px 2px;border-bottom:0.5px solid var(--border);font-size:calc(13px * var(--m-scale,1));color:var(--text);}
+.mt-z.klick{cursor:pointer;}
+.mt-z.auf{background:var(--bg3);border-bottom-color:transparent;border-radius:8px 8px 0 0;}
+.mt-tag{font-weight:600;white-space:nowrap;}
+.mt-z.warn .mt-tag{color:var(--red,#E24B4A);}
+.mt-zeit{white-space:nowrap;}
+.mt-leise{color:var(--text2);font-size:calc(11.5px * var(--m-scale,1));}
+.mt-was{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.mt-pf{color:var(--text2);text-align:center;font-size:11px;}
+.mt-z.erl .mt-tag,.mt-z.erl .mt-zeit,.mt-z.erl .mt-was{text-decoration:line-through;color:var(--text2);}
+.termin-row.mt-edit{border-radius:0 0 8px 8px;border-top:none;margin-bottom:6px;}
+.mt-erl-kopf{margin-top:8px;padding:10px 2px;color:var(--text2);font-size:calc(12.5px * var(--m-scale,1));cursor:pointer;}
+.m-tz{font-size:calc(12px * var(--m-scale,1));color:var(--text);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.m-tz .gr{color:var(--text2);}
+.m-tz.warn{color:var(--red,#E24B4A);}
 /* v278: schmales Art-Feld – nur das Zeichen, damit auf 375 px nichts umbricht.
    ⛔ Randbreite MIT schreiben: nur border-style laesst Chrome auf „medium" (3 px)
    springen, die Zeile wuerde 6 px hoeher als die anderen (am Desktop gemessen). */
@@ -4939,7 +4959,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v376';
+const MOB_VERSION='v377';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11515,10 +11535,10 @@ function _mkToggleSearch(){
 function _kompaktZeile(t,isRunning,boardHerkunft){
   const _df=iso=>{if(!iso)return'';try{return new Date(iso).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(_){return iso;}};
   const ov=!!(t.due&&isOverdue(t.due));
-  const aufgOv=(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date());
+  const aufgOv=(typeof _mtKarteUeberfaellig==='function')?_mtKarteUeberfaellig(t):(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date()); // v377
   const warn=ov||aufgOv;
   // Zusatzzeile: erster datierter Termin, sonst Fälligkeit
-  const naechste=(t.aufgaben||[]).filter(a=>a.datum).sort((a,b)=>String(a.datum).localeCompare(String(b.datum)))[0];
+  const naechste=(typeof _mtNaechster==='function')?_mtNaechster(t):(t.aufgaben||[]).filter(a=>a.datum).sort((a,b)=>String(a.datum).localeCompare(String(b.datum)))[0]; // v377: nächster OFFENER Eintrag ab heute, auch Außerhaus/freie Termine
   let info='';
   if(isRunning)info='<span class="task-timer-badge" style="color:var(--orange,#e8791a);font-weight:600">⏱ '+formatTimerFor(t.id)+'</span>';
   else if(naechste)info=esc(naechste.typ||'Termin')+' '+_df(naechste.datum);
@@ -11720,7 +11740,7 @@ function renderList(resetScroll){
         +'</div>'
       :'';
     // v102: oranger Seitenstreifen bei überfälligem Termin/Fälligkeit, sonst blau
-    const _cardWarn=!!((t.due&&isOverdue(t.due))||(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date()));
+    const _cardWarn=(typeof _mtKarteUeberfaellig==='function')?_mtKarteUeberfaellig(t):!!((t.due&&isOverdue(t.due))||(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date())); // v377: Abgehaktes färbt nicht mehr
     return '<div class="task-card'+(_cardWarn?' card-warn':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+_jsa(t.id)+'\')">'
       +'<div class="task-card-body">'
       +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">'
@@ -11751,6 +11771,8 @@ function renderList(resetScroll){
       +(()=>{ try {
         const _df=iso=>{if(!iso)return'';try{const d=new Date(iso);return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(_){return iso;}};
         const ov=t.due&&isOverdue(t.due);
+        // v377: ruhige Textzeilen statt bunter Kästchen (wie am PC); der alte Kästchen-Weg bleibt nur als Rückfall
+        if(typeof _mtKartenZeilenHtml==='function')return _mtKartenZeilenHtml(t,isNotizBoard);
         // Neue aufgaben (Desktop-System) als Datebox anzeigen
         const _aufgIcons={'Ortstermin':'📍','Anruf':'📞','Ausführungstermin':'🔨','Besichtigung':'👁','Auftrag erteilt':'📋','Angebot':'📝','E-Mail':'📧','Rückfragen':'❓','Abgeschlossen':'✅','Aufgabe':'✅','Meeting':'🗓','Recherche':'🔍'};
         const _aufgColors=[
@@ -13604,18 +13626,23 @@ function renderDetail(t){
       const _pm=(von,bis)=>{try{if(!von||!bis)return 0;const[vh,vm]=von.split(':').map(Number);const[bh,bm]=bis.split(':').map(Number);const d=(bh*60+bm)-(vh*60+vm);return d>0?d:0;}catch(_){return 0;}};
       const _fmt=m=>{const h=Math.floor(m/60);const mm=m%60;return(h>0?h+'h ':'')+mm+' min';};
       const zeitMin=(t.zeitEntries||[]).reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
-      const termMin=(t.ausserhausTermine||[]).reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
+      // v377: wie am PC (Desktop b1125) – Außerhaus-Termine zählen erst, wenn vorbei; die kommenden stehen als „geplant“ dahinter.
+      // typeof: test_v276 schneidet diesen Kasten allein aus (dann wie bisher alle Termine).
+      const _mtNeu=(typeof _mtMinuten==='function');
+      const termMin=_mtNeu?_mtMinuten(t.ausserhausTermine,false):(t.ausserhausTermine||[]).reduce((s,e)=>s+_pm(e.von||'',e.bis||''),0);
+      const planMin=_mtNeu?_mtMinuten(t.ausserhausTermine,true):0;
       const gesMin=zeitMin+termMin;
-      if(!zeitMin&&!termMin)return '';
+      if(!zeitMin&&!termMin&&!planMin)return '';
       /* v276: „∑ Gesamt" nur, wenn es wirklich zwei Töpfe gibt – sonst stand dieselbe Zahl
          zweimal nebeneinander (Befund Frank am Foto, 11.09.2026). Der Rahmen ist nur so breit
          wie sein Inhalt (width:max-content) statt über die ganze Zeile, und rund wie die
          übrigen Kästen (10 px). Trennlinien nur dort, wo noch ein Topf folgt. */
       const zweiToepfe=!!(zeitMin&&termMin);
       return '<div style="display:flex;width:max-content;max-width:100%;align-items:stretch;border:0.5px solid #C0DD97;border-radius:10px;overflow:hidden;font-size:calc(12px * var(--m-scale,1));font-weight:600;white-space:nowrap;margin:0 0 8px;">'
-        +(zeitMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#FAEEDA;'+(termMin?'border-right:0.5px solid #FAC775;':'')+'"><span style="color:#633806;">⏱ Zeiterf.</span><b style="color:#412402;padding-left:4px;">'+_fmt(zeitMin)+'</b></span>':'')
-        +(termMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#E6F1FB;'+(zweiToepfe?'border-right:0.5px solid #B5D4F4;':'')+'"><span style="color:#0C447C;">📅 Termine</span><b style="color:#042C53;padding-left:4px;">'+_fmt(termMin)+'</b></span>':'')
-        +(zweiToepfe?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#EAF3DE;"><span style="color:#27500A;">∑ Gesamt</span><b style="color:#173404;padding-left:4px;">'+_fmt(gesMin)+'</b></span>':'')
+        +(zeitMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#FAEEDA;'+((termMin||planMin)?'border-right:0.5px solid #FAC775;':'')+'"><span style="color:#633806;">⏱ Zeiterf.</span><b style="color:#412402;padding-left:4px;">'+_fmt(zeitMin)+'</b></span>':'')
+        +(termMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#E6F1FB;'+((zweiToepfe||planMin)?'border-right:0.5px solid #B5D4F4;':'')+'"><span style="color:#0C447C;">📅 Termine</span><b style="color:#042C53;padding-left:4px;">'+_fmt(termMin)+'</b></span>':'')
+        +(zweiToepfe?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:#EAF3DE;'+(planMin?'border-right:0.5px solid #C0DD97;':'')+'"><span style="color:#27500A;">∑ Gesamt</span><b style="color:#173404;padding-left:4px;">'+_fmt(gesMin)+'</b></span>':'')
+        +(planMin?'<span style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg3);color:var(--text2);font-weight:500;" title="Außerhaus-Termine, die noch kommen – sie zählen, sobald sie vorbei sind">geplant '+_fmt(planMin)+'</span>':'') // v377
         +'</div>';
     })();
 
@@ -13667,16 +13694,16 @@ function renderDetail(t){
     +'</div></div>')
     // ── AUFGABEN MIT TERMIN (beide Board-Typen, read-only auf Mobile) ──
     +br('Aufgaben','📅','Aufgaben & Termine',String((t.aufgaben||[]).length),false,
-     ((t.aufgaben&&t.aufgaben.length)?(()=>{
+     ((t.aufgaben&&t.aufgaben.length&&(isNotiz||typeof _mtSektionHtml!=='function'))?(()=>{ // v377: auf Auftrags-Boards stehen die Aufgaben in der Terminliste
       const _aufgIcons2={'Ortstermin':'📍','Anruf':'📞','Ausführungstermin':'🔨','Besichtigung':'👁','Auftrag erteilt':'📋','Angebot':'📝','E-Mail':'📧','Rückfragen':'❓','Abgeschlossen':'✅','Aufgabe':'✅','Meeting':'🗓','Recherche':'🔍'};
       const _fmtDate=iso=>{if(!iso)return'–';try{const d=new Date(iso);return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});}catch(_){return iso;}};
       const rows=t.aufgaben.map(a=>{
         const ico=_aufgIcons2[a.typ]||'🗓';
-        const isOver=a.datum&&new Date(a.datum)<new Date();
+        const isOver=!a.erledigt&&a.datum&&String(a.datum)<((typeof _mtHeute==='function')?_mtHeute():new Date().toISOString().slice(0,10)); // v377: Abgehaktes ist nie überfällig; Tag statt Uhrzeit (sonst ab 2 Uhr „überfällig“)
         return'<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border);">'
           +'<span style="font-size:18px;flex-shrink:0;">'+ico+'</span>'
           +'<div style="flex:1;min-width:0;">'
-            +'<div style="font-size:14px;font-weight:600;color:var(--text);">'+esc(a.typ)+'</div>'
+            +'<div style="font-size:14px;font-weight:600;color:var(--text);'+(a.erledigt?'text-decoration:line-through;opacity:.6;':'')+'">'+(a.erledigt?'✓ ':'')+esc(a.typ)+'</div>'
             +(a.datum?'<div style="font-size:12px;color:'+(isOver?'#c0392b':'var(--text2)')+';">'+_fmtDate(a.datum)+(isOver?' ⚠':'')+'</div>':'')
           +'</div>'
           +'</div>';
@@ -13729,12 +13756,14 @@ function renderDetail(t){
       +'</div>'
     +'</div></div>')
     // ── AUSSER-HAUS-TERMINE ── (v108: hierher verschoben, direkt über Zeiterfassung – Wunsch Frank)
-    +br('Termine','📅','Außer-Haus-Termine',String(termine.length),!termine.length,
+    // v377: auf Auftrags-Boards EINE Terminliste nach Zeit (Außerhaus + Aufgaben + freie Termine), wie am PC b1131
+    +((!isNotiz&&typeof _mtSektionHtml==='function')?br('Termine','📅','Termine',String(_mtEintraege(t).length),!_mtEintraege(t).length,_mtSektionHtml(t,oc)):'')
+    +((!isNotiz&&typeof _mtSektionHtml==='function')?'':br('Termine','📅','Außer-Haus-Termine',String(termine.length),!termine.length,
      (!isNotiz?'<div class="sect'+oc('Termine')+'" data-sect="Termine"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Außer-Haus-Termine ('+termine.length+')</div><div class="sect-body">'
       +'<div id="termineList">'+renderTermineRows(termine)+'</div>'
       +'<button class="add-btn" onclick="addTermin()">+ Termin hinzufügen</button>'
       +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(termine)+'</div>'
-    +'</div></div>':''))
+    +'</div></div>':'')))
     // ── ZEITERFASSUNG ──
     +br('Zeiterfassung','⏱','Zeiterfassung',String(zeiten.length),!zeiten.length,
      '<div class="sect'+oc('Zeiterfassung')+'" data-sect="Zeiterfassung"><div class="sect-head" onclick="toggleMSect(this.parentElement)">⏱ Zeiterfassung ('+zeiten.length+')</div><div class="sect-body">'
@@ -14038,10 +14067,292 @@ function renderTermineRows(list){
     +'</div>'
   ).join('');
 }
+// ══ v377: Termine am Handy wie am PC (Desktop b1125–b1132; Frank 08.10.2026: „Bau Handy“) ══
+// A1 Zeit: Außerhaus-Termine zählen erst als Zeit, wenn sie vorbei sind – davor „geplant“ (Desktop _ahVorbei/_ahMinuten).
+// A2 Kartenliste: ruhige Textzeilen statt bunter Kästchen; Abgehaktes weg; nächster offener Außerhaus-Termin + freie Termine dabei.
+// A3 In der Karte: EINE Liste nach Zeit (⚠ Überfällig · Anstehend · Ohne Tag · Erledigt zugeklappt). Außerhaus-Termine antippen →
+//    Felder (wie bisher: updateTermin/openGcal/removeTermin). Aufgaben und freie Termine NUR ansehen – anlegen/ändern am PC
+//    (am Handy stehen sie in _pcOnly; ein Handy-Eintrag ginge bei einem Speicherkonflikt verloren → Teil B, braucht den PC).
+// ⛔ Nur Anzeige – keine neuen Felder, keine neue Datenart. ⛔ Das Handy hakt NICHT ab (Franks Regel) – es zeigt nur an.
+// ⛔ Zeitfenster bleibt TEXT in der Beschreibung (Desktop b1115/b1130), hier nur erkannt und angezeigt.
+var _mtOffen='';      // 'taskId|ah:3' – aufgeklappte Termin-Zeile (nur Außerhaus-Termine haben Felder)
+var _mtErlAuf=false;  // „Erledigt“ aufgeklappt?
+// Ortszeit, nicht toISOString() (UTC liefert vor 2 Uhr nachts noch den Vortag)
+function _mtHeute(d){
+  const x=(d instanceof Date&&!isNaN(d))?d:new Date();
+  return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+}
+function _mtMin(von,bis){
+  const a=String(von||'').split(':'), b=String(bis||'').split(':');
+  if(a.length<2||b.length<2)return 0;
+  const d=(+b[0]*60+(+b[1]))-(+a[0]*60+(+a[1]));
+  return (isNaN(d)||d<=0)?0:d;
+}
+// Ein Außerhaus-Termin ist vorbei, wenn sein Ende vorbei ist (gleiche Regel wie Desktop _ahVorbei)
+function _mtVorbei(x,jetzt){
+  if(!x)return false;
+  const d=String(x.date||x.datum||'').trim();
+  if(!d)return false;
+  const n=(jetzt instanceof Date&&!isNaN(jetzt))?jetzt:new Date();
+  const heute=_mtHeute(n);
+  if(d<heute)return true;
+  if(d>heute)return false;
+  const b=String(x.bis||'').trim().split(':');
+  const bh=parseInt(b[0],10), bm=parseInt(b[1],10);
+  if(b.length<2||isNaN(bh)||isNaN(bm))return false;
+  return bh*60+bm<=n.getHours()*60+n.getMinutes();
+}
+// geplant=false: Minuten der vorbei-Termine (zählen als Zeit) · geplant=true: Minuten der noch kommenden
+function _mtMinuten(liste,geplant){
+  const jetzt=new Date();
+  let s=0;
+  (liste||[]).forEach(function(x){
+    if(!x)return;
+    const m=_mtMin(x.von,x.bis);
+    if(!m)return;
+    if(_mtVorbei(x,jetzt)===!!geplant)return;
+    s+=m;
+  });
+  return s;
+}
+// Zeitfenster aus dem Text („zwischen 13 und 17 Uhr“ / „ab 13 Uhr“) – wie Desktop _tmFenster
+function _mtFenster(bez){
+  const z='([0-9][0-9]?(?:[:.][0-9][0-9])?)';
+  const s=String(bez||'');
+  let m=new RegExp('zwischen +'+z+' *(?:uhr +)?und +'+z+' *uhr','i').exec(s);
+  if(m)return 'zwischen '+m[1]+' und '+m[2]+' Uhr';
+  m=new RegExp('(?:^|[^a-zäöüß])ab +'+z+' *uhr','i').exec(s);
+  if(m)return 'ab '+m[1]+' Uhr';
+  return '';
+}
+function _mtFensterKurz(t){
+  if(!t)return '';
+  const f=_mtFenster(t.beschreibung)||_mtFenster(t.betreff);
+  if(!f)return '';
+  if(f.indexOf('zwischen ')===0)return f.slice(9).split(' und ').join('–');
+  return f;
+}
+// Text ohne den von PAM angehängten Zusatz am Ende („ – zwischen … Uhr“, „ – ab … Uhr“, „ – am Mi 07.10.“) – wie Desktop _pamAnrufFensterAnText(b,'')
+function _mtOhneFenster(bez){
+  let b=String(bez==null?'':bez).trim();
+  if(b.slice(-4)===' Uhr'){
+    const i=Math.max(b.lastIndexOf(' – zwischen '),b.lastIndexOf(' – ab '));
+    if(i>=0)b=b.slice(0,i).trim();
+  }else if(b.slice(-1)==='.'){
+    const j=b.lastIndexOf(' – am ');
+    if(j>=0&&b.length-j===15)b=b.slice(0,j).trim();
+  }
+  return b;
+}
+// Anzeige der Aufgaben-Arten: Wert bleibt, wie er ist (Lehre b992 am PC) – hier nur Zeichen + Anzeigename
+const _MT_AUFG={'Ortstermin am':['📍','Ortstermin am'],'Ortstermin':['📍','Ortstermin am'],'Besichtigung am':['👁','Besichtigung am'],'Besichtigung':['👁','Besichtigung am'],
+  'Ausführungstermin':['🔨','Ausführung am'],'Anruf bis':['📞','Anruf bis'],'Anruf':['📞','Anruf bis'],'E-Mail bis':['📧','E-Mail bis'],'E-Mail':['📧','E-Mail bis'],
+  'Rückfragen bis':['❓','Rückfragen bis'],'Rückfragen':['❓','Rückfragen bis'],'Auftrag erteilt':['📋','Auftrag erteilt'],'Angebot':['📝','Angebot'],'Abgeschlossen':['✅','Abgeschlossen']};
+const _MT_ART={ausfuehrung:'🔨',besichtigung:'👁',ortstermin:'📍',sonst:'•'};
+function _mtAufg(typ){ return _MT_AUFG[typ]||['🗓',String(typ||'Aufgabe')]; }
+// „Heute“ · „Fr 09.10.“ · anderes Jahr „Fr 09.10.27“ · „ohne Tag“
+function _mtTag(iso,heute){
+  const s=String(iso||'').trim();
+  if(!s)return 'ohne Tag';
+  if(s===heute)return 'Heute';
+  const p=s.split('-'); if(p.length!==3)return s;
+  const d=new Date(+p[0],+p[1]-1,+p[2]);
+  const wt=isNaN(d.getTime())?'':['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()]+' ';
+  return wt+p[2]+'.'+p[1]+'.'+(String(heute||'').slice(0,4)===p[0]?'':p[0].slice(2));
+}
+// freie Termine: neue Liste, sonst das alte Einzelfeld (wie die Anrufliste, Zeile „ft“)
+function _mtFreie(t){
+  if(!t)return [];
+  return (t.freieTermine&&t.freieTermine.length)?t.freieTermine:((t.freierTermin&&t.freierTermin.datum)?[t.freierTermin]:[]);
+}
+function _mtEintraege(t){
+  const raus=[];
+  if(!t)return raus;
+  (t.ausserhausTermine||[]).forEach(function(x,i){ if(x)raus.push({q:'ah',i:i,k:'ah:'+i,datum:String(x.date||'').trim(),von:String(x.von||''),erl:!!x.erledigt,t:x}); });
+  (t.aufgaben||[]).forEach(function(a,i){ if(a)raus.push({q:'aufg',i:i,k:'aufg:'+i,datum:String(a.datum||'').trim(),von:'',erl:!!a.erledigt,t:a}); });
+  _mtFreie(t).forEach(function(f,i){ if(f)raus.push({q:'frei',i:i,k:'frei:'+i,datum:String(f.datum||'').trim(),von:'',erl:!!f.erledigt,t:f}); });
+  return raus;
+}
+function _mtGruppe(e,heute){
+  if(e.erl)return 'erl';
+  if(!e.datum)return 'ohne';
+  return e.datum<heute?'ueber':'kommend';
+}
+function _mtOrdnen(alle,heute){
+  const g={ueber:[],kommend:[],ohne:[],erl:[]};
+  (alle||[]).forEach(function(e){ g[_mtGruppe(e,heute)].push(e); });
+  const sk=function(e){return e.datum+' '+e.von;};
+  const auf=function(a,b){const x=sk(a),y=sk(b);return x<y?-1:(x>y?1:0);};
+  g.ueber.sort(auf); g.kommend.sort(auf); g.erl.sort(function(a,b){return -auf(a,b);});
+  return g;
+}
+function _mtZeitText(x){
+  const fk=_mtFensterKurz(x);
+  if(fk)return '⏳ '+fk;
+  const von=String(x&&x.von||''), bis=String(x&&x.bis||'');
+  return von?(von+(bis?'–'+bis:'')):'';
+}
+function _mtZeile(e,heute,offen,gruppe){
+  const x=e.t||{};
+  let zeit='', was='';
+  if(e.q==='ah'){
+    const fk=_mtFensterKurz(x);
+    const zt=_mtZeitText(x);
+    zeit=zt?esc(zt):'<span class="mt-leise">ohne Uhrzeit</span>';
+    const fh=parseInt(x.fahrt!=null?x.fahrt:(x.anfahrt||0),10)||0;
+    was=esc((_MT_ART[x.art]||'•')+' '+(_mtOhneFenster(x.beschreibung)||'Außerhaus-Termin'))
+      +(fk?'<span class="mt-leise"> · genaue Zeit offen</span>':'')
+      +(fh>0?'<span class="mt-leise"> · 🚗 '+fh+'′</span>':'')
+      +(x.hiddenInPam?'<span class="mt-leise"> · im Kalender ausgeblendet</span>':'');
+  }else{
+    zeit='<span class="mt-leise">ganzer Tag</span>';
+    if(e.q==='aufg'){ const m=_mtAufg(x.typ); was=esc(m[0]+' '+m[1]); }
+    else was=esc('🗓 '+(String(x.text||'').trim()||'Freier Termin'));
+  }
+  const klick=(e.q==='ah');
+  return '<div class="mt-z'+(klick?' klick':'')+(gruppe==='ueber'?' warn':'')+(e.erl?' erl':'')+(offen?' auf':'')+'" data-k="'+escAttr(e.k)+'"'
+    +(klick?' onclick="_mtKlick(\''+_jsa(e.q)+'\','+(+e.i)+')"':' title="Aufgaben und freie Termine am PC ändern"')+'>'
+    +'<span class="mt-tag">'+(e.erl?'✓ ':'')+esc(_mtTag(e.datum,heute))+'</span>'
+    +'<span class="mt-zeit">'+zeit+'</span>'
+    +'<span class="mt-was">'+was+'</span>'
+    +'<span class="mt-pf">'+(klick?(offen?'▴':'▾'):'')+'</span></div>';
+}
+// Felder unter der aufgeklappten Zeile – dieselben Handgriffe wie bisher (updateTermin, openGcal, removeTermin)
+function _mtEditor(e){
+  const x=e.t||{}, i=+e.i;
+  const fk=_mtFensterKurz(x);
+  return '<div class="termin-row mt-edit">'
+    +'<div class="row-times">'
+      +'<input type="date" value="'+escAttr(x.date||'')+'" onchange="updateTermin('+i+',\'date\',this.value);_mtZeileNeu('+i+')" autocomplete="off">'
+      +'<input type="time" value="'+escAttr(x.von||'')+'" onchange="updateTermin('+i+',\'von\',this.value);updateTermineGesamt();_mtZeileNeu('+i+')" autocomplete="off">'
+      +'<input type="time" value="'+escAttr(x.bis||'')+'" onchange="updateTermin('+i+',\'bis\',this.value);updateTermineGesamt();_mtZeileNeu('+i+')" autocomplete="off">'
+    +'</div>'
+    +'<div class="row-desc"><input type="text" value="'+escAttr(x.beschreibung||'')+'" oninput="updateTermin('+i+',\'beschreibung\',this.value);_mtZeileNeu('+i+')" autocomplete="off"></div>'
+    +(fk?'<div class="mt-leise" style="margin-top:6px;">⏳ Zeitfenster '+esc(fk)+' – die genaue Uhrzeit legst du am PC mit „🕐 Uhrzeit festlegen“ fest.</div>':'')
+    +'<div style="display:flex;gap:8px;margin-top:6px;">'
+      +'<button class="inline-btn" style="flex:1" onclick="openGcal('+i+')">📅 Google Kalender</button>'
+      +'<button class="inline-btn" style="flex:1;color:var(--red,#E24B4A)" onclick="_mtLoeschen('+i+')">✕ Löschen</button>'
+    +'</div></div>';
+}
+function _mtListeHtml(t){
+  const alle=_mtEintraege(t);
+  if(!alle.length)return '<div style="color:var(--text2);font-size:13px;padding:6px 0">Noch keine Termine.</div>';
+  const heute=_mtHeute();
+  const g=_mtOrdnen(alle,heute);
+  let h='';
+  const zeilen=function(liste,gruppe){
+    liste.forEach(function(e){
+      const offen=!!(t&&e.q==='ah'&&_mtOffen===(t.id+'|'+e.k));
+      h+=_mtZeile(e,heute,offen,gruppe);
+      if(offen)h+=_mtEditor(e);
+    });
+  };
+  if(g.ueber.length){ h+='<div class="mt-gr warn">⚠ Überfällig – vorbei, nicht abgehakt</div>'; zeilen(g.ueber,'ueber'); }
+  if(g.kommend.length){ h+='<div class="mt-gr">Anstehend</div>'; zeilen(g.kommend,'kommend'); }
+  if(g.ohne.length){ h+='<div class="mt-gr">Ohne Tag</div>'; zeilen(g.ohne,'ohne'); }
+  if(g.erl.length){
+    h+='<div class="mt-erl-kopf" onclick="_mtErlUmschalten()">'+(_mtErlAuf?'▾':'▸')+' Erledigt ('+g.erl.length+')</div>';
+    if(_mtErlAuf)zeilen(g.erl,'erl');
+  }
+  return h;
+}
+// Der ganze Bereich „📅 Termine“ in der Karte (Auftrags-Boards); oc = offen-Klasse aus renderDetail
+function _mtSektionHtml(t,oc){
+  const n=_mtEintraege(t).length;
+  const o=(typeof oc==='function')?oc('Termine'):'';
+  return '<div class="sect'+o+'" data-sect="Termine"><div class="sect-head" onclick="toggleMSect(this.parentElement)">📅 Termine ('+n+')</div><div class="sect-body">'
+    +'<div id="mtListe">'+_mtListeHtml(t)+'</div>'
+    +'<button class="add-btn" onclick="addTermin()">+ Außerhaus-Termin</button>'
+    +'<div class="mt-leise" style="margin-top:6px;">Aufgaben und freie Termine legst du am PC an („＋ Termin“).</div>'
+    +'<div id="termineGesamt" style="margin-top:10px;padding:10px;background:var(--bg3);border-radius:8px;text-align:center;font-weight:600">'+renderTermineGesamtText(t.ausserhausTermine||[])+'</div>'
+  +'</div></div>';
+}
+function _mtListeNeu(){
+  const t=currentTask(), L=document.getElementById('mtListe');
+  if(!t||!L)return;
+  L.innerHTML=_mtListeHtml(t);
+}
+// Beim Tippen nur die Textzeile über den Feldern neu – die Felder selbst bleiben stehen (Fokus)
+function _mtZeileNeu(i){
+  const t=currentTask(), L=document.getElementById('mtListe');
+  if(!t||!L)return;
+  const e=_mtEintraege(t).find(function(x){return x.k==='ah:'+i;});
+  const alt=L.querySelector('.mt-z[data-k="ah:'+i+'"]');
+  if(!e||!alt)return;
+  const heute=_mtHeute();
+  const tmp=document.createElement('div');
+  tmp.innerHTML=_mtZeile(e,heute,true,_mtGruppe(e,heute));
+  if(tmp.firstChild)alt.replaceWith(tmp.firstChild);
+}
+function _mtKlick(q,i){
+  if(q!=='ah')return;
+  const t=currentTask(); if(!t)return;
+  const k=t.id+'|ah:'+i;
+  _mtOffen=(_mtOffen===k)?'':k;
+  _mtListeNeu();
+}
+function _mtErlUmschalten(){ _mtErlAuf=!_mtErlAuf; _mtListeNeu(); }
+function _mtOffenSetzen(taskId,k){ _mtOffen=String(taskId)+'|'+k; }
+// Löschen mit Rückfrage (ein Fehltipp am Handy passiert schnell). Outlook räumt nur der PC auf – das sagt die Rückfrage.
+function _mtLoeschen(i){
+  const t=currentTask(); if(!t||!t.ausserhausTermine||!t.ausserhausTermine[i])return;
+  const x=t.ausserhausTermine[i];
+  if(!confirm('Diesen Termin löschen?'+(x.outlookEventId?'\n\nEr steht auch in Outlook – dort bleibt er stehen (löschen geht am PC).':'')))return;
+  _mtOffen='';
+  removeTermin(i);
+}
+// ── Kartenliste ──
+// Überfällig = Fälligkeit oder offene Aufgabe / offener freier Termin vor heute. Vergangene Außerhaus-Termine färben NIE rot (wie Desktop b1125).
+function _mtKarteUeberfaellig(t){
+  if(!t)return false;
+  const heute=_mtHeute();
+  if(t.due&&String(t.due)<heute)return true;
+  if((t.aufgaben||[]).some(function(a){return a&&!a.erledigt&&a.datum&&String(a.datum)<heute;}))return true;
+  return _mtFreie(t).some(function(f){return f&&!f.erledigt&&f.datum&&String(f.datum)<heute;});
+}
+// Nächster offener Eintrag ab heute (für die Kompaktzeile): {typ: Anzeigetext, datum}
+function _mtNaechster(t){
+  if(!t)return null;
+  const heute=_mtHeute();
+  const k=[];
+  (t.ausserhausTermine||[]).forEach(function(x){ if(x&&!x.erledigt&&!x.hiddenInPam&&String(x.date||'')>=heute)k.push({d:x.date+' '+(x.von||''),typ:'Außer Haus'+(_mtZeitText(x)?' '+_mtZeitText(x):''),datum:x.date}); });
+  (t.aufgaben||[]).forEach(function(a){ if(a&&!a.erledigt&&a.datum&&String(a.datum)>=heute)k.push({d:a.datum+' ',typ:_mtAufg(a.typ)[1],datum:a.datum}); });
+  _mtFreie(t).forEach(function(f){ if(f&&!f.erledigt&&f.datum&&String(f.datum)>=heute)k.push({d:f.datum+' ',typ:String(f.text||'Termin'),datum:f.datum}); });
+  k.sort(function(a,b){return a.d<b.d?-1:(a.d>b.d?1:0);});
+  return k[0]||null;
+}
+// Ruhige Textzeilen auf der Karte statt bunter Kästchen: nächster offener Außerhaus-Termin, offene Aufgaben + freie Termine mit Datum,
+// Fälligkeit und die alten Einzelfelder wie bisher. Abgehaktes kommt nicht mehr vor; Überfälliges mit ⚠.
+function _mtKartenZeilenHtml(t,isNotizBoard){
+  if(!t)return '';
+  const heute=_mtHeute();
+  const z=[];
+  const ah=(t.ausserhausTermine||[]).filter(function(x){return x&&!x.erledigt&&!x.hiddenInPam&&String(x.date||'')>=heute;})
+    .sort(function(a,b){const x=a.date+' '+(a.von||''),y=b.date+' '+(b.von||'');return x<y?-1:(x>y?1:0);})[0];
+  if(ah)z.push({d:ah.date+' '+(ah.von||''),w:false,h:'📅 <b>'+esc(_mtTag(ah.date,heute)+(_mtZeitText(ah)?' '+_mtZeitText(ah):''))+'</b> <span class="gr">'+esc(_mtOhneFenster(ah.beschreibung)||'Außer Haus')+'</span>'});
+  (t.aufgaben||[]).forEach(function(a){
+    if(!a||a.erledigt||!a.datum)return;
+    const m=_mtAufg(a.typ), ov=String(a.datum)<heute;
+    z.push({d:a.datum+' ',w:ov,h:(ov?'⚠ ':'')+esc(m[0]+' '+m[1])+' <b>'+esc(_mtTag(a.datum,heute))+'</b>'});
+  });
+  _mtFreie(t).forEach(function(f){
+    if(!f||f.erledigt||!f.datum)return;
+    const ov=String(f.datum)<heute;
+    z.push({d:f.datum+' ',w:ov,h:(ov?'⚠ ':'')+esc('🗓 '+(String(f.text||'').trim()||'Termin'))+' <b>'+esc(_mtTag(f.datum,heute))+'</b>'});
+  });
+  if(t.due){ const ov=String(t.due)<heute; z.push({d:t.due+' ',w:ov,h:(ov?'⚠ ':'')+(isNotizBoard?'Fällig':'Erledigen bis')+' <b>'+esc(_mtTag(t.due,heute))+'</b>'}); }
+  const hatErteilt=(t.aufgaben||[]).some(function(a){return a&&a.typ==='Auftrag erteilt'&&a.datum;});
+  const hatAusf=(t.aufgaben||[]).some(function(a){return a&&a.typ==='Ausführungstermin'&&a.datum;});
+  if(!hatErteilt&&t.ausführungsdatum)z.push({d:String(t.ausführungsdatum)+' ',w:false,h:'📋 Erteilt <b>'+esc(_mtTag(t.ausführungsdatum,heute))+'</b>'});
+  if(!hatAusf&&t.ausfuehrungstermin)z.push({d:String(t.ausfuehrungstermin)+' ',w:false,h:'🔨 Ausführung <b>'+esc(_mtTag(t.ausfuehrungstermin,heute))+'</b>'});
+  z.sort(function(a,b){return a.d<b.d?-1:(a.d>b.d?1:0);});
+  return z.map(function(x){return '<div class="m-tz'+(x.w?' warn':'')+'">'+x.h+'</div>';}).join('');
+}
 function addTermin(){
   const t=currentTask();if(!t)return;
   if(!t.ausserhausTermine)t.ausserhausTermine=[];
   t.ausserhausTermine.push({date:'',von:'',bis:'',beschreibung:''});
+  if(typeof _mtOffenSetzen==='function')_mtOffenSetzen(t.id,'ah:'+(t.ausserhausTermine.length-1)); // v377: neuer Termin steht gleich aufgeklappt da
   _mOpenSections['Termine']=true;
   _mBereichZeigenWennUebersicht('Termine'); // v188
   forceSave();renderDetail(t);
@@ -14897,6 +15208,12 @@ function renderZeitGesamtText(list){
   return 'Gesamt: '+(h>0?h+'h ':'')+m+' min';
 }
 function renderTermineGesamtText(list){
+  // v377: wie am PC – zählt erst, wenn vorbei
+  if(typeof _mtMinuten==='function'){
+    const v=_mtMinuten(list,false), g=_mtMinuten(list,true);
+    const f=m=>(Math.floor(m/60)>0?Math.floor(m/60)+'h ':'')+(m%60)+' min';
+    return 'Zählt als Zeit: '+f(v)+(g?' · geplant '+f(g):'');
+  }
   const min=(list||[]).reduce((s,z)=>s+parseMinutes(z.von,z.bis),0);
   const h=Math.floor(min/60),m=min%60;
   return 'Gesamt: '+(h>0?h+'h ':'')+m+' min';
