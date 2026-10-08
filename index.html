@@ -4959,7 +4959,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v378';
+const MOB_VERSION='v379';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5184,7 +5184,9 @@ async function _restoreMobileBackupIfDirty(){
         lt.notizVerlauf=_mergeListByKey(lt.notizVerlauf,bt.notizVerlauf,n=>((n.ts||'')+'|'+(n.text||'')));
         lt.zeitEntries=_zeitZeilenMerge(lt.zeitEntries,bt.zeitEntries); // v280: Standort geht nicht verloren
         if(typeof _zeitGeloeschtMerge==='function'&&(Array.isArray(lt.zeitGeloescht)||Array.isArray(bt.zeitGeloescht))){lt.zeitGeloescht=_zeitGeloeschtMerge(lt.zeitGeloescht,bt.zeitGeloescht);lt.zeitEntries=_zeitOhneGeloeschte(lt.zeitEntries,lt.zeitGeloescht);} // v289: Löschvermerke
-        lt.ausserhausTermine=_mergeListByKey(lt.ausserhausTermine,bt.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+        // v379: nach fester Kennung vereinigen (die ungespeicherte Fassung der Sicherung gilt beim selben Termin) – vorher nach Tag|Von|Bis|Text
+        lt.ausserhausTermine=(typeof _ahVereinigen==='function')?_ahVereinigen(lt.ausserhausTermine,bt.ausserhausTermine):_mergeListByKey(lt.ausserhausTermine,bt.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+        if(typeof _ahGeloeschtMerge==='function'&&(Array.isArray(lt.ausserhausGeloescht)||Array.isArray(bt.ausserhausGeloescht)))lt.ausserhausGeloescht=_ahGeloeschtMerge(lt.ausserhausGeloescht,bt.ausserhausGeloescht); // v379
         if(typeof _wahlKennung==='function'&&(Array.isArray(lt.anrufWahlen)||Array.isArray(bt.anrufWahlen)))lt.anrufWahlen=_mergeListByKey(lt.anrufWahlen,bt.anrufWahlen,_wahlKennung); // v282
         const after=(lt.notizVerlauf||[]).length+(lt.zeitEntries||[]).length+(lt.ausserhausTermine||[]).length;
         mergedCount+=(after-before);
@@ -5768,6 +5770,78 @@ function _mobListenDreiAnwenden(taskId,rt,localTask,mergedTask){
     const n=_mobListeDrei(f,rt[f],localTask[f],_mobSnapListe(taskId,f));
     if(n)mergedTask[f]=n;
   });
+}
+// ══ b1140 / v379 (Befund Termine B2 + B3, Frank 08.10.2026 „1,2,3 … baue“): feste Kennung je Außer-Haus-Termin + Löschvermerk für Outlook ══
+// B2: bis b1139/v378 erkannten PC und Handy einen Termin beim Zusammenführen an Tag|Von|Bis|Text – änderte ein Gerät die Uhrzeit,
+//     während das andere gespeichert hatte, standen alter und neuer Termin da (Doppel), und Gelöschtes kam im Konflikt zurück.
+//     Jetzt trägt jeder Termin `tid`: neue bekommen sie beim Anlegen (Zufall – zwei Geräte, die gleichzeitig einen LEEREN Termin
+//     anlegen, dürfen nicht dieselbe bekommen), alte beim Laden aus ihrem INHALT (so geben PC und Handy demselben alten Termin dieselbe).
+//     Zusammengeführt wird je Termin dreiseitig über die Kennung (_liste3Wege, wie b1036/v308 für vier andere Listen).
+// B3: am Handy gelöschte Termine, die schon in Outlook stehen, hinterlassen an der Karte einen Löschvermerk `ausserhausGeloescht`
+//     [{oid,fh,fr,tid,t,erl}] (oid = Outlook-Eintrag, fh/fr = Fahrt-Einträge). Nur der PC spricht mit Outlook: er löscht dort und setzt erl.
+// ⛔ _ahTidAusInhalt … _ahGeloeschtMerge stehen ZEICHENGLEICH in PAM Desktop und PAM Mobil (test_b1140 / test_v379 vergleichen).
+function _ahTidAusInhalt(x){
+  const s=String((x&&(x.date||x.datum))||'')+'|'+String((x&&x.von)||'')+'|'+String((x&&x.bis)||'')+'|'+String((x&&x.beschreibung)||'');
+  let h=5381;
+  for(let i=0;i<s.length;i++)h=(((h<<5)+h)^s.charCodeAt(i))>>>0;
+  return 'k'+h.toString(36);
+}
+function _ahTidNeu(){return 'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
+function _ahKennung(x){return (x&&typeof x==='object')?(x.tid||_ahTidAusInhalt(x)):'';}
+function _ahTidSichern(liste){
+  if(!Array.isArray(liste))return 0;
+  const da={};let n=0;
+  liste.forEach(function(x){if(x&&x.tid)da[x.tid]=1;});
+  liste.forEach(function(x){
+    if(!x||typeof x!=='object'||x.tid)return;
+    const g=_ahTidAusInhalt(x);let k=g,z=2;
+    while(da[k])k=g+'-'+(z++);
+    x.tid=k;da[k]=1;n++;
+  });
+  return n;
+}
+function _ahTidDaten(daten){
+  let n=0;
+  if(!daten||typeof daten!=='object')return 0;
+  Object.keys(daten).forEach(function(k){
+    if(k.charAt(0)==='_'||!Array.isArray(daten[k]))return;
+    daten[k].forEach(function(t){if(t&&Array.isArray(t.ausserhausTermine))n+=_ahTidSichern(t.ausserhausTermine);});
+  });
+  return n;
+}
+// Ohne gemeinsamen Stand: nach Kennung vereinigen (im Zweifel behalten) – beim selben Termin gilt die hiesige Fassung, Reihenfolge wie drüben.
+function _ahVereinigen(remoteList,localList){
+  const rem=Array.isArray(remoteList)?remoteList:[],loc=Array.isArray(localList)?localList:[];
+  const L=new Map();
+  loc.forEach(function(x){const k=_ahKennung(x);if(k&&!L.has(k))L.set(k,x);});
+  const out=[],schonDa=new Set();
+  rem.forEach(function(x){const k=_ahKennung(x);if(!k){out.push(x);return;}if(schonDa.has(k))return;schonDa.add(k);out.push(L.has(k)?L.get(k):x);});
+  loc.forEach(function(x){const k=_ahKennung(x);if(!k){out.push(x);return;}if(schonDa.has(k))return;schonDa.add(k);out.push(x);});
+  return out;
+}
+// Je Termin dreiseitig (hier · drüben · letzter gemeinsamer Stand). Die Kennung selbst zählt beim Vergleich nicht als Änderung (alte Termine
+// bekommen sie erst beim Laden); nimmt man die Fassung von drüben und ihr fehlt die Kennung, behält sie die hiesige.
+function _ahMerge(remoteList,localList,basisList,ers){
+  const e=function(k,w){if(k==='tid')return undefined;return ers?ers.call(this,k,w):w;};
+  const nimm=function(x,r){if(r&&!r.tid&&x&&x.tid){const o=Object.assign({},r);o.tid=x.tid;return o;}return r;};
+  const r=(typeof _liste3Wege==='function')?_liste3Wege(remoteList,localList,basisList,_ahKennung,e,nimm):null;
+  return r||_ahVereinigen(remoteList,localList);
+}
+function _ahGrabstein(t,x){
+  if(!t||!x||!x.outlookEventId)return false;
+  if(!Array.isArray(t.ausserhausGeloescht))t.ausserhausGeloescht=[];
+  if(!t.ausserhausGeloescht.some(function(g){return g&&g.oid===x.outlookEventId;}))t.ausserhausGeloescht.push({oid:x.outlookEventId,fh:x.outlookFahrtHinId||'',fr:x.outlookFahrtRueckId||'',tid:x.tid||'',t:Date.now()});
+  return true;
+}
+function _ahGeloeschtMerge(a,b){
+  const m=new Map(),out=[];
+  [].concat(Array.isArray(a)?a:[],Array.isArray(b)?b:[]).forEach(function(g){
+    if(!g||!g.oid)return;
+    const v=m.get(g.oid);
+    if(!v){const n=Object.assign({},g);m.set(g.oid,n);out.push(n);return;}
+    if(g.erl&&!v.erl)v.erl=g.erl;
+  });
+  return out;
 }
 let _remoteSeenBoards=new Set(); // Alle Board-Namen die jemals vom Server geladen wurden
 let mobileWhitelist=[];   // Aus _mobileBoards; leer = keine Einschränkung
@@ -8344,6 +8418,9 @@ function _schutzAltMap(){
   return m;
 }
 function _applyMobileFilter(data){
+  // v379: alte Außer-Haus-Termine bekommen ihre feste Kennung SOFORT beim Laden – aus dem Inhalt, wie am PC (b1140), bevor sie hier
+  // jemand ändert. Greift bei Laden, Poll und Sicherung (alle laufen hier durch), vor der Momentaufnahme.
+  if(typeof _ahTidDaten==='function')_ahTidDaten(data);
   // v151: Schutzriegel – geschützte Felder des alten lokalen Stands merken,
   // BEVOR die Remote-Daten die Boards ersetzen (greift bei Laden, Poll und Backup)
   const _schutzAlt=_schutzAltMap();
@@ -8947,6 +9024,11 @@ async function saveFile(){
                     mergedTask.zeitEntries=_zeitZeilenMerge(rt.zeitEntries,localTask.zeitEntries); // v280: Standort geht nicht verloren
                     if(typeof _zeitGeloeschtMerge==='function'&&(Array.isArray(localTask.zeitGeloescht)||Array.isArray(rt.zeitGeloescht))){mergedTask.zeitGeloescht=_zeitGeloeschtMerge(rt.zeitGeloescht,localTask.zeitGeloescht);mergedTask.zeitEntries=_zeitOhneGeloeschte(mergedTask.zeitEntries,mergedTask.zeitGeloescht);} // v289: Löschvermerke
                     mergedTask.ausserhausTermine=_mergeListByKey(rt.ausserhausTermine,localTask.ausserhausTermine,e=>((e.date||'')+'|'+(e.von||'')+'|'+(e.bis||'')+'|'+(e.beschreibung||'')));
+                    // v379 (B2, wie PC b1140): über die feste Kennung je Termin dreiseitig (geänderte Uhrzeit = derselbe Termin, kein Doppel; drüben
+                    // Gelöschtes bleibt weg). Ohne Momentaufnahme: nach Kennung vereinigen. Die Zeile darüber bleibt als Weg für Prüfsuiten ohne _ahMerge.
+                    if(typeof _ahMerge==='function')mergedTask.ausserhausTermine=_ahMerge(rt.ausserhausTermine,localTask.ausserhausTermine,_mobSnapListe(_savingTaskId,'ausserhausTermine'),_mobSaveReplacer);
+                    // v379 (B3): Löschvermerke beider Seiten vereinigen – der PC löscht den Outlook-Eintrag
+                    if(typeof _ahGeloeschtMerge==='function'&&(Array.isArray(localTask.ausserhausGeloescht)||Array.isArray(rt.ausserhausGeloescht)))mergedTask.ausserhausGeloescht=_ahGeloeschtMerge(rt.ausserhausGeloescht,localTask.ausserhausGeloescht);
                     // v257: GERICHTET statt vereinigt (Desktop b771) – ein hier entferntes Foto kam über die
                     // Vereinigung aus dem PC-Stand zurück; ein drüben entferntes ebenso aus dem hiesigen.
                     mergedTask.fotos=_mobListeGerichtet(rt.fotos,localTask.fotos,_mobSnapListe(_savingTaskId,'fotos'),f=>(f.id||f.driveId||f.path||((f.name&&f.size)?('ns:'+f.name+'|'+f.size):'')));
@@ -9106,6 +9188,7 @@ async function saveFile(){
     }
     // _mobSaveReplacer: entfernt localUrl (data:/blob:) und _uploading aus Foto-Objekten
     // → hält die Drive-JSON klein; Fotos bleiben über IndexedDB (localKey) erhalten
+    if(typeof _ahTidDaten==='function')_ahTidDaten(obj);   // v379: Netz für Termine ohne feste Kennung (vor dem Festhalten des Stands, test_v300)
     const _aendImInhalt=(typeof _mobAenderungNr==='number')?_mobAenderungNr:0; // v300: diesen Änderungsstand bildet der Inhalt ab
     const content=JSON.stringify(obj,_mobSaveReplacer,2);
     // Resumable Upload (Two-Step: Session-Init + Byte-Transfer)
@@ -14293,11 +14376,11 @@ function _mtKlick(q,i){
 }
 function _mtErlUmschalten(){ _mtErlAuf=!_mtErlAuf; _mtListeNeu(); }
 function _mtOffenSetzen(taskId,k){ _mtOffen=String(taskId)+'|'+k; }
-// Löschen mit Rückfrage (ein Fehltipp am Handy passiert schnell). Outlook räumt nur der PC auf – das sagt die Rückfrage.
+// Löschen mit Rückfrage (ein Fehltipp am Handy passiert schnell). Outlook räumt nur der PC auf – seit v379 von selbst (Löschvermerk, PC b1140).
 function _mtLoeschen(i){
   const t=currentTask(); if(!t||!t.ausserhausTermine||!t.ausserhausTermine[i])return;
   const x=t.ausserhausTermine[i];
-  if(!confirm('Diesen Termin löschen?'+(x.outlookEventId?'\n\nEr steht auch in Outlook – dort bleibt er stehen (löschen geht am PC).':'')))return;
+  if(!confirm('Diesen Termin löschen?'+(x.outlookEventId?'\n\nEr steht auch in Outlook – dort löscht ihn der PC beim nächsten Outlook-Abgleich mit.':'')))return;
   _mtOffen='';
   removeTermin(i);
 }
@@ -14352,6 +14435,7 @@ function addTermin(){
   const t=currentTask();if(!t)return;
   if(!t.ausserhausTermine)t.ausserhausTermine=[];
   t.ausserhausTermine.push({date:'',von:'',bis:'',beschreibung:'',_pamDirty:true}); // v378: Outlook-Merker wie am PC (addAusserhausTermin) – der PC schreibt markierte Termine nach Outlook
+  if(typeof _ahTidNeu==='function')t.ausserhausTermine[t.ausserhausTermine.length-1].tid=_ahTidNeu(); // v379: feste Kennung sofort (Zufall – ein leerer Termin am PC darf nicht dieselbe bekommen)
   if(typeof _mtOffenSetzen==='function')_mtOffenSetzen(t.id,'ah:'+(t.ausserhausTermine.length-1)); // v377: neuer Termin steht gleich aufgeklappt da
   _mOpenSections['Termine']=true;
   _mBereichZeigenWennUebersicht('Termine'); // v188
@@ -14359,7 +14443,9 @@ function addTermin(){
 }
 function removeTermin(i){
   const t=currentTask();if(!t)return;
-  t.ausserhausTermine.splice(i,1);forceSave();renderDetail(t);
+  const _weg=t.ausserhausTermine.splice(i,1)[0];
+  if(typeof _ahGrabstein==='function')_ahGrabstein(t,_weg); // v379: steht er in Outlook, löscht ihn der PC dort (Löschvermerk)
+  forceSave();renderDetail(t);
 }
 function updateTermin(i,f,v){
   const t=currentTask();if(!t)return;
