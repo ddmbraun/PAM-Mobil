@@ -4959,7 +4959,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v377';
+const MOB_VERSION='v378';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -14351,7 +14351,7 @@ function _mtKartenZeilenHtml(t,isNotizBoard){
 function addTermin(){
   const t=currentTask();if(!t)return;
   if(!t.ausserhausTermine)t.ausserhausTermine=[];
-  t.ausserhausTermine.push({date:'',von:'',bis:'',beschreibung:''});
+  t.ausserhausTermine.push({date:'',von:'',bis:'',beschreibung:'',_pamDirty:true}); // v378: Outlook-Merker wie am PC (addAusserhausTermin) – der PC schreibt markierte Termine nach Outlook
   if(typeof _mtOffenSetzen==='function')_mtOffenSetzen(t.id,'ah:'+(t.ausserhausTermine.length-1)); // v377: neuer Termin steht gleich aufgeklappt da
   _mOpenSections['Termine']=true;
   _mBereichZeigenWennUebersicht('Termine'); // v188
@@ -14364,7 +14364,13 @@ function removeTermin(i){
 function updateTermin(i,f,v){
   const t=currentTask();if(!t)return;
   if(!t.ausserhausTermine||!t.ausserhausTermine[i])return;
-  t.ausserhausTermine[i][f]=v;scheduleSave();
+  t.ausserhausTermine[i][f]=v;
+  // v378 (Befund Teil B3, Frank 08.10.2026): Tag/Uhrzeit/Text am Handy geändert → Outlook-Merker setzen, genau wie der PC
+  // (syncAusserhausTermin). Der PC schreibt nur markierte Termine nach Outlook (_msAutoPushTermine) und überschreibt sie
+  // nicht mit älteren Outlook-Zeiten (_kalSyncStatus fasst Markierte nicht an). Bis der PC-Chat seinen Lauf über alle
+  // Karten baut, geht das nach Outlook, sobald die Karte am PC gespeichert wird.
+  if(f==='date'||f==='von'||f==='bis'||f==='beschreibung')t.ausserhausTermine[i]._pamDirty=true;
+  scheduleSave();
 }
 function openGcal(i){
   const t=currentTask();if(!t)return;
