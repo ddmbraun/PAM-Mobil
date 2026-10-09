@@ -4546,6 +4546,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
        ⚠ Sie erscheint auch bei Tasks OHNE Erstell-Datum, sobald eine Adresse da ist
        (alte Desktop-Tasks hatten sie bis v196 gar nicht). -->
   <div id="detailCreatedLine" style="display:none;padding:4px 14px 5px;font-size:11.5px;color:var(--text2);border-bottom:0.5px solid var(--border);white-space:normal;overflow-wrap:anywhere;line-height:1.35;"></div>
+  <div id="detailVbLaeuft" style="display:none;padding:5px 14px;border-bottom:0.5px solid var(--border);"></div>
   <!-- v124 Paket 3: ✏️-Skizze-REITER entfällt – Skizzen-Knopf sitzt jetzt in Schnell + Tagebuch,
        gespeicherte Skizzen erscheinen als Foto im Tagebuch-Tagesblock (landen eh in t.fotos). -->
   <div class="detail-body" id="detailBody"></div>
@@ -4943,7 +4944,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F48" charset="utf-8"></script>
+<script src="formulare.js?v=F49" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -4959,7 +4960,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v384';
+const MOB_VERSION='v385';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9413,11 +9414,25 @@ function _wpMobRenderFotos(bericht,grid){
     // v326: unter dem Foto steht, wo es verknüpft ist (Prüfpunkt, Messstelle, Wand, Raum) – sonst „nicht zugeordnet“
     const zu=(typeof _fsFotoZuordnungText==='function')?_fsFotoZuordnungText(bericht,f):'';
     const nl=document.createElement('div');nl.setAttribute('data-fs-fotoort','1');nl.style.cssText='position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.66);color:#fff;font-size:8px;padding:3px 26px 3px 3px;pointer-events:none;line-height:1.25;';
-    const l1=document.createElement('div');l1.style.cssText='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8;';l1.textContent=f.name||'Foto';
+    const l1=document.createElement('div');l1.style.cssText='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.8;';l1.textContent=(fi+1)+' · '+(f.name||'Foto'); // v385: Nummer wie am PC
     const l2=document.createElement('div');l2.style.cssText='display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:9px;'+(zu?'font-weight:700;':'opacity:.65;font-style:italic;');l2.textContent=zu?('📍 '+zu):'nicht zugeordnet';
     nl.append(l1,l2);
-    cell.append(badge,delB,nl);grid.appendChild(cell);
+    cell.append(badge,delB,nl);
+    // v385/F49: Reihenfolge am Tablet – ‹ › und ✥ (festhalten und ziehen) unter dem Foto, wie am PC; erst ab zwei Fotos
+    if(bericht.fotos.length>1&&typeof _fsFotoVerschieben==='function'){
+      const box=document.createElement('div');box.setAttribute('data-fs-fotozelle',String(fi));box.style.cssText='display:flex;flex-direction:column;gap:4px;min-width:0;';
+      const rw=document.createElement('div');rw.setAttribute('data-fs-fotoreihe','1');rw.style.cssText='display:flex;gap:4px;';
+      const neu=()=>_wpMobRenderFotos(bericht,grid);
+      const kn=(txt,titel,an,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=txt;b.title=titel;b.setAttribute('aria-label',titel);b.disabled=!an;
+        b.style.cssText='flex:1;min-width:0;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:17px;font-weight:700;padding:0;cursor:pointer;opacity:'+(an?'1':'.3')+';';
+        b.onclick=e=>{e.stopPropagation();if(an)fn();};return b;};
+      const griff=kn('✥','Festhalten und ziehen = verschieben',true,()=>{});griff.setAttribute('data-fs-ziehgriff','1');griff.style.touchAction='none';griff.style.cursor='grab';
+      rw.append(kn('‹','Ein Foto nach vorn',fi>0,()=>{_fsFotoVerschieben(bericht.fotos,fi,fi-1);scheduleSave();neu();}),griff,
+        kn('›','Ein Foto nach hinten',fi<bericht.fotos.length-1,()=>{_fsFotoVerschieben(bericht.fotos,fi,fi+1);scheduleSave();neu();}));
+      box.append(cell,rw);grid.appendChild(box);
+    }else grid.appendChild(cell);
   });
+  if(typeof _fsFotoZiehenAn==='function')_fsFotoZiehenAn(grid,bericht.fotos,()=>_wpMobRenderFotos(bericht,grid)); // v385/F49: Fotos ziehen und verschieben
 }
 
 function _wpMobOpenFoto(bericht,startIdx){
@@ -13639,6 +13654,7 @@ function renderDetail(t){
     el.textContent=(adr?'📍 '+adr:'')+(adr&&txt?' · ':'')+(txt?'📅 Erstellt: '+txt:'');
     el.style.display='block';
   })();
+  try{if(typeof _fsVbLaeuftSchild==='function')_fsVbLaeuftSchild(document.getElementById('detailVbLaeuft'),t,'flex');}catch(e){console.warn('[v385] Schild Vorabbesichtigung:',e);} // v385/F49: „⏱ Vorabbesichtigung läuft seit … 🏁“
   _resetOpenSectionsForTask(t.id);
   const body=document.getElementById('detailBody');
   // Board-Typ ermitteln (baustelle | notiz)
@@ -13978,9 +13994,9 @@ function renderDetail(t){
             // v330: ein Tipp auf Name/Datum öffnet das Protokoll (bisher nur der kleine „Öffnen“-Knopf)
             +'<div data-pf-name="1" onclick="event.stopPropagation();'+openFn+'" title="Öffnen" style="flex:1;min-width:0;cursor:pointer;padding:4px 0;">'
             +'<div style="font-size:13px;font-weight:600;color:var(--text);">'+badge+esc(displayTitle)+'</div>'
-            +'<div style="font-size:11px;color:var(--text2);">'+esc(b.datum||'')+(bgi?esc(' · '+bgi.beantwortet+' von '+bgi.tot+' beantwortet'):'')+(lz&&lz.sub?esc(' · '+lz.sub):'')+(vz&&vz.text?'<span style="'+(vz.endeFehlt?'color:#b25e00;font-weight:700;':'')+'">'+esc(' · '+vz.text)+'</span>':'')+'</div>'
+            +'<div style="font-size:11px;color:var(--text2);">'+esc(b.datum||'')+(bgi?esc(' · '+bgi.beantwortet+' von '+bgi.tot+' beantwortet'):'')+(lz&&lz.sub?esc(' · '+lz.sub):'')+(vz&&vz.text?'<span style="'+(vz.endeFehlt&&!vz.laeuft?'color:#b25e00;font-weight:700;':'')+'">'+esc(' · '+vz.text)+'</span>':'')+'</div>'
             +'</div>'
-            +(vz&&vz.endeFehlt?'<button onclick="event.stopPropagation();_fsVbEndeNachtragen('+bi+')" data-pf-ende="1" title="Ende eintragen" style="font-size:16px;padding:4px 10px;border-radius:6px;border:1px solid #b25e00;background:rgba(230,126,34,.12);color:var(--text);cursor:pointer;">🏁</button>':'') // v383/F47: „Fertig“ vergessen – Ende hier nachtragen
+            +(vz&&vz.endeFehlt?'<button onclick="event.stopPropagation();_fsVbEndeNachtragen('+bi+')" data-pf-ende="1" title="Ende eintragen" style="font-size:16px;padding:4px 10px;border-radius:6px;border:1px solid '+(vz.laeuft?'#1f5f8b':'#b25e00')+';background:'+(vz.laeuft?'rgba(31,95,139,.12)':'rgba(230,126,34,.12)')+';color:var(--text);cursor:pointer;">🏁</button>':'') // v383/F47 · v385/F49: heute blau: „Fertig“ vergessen – Ende hier nachtragen
             +'<button onclick="event.stopPropagation();'+openFn+'" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid '+(isWP?'#1a5c3a':'var(--border)')+';background:'+(isWP?'rgba(26,92,58,.1)':'var(--bg3)')+';color:'+(isWP?'#1a5c3a':'var(--text)')+';cursor:pointer;">Öffnen</button>'
             +(b.schlank?'<button onclick="event.stopPropagation();_fsProtokollUmbenennen('+bi+')" title="Umbenennen" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;">✏</button>':'') // F26/v347: Besichtigung 2 umbenennen
             +'<button onclick="event.stopPropagation();_deletePruefbericht('+bi+')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid rgba(231,76,60,.4);color:var(--red);background:transparent;cursor:pointer;">✕</button>'
