@@ -4944,7 +4944,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F51" charset="utf-8"></script>
+<script src="formulare.js?v=F52" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -4960,7 +4960,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v387';
+const MOB_VERSION='v388';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -13984,7 +13984,7 @@ function renderDetail(t){
           const isWP=b.vorlage==='wartungsprotokoll';
           const isFS=b.vorlage==='feuchte'; // v291
           const bgi=(isFS&&b.fassung==='begehung'&&b.art!=='vorab'&&typeof _fsBgListeInfo==='function')?_fsBgListeInfo(b):null; // v331: neutral „n von m beantwortet“ + Raumnamen · v383: nicht bei der Vorabbesichtigung (zeigte „0 von 17“)
-          const vz=(isFS&&b.art==='vorab'&&typeof _fsVbListeZeit==='function')?_fsVbListeZeit(b):null; // v383/F47: Zeit, „⏱ seit … · Ende fehlt“
+          const vz=(isFS&&b.fassung==='begehung'&&typeof _fsVbListeZeit==='function')?_fsVbListeZeit(b):null; // v383/F47: Zeit, „⏱ seit … · Ende fehlt“ · v388/F52: auch Begehungsprotokoll
           const lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,currentTask()):null; // F15/v332: Kürzel + Tooltip, Kartenname fett, Zusatz klein
           const displayTitle=lz?lz.name:isWP?((b.kopf&&(b.kopf.objektAdresse||b.kopf.adresse))||b.titel||'Bericht'):(b.titel||'Bericht'); // v330: die Straße steht in kopf.objektAdresse
           const openFn=isWP?'_openWartungsprotokollMobil('+bi+')':isFS?'_openFeuchteprotokollMobil('+bi+')':'_openPruefformular('+bi+')';
@@ -13998,7 +13998,7 @@ function renderDetail(t){
             +'</div>'
             +(vz&&vz.endeFehlt?'<button onclick="event.stopPropagation();_fsVbEndeNachtragen('+bi+')" data-pf-ende="1" title="Ende eintragen" style="font-size:16px;padding:4px 10px;border-radius:6px;border:1px solid '+(vz.laeuft?'#1f5f8b':'#b25e00')+';background:'+(vz.laeuft?'rgba(31,95,139,.12)':'rgba(230,126,34,.12)')+';color:var(--text);cursor:pointer;">🏁</button>':'') // v383/F47 · v385/F49: heute blau: „Fertig“ vergessen – Ende hier nachtragen
             +'<button onclick="event.stopPropagation();'+openFn+'" style="font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid '+(isWP?'#1a5c3a':'var(--border)')+';background:'+(isWP?'rgba(26,92,58,.1)':'var(--bg3)')+';color:'+(isWP?'#1a5c3a':'var(--text)')+';cursor:pointer;">Öffnen</button>'
-            +(b.schlank?'<button onclick="event.stopPropagation();_fsProtokollUmbenennen('+bi+')" title="Umbenennen" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;">✏</button>':'') // F26/v347: Besichtigung 2 umbenennen
+            +((typeof _fsGemeinsamerKopf==='function'&&_fsGemeinsamerKopf(b))?'<button onclick="event.stopPropagation();_fsProtokollUmbenennen('+bi+')" title="Umbenennen" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;">✏</button>':'') // F26/v347: Besichtigung 2 umbenennen
             +'<button onclick="event.stopPropagation();_deletePruefbericht('+bi+')" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid rgba(231,76,60,.4);color:var(--red);background:transparent;cursor:pointer;">✕</button>'
             +'</div>';
         }).join('')
