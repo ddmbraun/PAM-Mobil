@@ -4944,7 +4944,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F52" charset="utf-8"></script>
+<script src="formulare.js?v=F53" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -4960,7 +4960,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v388';
+const MOB_VERSION='v389';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9352,7 +9352,10 @@ function _pruefMenuShow(e){
 
 function _deletePruefbericht(idx){
   const t=currentTask();if(!t||!t.pruefberichte)return;
-  if(!confirm('Prüfbericht löschen?'))return;
+  const b0=t.pruefberichte[idx],lz0=(b0&&typeof _fsListeZeile==='function')?_fsListeZeile(b0,t):null; /* v389: das richtige Wort statt immer „Prüfbericht“ (Formular-Prüfung 09.10., Fehler 13) */
+  const was0=(lz0&&lz0.lang)||(b0&&b0.vorlage==='wartungsprotokoll'?'Wartungsprotokoll':(b0&&b0.vorlage==='feuchte'?'Feuchteprotokoll':'Prüfbericht'));
+  const nm0=(b0&&b0.vorlage==='feuchte'&&typeof _fsTitel==='function')?_fsTitel(b0):'';
+  if(!confirm(was0+(nm0&&nm0!==was0?' „'+nm0+'“':'')+' löschen?'))return;
   if(typeof _pbGrabstein==='function')_pbGrabstein(t,t.pruefberichte[idx]); // v306: Löschvermerk – sonst holt der Abgleich das Formular vom PC zurück
   t.pruefberichte.splice(idx,1);
   forceSave();
@@ -9410,7 +9413,7 @@ function _wpMobRenderFotos(bericht,grid){
     badge.textContent='✓';
     const delB=document.createElement('button');delB.type='button';delB.textContent='✕';
     delB.style.cssText='position:absolute;bottom:3px;right:3px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;padding:0;line-height:20px;text-align:center;z-index:3;';
-    delB.onclick=(e)=>{e.stopPropagation();bericht.fotos.splice(fi,1);scheduleSave();_wpMobRenderFotos(bericht,grid);};
+    delB.onclick=(e)=>{e.stopPropagation();if(!confirm('Foto aus dem Protokoll nehmen? Die Datei in Drive bleibt.'))return;bericht.fotos.splice(fi,1);scheduleSave();_wpMobRenderFotos(bericht,grid);}; /* v389: Rückfrage wie am PC (Formular-Prüfung 09.10., Fehler 14) */
     // v326: unter dem Foto steht, wo es verknüpft ist (Prüfpunkt, Messstelle, Wand, Raum) – sonst „nicht zugeordnet“
     const zu=(typeof _fsFotoZuordnungText==='function')?_fsFotoZuordnungText(bericht,f):'';
     const nl=document.createElement('div');nl.setAttribute('data-fs-fotoort','1');nl.style.cssText='position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.66);color:#fff;font-size:8px;padding:3px 26px 3px 3px;pointer-events:none;line-height:1.25;';
