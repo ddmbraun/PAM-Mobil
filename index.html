@@ -4960,7 +4960,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v392';
+const MOB_VERSION='v393';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9350,12 +9350,192 @@ function _pruefMenuShow(e){
   },50);
 }
 
+// ══ v393: FORMULAR LÖSCHEN – erst fragen, was aus den Fotos wird (zusammen mit PAM Desktop b1177) ═══════════════════════
+// Frank 11.10.2026: „Was passiert mit diesen Bildern, wenn ich das Formular lösche – bleiben die trotzdem?“ → „1ja, 2 nein,
+// punkte 1-2, baue“. Bis v392 nahm „Löschen“ nur das Formular weg: die Fotos blieben in Drive, waren in PAM aber nirgends mehr
+// zu sehen (sie stehen nur in bericht.fotos). Jetzt fragt ein Fenster: „🖼 Fotos behalten“ (→ Fotoliste der Karte) oder
+// „🗑 Fotos in den Papierkorb“ (Drive-Papierkorb, 30 Tage zurückholbar); das PDF nur über ein Kästchen (nicht angehakt).
+// Keine dritte Wahl „nur in Drive lassen“ (Frank „2 nein“) – nichts wird unsichtbar: was nicht in den Papierkorb darf (fremde
+// Datei, 403), noch nicht in Drive liegt oder gerade nicht ging, kommt in die Fotoliste. Fotos, die in der Karte noch an anderer
+// Stelle stecken (Fotoliste, anderes Formular, Dachplan, Notiz), bleiben beim Papierkorb unberührt. Ohne Fotos: wie bisher.
+// ⛔ Die Fotos kommen als DASSELBE Objekt in die Fotoliste (keine Kopie): läuft der Upload aus dem Formular noch, schreibt er die
+//    Drive-Kennung so ans richtige Foto (_wpFotoLive findet den Bericht nicht mehr und gibt das Objekt selbst zurück), und das
+//    Nachladen (_mobRetryPendingUploads) nimmt ein noch offenes Foto aus der Fotoliste mit.
+// ⛔ Gelöscht wird weiter NUR in _deletePruefbericht (Löschvermerk VOR dem Herausnehmen, test_v306) – das Fenster ruft es nach
+//    getaner Arbeit mit _mobFormWegFrei auf, damit es nicht ein zweites Mal fragt.
+let _mobFormWegFrei=null;
+function _mobFormWegFotos(b){return (b&&Array.isArray(b.fotos))?b.fotos.filter(function(f){return !!f;}):[];}
+function _mobFormWegPdfId(b){return String((b&&(b.pdfDriveId||b.driveFileId))||'');}
+// Der Name wie in der Formular-Liste – dieselbe Regel wie die Rückfrage unten (v389) und am PC (b1177).
+function _mobFormWegName(b,t){
+  if(!b)return 'Formular';
+  let lz=null,nm='';
+  try{lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,t):null;}catch(e){}
+  try{nm=(b.vorlage==='feuchte'&&typeof _fsTitel==='function')?String(_fsTitel(b)||''):'';}catch(e){}
+  const was=(lz&&lz.lang)||(b.vorlage==='wartungsprotokoll'?(b.art==='rep'?'REP-Auftrag':'Wartungsprotokoll'):(b.vorlage==='feuchte'?'Feuchteprotokoll':'Prüfbericht'));
+  return was+(nm&&nm!==was?' „'+nm+'“':'');
+}
+// Steht das Foto schon in der Fotoliste? Verglichen wird jede Kennung: Original, bemalte Fassung, Gerätespeicher.
+function _mobFormFotoSchonDa(liste,f){
+  const ids=[f&&f.driveId,f&&f.editedDriveId].filter(function(x){return !!x;}).map(String);
+  const lk=String((f&&f.localKey)||'');
+  return (Array.isArray(liste)?liste:[]).some(function(e){
+    if(!e)return false;
+    if(e===f)return true;
+    if(lk&&String(e.localKey||'')===lk)return true;
+    return [e.driveId,e.editedDriveId].some(function(x){return !!x&&ids.indexOf(String(x))>=0;});
+  });
+}
+// Wird ein Foto in der Karte außerhalb DIESES Formulars gebraucht? Die Karte wird nur EINMAL gelesen.
+function _mobFormWegAnderswo(t,b){
+  let s='';
+  try{const c=Object.assign({},t||{});c.pruefberichte=(Array.isArray(c.pruefberichte)?c.pruefberichte:[]).filter(function(x){return x!==b;});s=JSON.stringify(c);}catch(e){s='';}
+  return function(f){
+    const ids=[f&&f.driveId,f&&f.editedDriveId].filter(function(x){return !!x;}).map(String);
+    return !!s&&ids.some(function(id){return s.indexOf('"'+id+'"')>=0;});
+  };
+}
+// Formular-Foto → Fotoliste: dasselbe Objekt, nur das Formular-Merkmal „ins PDF“ fällt weg.
+function _mobFormFotoInListe(t,f){
+  if(!t||!f)return false;
+  if(!Array.isArray(t.fotos))t.fotos=[];
+  if(_mobFormFotoSchonDa(t.fotos,f))return false;
+  delete f.inReport;
+  if(!f.id&&f.localKey)f.id=f.localKey;
+  if(!f.mimeType)f.mimeType='image/jpeg';
+  if(typeof f.caption!=='string')f.caption=String(f.caption||'');
+  t.fotos.push(f);
+  return true;
+}
+function _mobFormWegFenster(t,b){
+  const alt=document.getElementById('_mobFormWegOv');if(alt)alt.remove();
+  if(!t||!b)return;
+  const tid=String(t.id||'');
+  const fotos=_mobFormWegFotos(b),pdf=_mobFormWegPdfId(b),drive=(typeof _ztlAnhTokenOk==='function')&&_ztlAnhTokenOk();
+  const anders=fotos.filter(_mobFormWegAnderswo(t,b)).length;
+  const ov=document.createElement('div');ov.id='_mobFormWegOv';
+  try{if(typeof _fsSichtAn==='function')_fsSichtAn(ov);}catch(e){}
+  ov.style.cssText='position:fixed;inset:0;z-index:100002;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;';
+  const box=document.createElement('div');box.style.cssText='background:var(--bg);color:var(--text);border-radius:14px;padding:18px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.5);max-height:90vh;overflow:auto;';
+  const ti=document.createElement('div');ti.style.cssText='font-size:var(--fs17,17px);font-weight:700;margin-bottom:4px;';
+  ti.textContent=_mobFormWegName(b,t)+' löschen?';
+  const info=document.createElement('div');info.style.cssText='font-size:var(--fs13,13px);color:var(--text2);margin-bottom:4px;line-height:1.4;';
+  info.textContent=(fotos.length===1?'1 Foto':fotos.length+' Fotos')+' im Formular.'+(pdf?' Das PDF bleibt bei den Dokumenten.':'');
+  box.append(ti,info);
+  const kaestchen={checked:false};
+  const zu=function(){ov.remove();};
+  const knopf=function(text,unter,stil,art){
+    const k=document.createElement('button');k.type='button';k.setAttribute('data-formweg',art);
+    k.style.cssText='display:block;width:100%;text-align:left;margin:10px 0 0;padding:12px 14px;border-radius:10px;cursor:pointer;font-family:inherit;color:var(--text);'+stil;
+    const t1=document.createElement('div');t1.style.cssText='font-size:var(--fs15,15px);font-weight:700;';t1.textContent=text;
+    const t2=document.createElement('div');t2.style.cssText='font-size:var(--fs12,12px);color:var(--text2);margin-top:2px;';t2.textContent=unter;
+    k.append(t1,t2);
+    k.onclick=function(){const mitPdf=!!kaestchen.checked;zu();if(art!=='abbruch')_mobFormWegAusfuehren(tid,b,art,mitPdf);};
+    return k;
+  };
+  if(anders){const wz=document.createElement('div');wz.setAttribute('data-formweg-hinweis','1');wz.style.cssText='font-size:var(--fs12,12px);margin:6px 0 0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);';
+    wz.textContent='ℹ '+(anders===1?'1 Foto wird':anders+' Fotos werden')+' in der Karte noch an anderer Stelle gebraucht – '+(anders===1?'es bleibt':'sie bleiben')+' beim Papierkorb liegen.';box.appendChild(wz);}
+  box.appendChild(knopf('🖼 Fotos behalten','in die Fotoliste der Karte – mit Bildunterschrift','border:2px solid #1f6fd1;background:rgba(31,111,209,.12);','behalten'));
+  if(drive){
+    box.appendChild(knopf('🗑 Fotos in den Papierkorb','Drive-Papierkorb – 30 Tage zurückholbar, nie endgültig','border:2px solid #b45309;background:rgba(180,83,9,.12);','papierkorb'));
+    if(pdf){
+      const lb=document.createElement('label');lb.style.cssText='display:flex;gap:10px;align-items:center;font-size:var(--fs13,13px);color:var(--text2);margin:8px 0 0 4px;cursor:pointer;';
+      const cb=document.createElement('input');cb.type='checkbox';cb.setAttribute('data-formweg-pdf','1');cb.style.cssText='width:20px;height:20px;';cb.onchange=function(){kaestchen.checked=cb.checked;};
+      lb.append(cb,document.createTextNode('PDF auch in den Papierkorb'));box.appendChild(lb);
+    }
+  }else{
+    const h=document.createElement('div');h.style.cssText='font-size:var(--fs12,12px);color:var(--text2);margin-top:8px;';
+    h.textContent='Der Papierkorb geht gerade nicht – keine Drive-Verbindung. „Fotos behalten“ geht trotzdem.';box.appendChild(h);
+  }
+  box.appendChild(knopf('Abbrechen','nichts löschen – das Formular bleibt','border:1px solid var(--border);background:transparent;','abbruch'));
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){if(e.target===ov)zu();});
+}
+function _mobFormWegWarten(n){
+  const ov=document.createElement('div');ov.id='_mobFormWegWarte';
+  ov.style.cssText='position:fixed;inset:0;z-index:100002;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;';
+  const bx=document.createElement('div');bx.style.cssText='background:var(--bg);color:var(--text);border-radius:12px;padding:16px 20px;font-size:var(--fs15,15px);font-weight:600;box-shadow:0 8px 40px rgba(0,0,0,.5);';
+  bx.textContent='⏳ Fotos kommen in den Papierkorb …';
+  ov.appendChild(bx);document.body.appendChild(ov);
+  return {stand:function(i){bx.textContent='⏳ Fotos kommen in den Papierkorb … '+i+' von '+n;},zu:function(){ov.remove();}};
+}
+// Führt die Wahl aus: art 'behalten' | 'papierkorb'. Karte und Formular werden nach dem Warten NEU gesucht – ein Abgleich
+// kann sie inzwischen durch neue Objekte ersetzt haben (Lehre v301).
+async function _mobFormWegAusfuehren(tid,b,art,mitPdf){
+  const karte=function(){return (typeof currentTaskId!=='undefined'&&String(currentTaskId||'')===tid)?currentTask():null;};
+  const platz=function(t){const l=(t&&Array.isArray(t.pruefberichte))?t.pruefberichte:[];let i=l.indexOf(b);if(i<0&&b&&b.id!=null)i=l.findIndex(function(x){return x&&String(x.id)===String(b.id);});return i;};
+  let t=karte(),i=platz(t);
+  if(!t||i<0){toast('Das Formular ist nicht mehr offen – es wurde nichts gelöscht','error',6000);return false;}
+  const bb=t.pruefberichte[i],name=_mobFormWegName(bb,t),fotos=_mobFormWegFotos(bb);
+  const erg={liste:0,schonDa:0,korb:0,anders:0,ohneDrive:0,fremd:0,fehler:0,pdf:''};
+  const zurListe=[];
+  if(art==='behalten'){
+    fotos.forEach(function(f){zurListe.push(f);});
+  }else if(art==='papierkorb'){
+    const gebraucht=fotos.map(_mobFormWegAnderswo(t,bb));
+    const ws=_mobFormWegWarten(fotos.length);
+    try{
+      for(let k=0;k<fotos.length;k++){
+        const f=fotos[k];ws.stand(k+1);
+        if(gebraucht[k]){erg.anders++;continue;}
+        const fid=String(f.driveId||'');
+        if(!fid){erg.ohneDrive++;zurListe.push(f);continue;} // noch nicht in Drive → Fotoliste, das Nachladen bringt es hoch
+        const r=await _ztlAnhPapierkorb(fid);
+        if(r==='ok'||r==='weg'){
+          erg.korb++;
+          if(f.editedDriveId&&String(f.editedDriveId)!==fid){const r2=await _ztlAnhPapierkorb(String(f.editedDriveId));if(r2!=='ok'&&r2!=='weg')console.warn('[Formular löschen] bemalte Fassung:',r2);}
+        }else{
+          if(r==='HTTP 403')erg.fremd++;else{erg.fehler++;console.warn('[Formular löschen] Papierkorb:',r);}
+          zurListe.push(f);
+        }
+      }
+      const pid=mitPdf?_mobFormWegPdfId(bb):'';
+      if(pid){
+        const r=await _ztlAnhPapierkorb(pid);
+        if(r==='ok'||r==='weg'){
+          erg.pdf='korb';
+          const t2=karte();if(t2&&Array.isArray(t2.attachments))t2.attachments=t2.attachments.filter(function(a){return !(a&&(a.fileId===pid||a.driveId===pid));});
+        }else erg.pdf='blieb';
+      }
+    }finally{ws.zu();}
+  }else return false;
+  t=karte();i=platz(t);
+  if(t)zurListe.forEach(function(f){if(_mobFormFotoInListe(t,f))erg.liste++;else erg.schonDa++;});
+  if(!t||i<0){
+    if(t){forceSave();try{renderDetail(t);}catch(e){}}
+    toast('⚠ Das Formular war inzwischen nicht mehr da – '+(erg.korb?erg.korb+' Fotos liegen im Papierkorb, ':'')+'die übrigen stehen in der Fotoliste','error',9000);
+    return false;
+  }
+  _mobFormWegFrei=t.pruefberichte[i];
+  _deletePruefbericht(i);
+  const teile=[(art==='behalten'?'✓ ':'🗑 ')+name+' gelöscht'];
+  if(art==='behalten'){
+    if(erg.liste)teile.push(erg.liste===1?'1 Foto steht jetzt in der Fotoliste der Karte':erg.liste+' Fotos stehen jetzt in der Fotoliste der Karte');
+    if(erg.schonDa)teile.push(erg.schonDa===1?'1 stand schon dort':erg.schonDa+' standen schon dort');
+  }else{
+    if(erg.korb)teile.push(erg.korb===1?'1 Foto liegt im Drive-Papierkorb (30 Tage zurückholbar)':erg.korb+' Fotos liegen im Drive-Papierkorb (30 Tage zurückholbar)');
+    if(erg.anders)teile.push(erg.anders===1?'1 wird in der Karte noch gebraucht und bleibt':erg.anders+' werden in der Karte noch gebraucht und bleiben');
+    if(erg.liste){
+      const warum=[];
+      if(erg.fremd)warum.push(erg.fremd+' durfte PAM nicht wegwerfen – am PC im Explorer löschen');
+      if(erg.ohneDrive)warum.push(erg.ohneDrive+' noch nicht in Drive');
+      if(erg.fehler)warum.push(erg.fehler+' ging gerade nicht');
+      teile.push((erg.liste===1?'1 Foto steht jetzt in der Fotoliste':erg.liste+' Fotos stehen jetzt in der Fotoliste')+(warum.length?' ('+warum.join(', ')+')':''));
+    }
+    if(erg.pdf==='korb')teile.push('das PDF liegt im Papierkorb');
+    else if(erg.pdf==='blieb')teile.push('das PDF ließ sich nicht wegwerfen und bleibt');
+  }
+  toast(teile.join(' · '),(erg.fehler||erg.fremd||erg.pdf==='blieb')?'error':'success',9000);
+  return true;
+}
 function _deletePruefbericht(idx){
   const t=currentTask();if(!t||!t.pruefberichte)return;
+  const frei=!!t.pruefberichte[idx]&&_mobFormWegFrei===t.pruefberichte[idx];_mobFormWegFrei=null; // v393: das Fenster hat schon gefragt
+  if(!frei&&_mobFormWegFotos(t.pruefberichte[idx]).length){_mobFormWegFenster(t,t.pruefberichte[idx]);return;} // v393: Fotos im Formular → erst fragen
   const b0=t.pruefberichte[idx],lz0=(b0&&typeof _fsListeZeile==='function')?_fsListeZeile(b0,t):null; /* v389: das richtige Wort statt immer „Prüfbericht“ (Formular-Prüfung 09.10., Fehler 13) */
   const was0=(lz0&&lz0.lang)||(b0&&b0.vorlage==='wartungsprotokoll'?'Wartungsprotokoll':(b0&&b0.vorlage==='feuchte'?'Feuchteprotokoll':'Prüfbericht'));
   const nm0=(b0&&b0.vorlage==='feuchte'&&typeof _fsTitel==='function')?_fsTitel(b0):'';
-  if(!confirm(was0+(nm0&&nm0!==was0?' „'+nm0+'“':'')+' löschen?'))return;
+  if(!frei){if(!confirm(was0+(nm0&&nm0!==was0?' „'+nm0+'“':'')+' löschen?'))return;} // v393: nach dem Fenster nicht noch einmal fragen
   if(typeof _pbGrabstein==='function')_pbGrabstein(t,t.pruefberichte[idx]); // v306: Löschvermerk – sonst holt der Abgleich das Formular vom PC zurück
   t.pruefberichte.splice(idx,1);
   forceSave();
