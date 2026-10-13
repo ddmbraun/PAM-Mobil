@@ -695,6 +695,20 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .ck-item input[type=text]:focus{border-color:var(--accent);}
 .ck-item input[type=text].done-text{text-decoration:line-through;opacity:.5;}
 .ck-item .ck-del{padding:4px 10px;font-size:13px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;flex-shrink:0;}
+/* v400: Dachzugang & Hinweise (Bereich am Objekt; am Auftrag nur Ansicht) */
+.dz-item{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.dz-item input[type=text]{padding:10px 12px;border-radius:7px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:16px;outline:none;min-width:0;box-sizing:border-box;}
+.dz-item input[type=text]:focus{border-color:var(--accent);}
+.dz-item .dz-haus{flex:0 0 76px;width:76px;}
+.dz-item .dz-text{flex:1;}
+.dz-item input[type=checkbox]{width:22px;height:22px;flex-shrink:0;cursor:pointer;accent-color:var(--accent);}
+.dz-item.dz-fertig input[type=text]{opacity:.55;}
+.dz-item .ck-del{padding:4px 10px;font-size:13px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;flex-shrink:0;}
+.dz-item.dz-lese{align-items:flex-start;}
+.dz-lese .dz-haus-l{flex:0 0 100px;font-weight:700;font-size:15px;overflow-wrap:break-word;}
+.dz-lese .dz-text-l{flex:1;min-width:0;font-size:15px;overflow-wrap:anywhere;}
+.dz-lese .dz-ok{flex:0 0 22px;text-align:center;font-size:16px;}
+.dz-hinweis{font-size:12px;color:var(--text2);margin:8px 0 6px;}
 /* ── TOAST ── */
 /* v216: Stapelhöhe 100050 statt 100 – Meldungen lagen UNTER Dachplan (99990),
    Foto-Vollbildern (99999) und der Mal-Ansicht (100010). Ein gescheiterter
@@ -4960,7 +4974,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v399';
+const MOB_VERSION='v400';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5753,7 +5767,8 @@ const _MOB_LISTEN_KENNUNG={
   fotos:        f=>(f&&(f.id||f.driveId||f.path||((f.name&&f.size)?('ns:'+f.name+'|'+f.size):'')))||'',
   attachments:  f=>(f&&(f.fileId||f.url||((f.name||'')+'|'+(f.size||0))))||'',
   checkliste:   c=>(c&&(c.id||(c.text||'')))||'',
-  kontakte:     k=>(k&&(k.id||((k.rolle||'')+'|'+(k.name||''))))||''
+  kontakte:     k=>(k&&(k.id||((k.rolle||'')+'|'+(k.name||''))))||'',
+  dachzugang:   d=>(d&&d.id)||'' // v400: feste Kennung je Zeile (wie am PC b1193)
 };
 // v308: verglichen wird ohne die nur hier vorkommenden Felder (_mobSaveReplacer); nimmt man ein drueben geaendertes Foto, bleiben
 // localUrl / _uploading / dataUrl des hiesigen Eintrags erhalten (Anzeige und laufender Upload).
@@ -5767,7 +5782,7 @@ function _mobListeDrei(feld,remoteList,localList,basisList){
 // Momentaufnahme des letzten Abgleichs (_mobSnapListe); ohne sie, ohne Liste auf einer Seite: mergedTask bleibt, wie es ist.
 function _mobListenDreiAnwenden(taskId,rt,localTask,mergedTask){
   if(!rt||!localTask||!mergedTask)return;
-  ['fotos','attachments','checkliste','kontakte'].forEach(function(f){
+  ['fotos','attachments','checkliste','kontakte','dachzugang'].forEach(function(f){
     const n=_mobListeDrei(f,rt[f],localTask[f],_mobSnapListe(taskId,f));
     if(n)mergedTask[f]=n;
   });
@@ -5874,6 +5889,7 @@ let _mobOfflineActive=false; // true = Boards kamen aus lokalem Backup (Offline-
 let _mobSaving=false;     // Mutex: verhindert parallele saveFile()-Läufe (Race Condition)
 let _mobSaveQueued=false; // Während eines laufenden Saves kam ein weiterer Save-Wunsch → danach erneut speichern
 let mTaskCheckliste=[]; // Checkliste des aktuell geöffneten Tasks
+let mTaskDachzugang=[]; // v400: Dachzugang & Hinweise [{id,haus,text,done}] des aktuell geöffneten Tasks
 
 // ── UTILS ──
 function esc(s){const d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
@@ -9038,6 +9054,7 @@ async function saveFile(){
                     // Fix: checkliste und kontakte mergen statt überschreiben
                     mergedTask.checkliste=_mergeListByKey(rt.checkliste,localTask.checkliste,c=>(c.text||'')); // Fix v76: done-Status nicht im Schlüssel → kein Duplikat bei gleichzeitiger Bearbeitung
                     mergedTask.kontakte=_mergeListByKey(rt.kontakte,localTask.kontakte,k=>((k.rolle||'')+'|'+(k.name||'')+'|'+(k.tel||'')));
+                    mergedTask.dachzugang=_mergeListByKey(rt.dachzugang,localTask.dachzugang,d=>(d.id||'')); // v400: Schlüssel = id (Zeilen ohne id bleiben alle stehen)
                     // v308: die vier Listen je Eintrag dreiseitig (hier · drueben · Momentaufnahme) – bis v307 gewann bei attachments/checkliste/kontakte
                     // die Datei (Datei zuerst): am Handy Geloeschtes kam zurueck, ein gesetzter Haken ging verloren, eine geaenderte Telefonnummer
                     // ergab einen zweiten Kontakt. Ohne Momentaufnahme bleibt es bei den Zeilen oben. typeof: Pruefsuiten fuehren Teile dieses Blocks aus.
@@ -13857,6 +13874,7 @@ function renderDetail(t){
   const zeiten=t.zeitEntries||[];
   const notizVerlauf=t.notizVerlauf||[];
   mTaskCheckliste=JSON.parse(JSON.stringify(t.checkliste||[]));
+  mTaskDachzugang=JSON.parse(JSON.stringify(t.dachzugang||[])); // v400
   const fotos=t.fotos||[];
   const attachments=t.attachments||[];
   // v188: Zähler für die Kacheln. Beide Quellen liegen außerhalb dieser Funktion,
@@ -14095,6 +14113,8 @@ function renderDetail(t){
         +'<button class="add-btn" style="width:44px;flex-shrink:0;font-size:18px;padding:0" onclick="addMCkItem()">+</button>'
       +'</div>'
     +'</div></div>')
+    // ── DACHZUGANG & HINWEISE (v400) ── nur am Objekt (bearbeitbar) bzw. im Auftrag am Objekt (nur Ansicht, wenn dort etwas steht)
+    +((typeof _mDzKachel==='function')?_mDzKachel(t,br,oc):'')
     // ── AUSSER-HAUS-TERMINE ── (v108: hierher verschoben, direkt über Zeiterfassung – Wunsch Frank)
     // v377: auf Auftrags-Boards EINE Terminliste nach Zeit (Außerhaus + Aufgaben + freie Termine), wie am PC b1131
     +((!isNotiz&&typeof _mtSektionHtml==='function')?br('Termine','📅','Termine',String(_mtEintraege(t).length),!_mtEintraege(t).length,_mtSektionHtml(t,oc)):'')
@@ -16449,6 +16469,127 @@ function removeMCkItem(i){
   const el=document.getElementById('mCkList');
   if(el)el.innerHTML=_renderMCkItems();
   _saveMCk();
+}
+// ══ DACHZUGANG & HINWEISE (v400, Frank 13.10.2026; PC: b1193) ══
+// Task-Feld `dachzugang` = [{id,haus,text,done}]. Am OBJEKT (Immobilien-Board, ohne objektId) ändert das Handy es mit;
+// im AUFTRAG am Objekt (objektId) zeigt der Bereich nur den Inhalt des Objekts, nichts ist änderbar – und nur, wenn dort etwas steht.
+// ⛔ NICHT in `_pcOnly`: das Handy bearbeitet das Feld. Karten ohne das Feld gelten als leere Liste.
+function _mDzId(){return 'dz_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function _mDzObjektVon(id){
+  if(!id)return null;
+  var gefunden=null;
+  var toepfe=[];
+  try{toepfe.push(boards);}catch(e){}
+  try{if(typeof hiddenBoards!=='undefined')toepfe.push(hiddenBoards);}catch(e){}
+  try{if(typeof _mobileFilteredOut!=='undefined')toepfe.push(_mobileFilteredOut);}catch(e){}
+  toepfe.forEach(function(topf){
+    if(gefunden||!topf)return;
+    Object.keys(topf).forEach(function(b){
+      if(gefunden||b.charAt(0)==='_')return;
+      (topf[b]||[]).forEach(function(x){if(!gefunden&&x&&x.id===id)gefunden=x;});
+    });
+  });
+  return gefunden;
+}
+// {modus:'bearbeiten'|'ansicht'|'', liste, objekt}
+function _mDzModus(t){
+  try{
+    if(!t)return {modus:'',liste:[],objekt:null};
+    if(t.objektId){
+      var o=_mDzObjektVon(t.objektId);
+      var l=(o&&Array.isArray(o.dachzugang))?o.dachzugang.filter(Boolean):[];
+      return {modus:l.length?'ansicht':'',liste:l,objekt:o};
+    }
+    var bn=findBoardByTaskId(t.id);
+    if((boardTypes[bn]||'baustelle')==='immobilie')return {modus:'bearbeiten',liste:mTaskDachzugang||[],objekt:null};
+  }catch(e){console.warn('[v400] Dachzugang:',e);}
+  return {modus:'',liste:[],objekt:null};
+}
+function _mDzZahl(liste){
+  var n=(liste||[]).length;if(!n)return '';
+  return liste.filter(function(x){return x&&x.done;}).length+'/'+n;
+}
+function _mDzTitle(m){
+  var z=_mDzZahl(m&&m.liste);
+  return z?('\uD83E\uDE9C Dachzugang &amp; Hinweise <span style="color:var(--accent2);font-size:11px;font-weight:400">('+z+')</span>'):'\uD83E\uDE9C Dachzugang &amp; Hinweise';
+}
+function _mDzListeHtml(m){
+  if(!m||!m.liste)return '';
+  if(m.modus==='ansicht'){
+    var h=m.liste.map(function(e){
+      return '<div class="dz-item dz-lese'+(e.done?' dz-fertig':'')+'"><span class="dz-haus-l">'+esc(e.haus)+'</span><span class="dz-text-l">'+esc(e.text)+'</span><span class="dz-ok">'+(e.done?'\u2713':'\u2013')+'</span></div>';
+    }).join('');
+    var name=esc((m.objekt&&m.objekt.title)||'Objekt');
+    var knopf=(m.objekt&&m.objekt.id&&findBoardByTaskId(m.objekt.id))?`<button class="add-btn" style="width:100%;margin-top:6px;" onclick="openDetail('${_jsa(m.objekt.id)}')">\uD83C\uDFE0 im Objekt ändern</button>`:'<div class="dz-hinweis">Am Handy nicht änderbar – im Objekt (am PC) ändern.</div>';
+    return h+'<div class="dz-hinweis">Aus dem Objekt \u201E'+name+'\u201C \u2013 hier nur zur Ansicht, im Objekt ändern.</div>'+knopf;
+  }
+  return m.liste.map(function(e,i){
+    return `<div class="dz-item${e.done?' dz-fertig':''}">
+      <input type="text" class="dz-haus" id="mdz_h_${escAttr(e.id)}" value="${escAttr(e.haus)}" placeholder="Haus" oninput="_mDzUpd(${i},'haus',this.value)" autocomplete="off">
+      <input type="text" class="dz-text" id="mdz_t_${escAttr(e.id)}" value="${escAttr(e.text)}" placeholder="Hinweis zum Dachzugang…" oninput="_mDzUpd(${i},'text',this.value)" autocomplete="off">
+      <input type="checkbox" class="dz-ck" ${e.done?'checked':''} onchange="_mDzHaken(${i},this.checked,this)" autocomplete="off" title="erfasst">
+      <button type="button" class="ck-del" onclick="_mDzDel(${i})">\u2715</button>
+    </div>`;
+  }).join('');
+}
+function _mDzKachel(t,br,oc){
+  var m=_mDzModus(t);
+  if(m.modus==='')return '';
+  return br('Dachzugang','\uD83E\uDE9C','Dachzugang',_mDzZahl(m.liste),!m.liste.length,
+    '<div class="sect'+oc('Dachzugang')+'" data-sect="Dachzugang"><div class="sect-head" onclick="toggleMSect(this.parentElement)" id="mDzHead">'+_mDzTitle(m)+'</div><div class="sect-body">'
+    +'<div id="mDzList">'+_mDzListeHtml(m)+'</div>'
+    +(m.modus==='bearbeiten'?'<button class="add-btn" style="width:100%;margin-top:4px;" onclick="_mDzAdd()">\uFF0B Zeile</button>':'')
+    +'</div></div>');
+}
+// Zähler am Kopf des Bereichs und an der Kachel in der Übersicht nachziehen (ohne alles neu zu zeichnen – sonst springt der Cursor)
+function _mDzAnzeigeNeu(){
+  var m=_mDzModus(currentTask());
+  var h=document.getElementById('mDzHead');if(h)h.innerHTML=_mDzTitle(m);
+  var k=document.querySelector('.m-kachel[onclick*="Dachzugang"]');
+  if(!k)return;
+  var top=k.querySelector('.m-kachel-top'),z=k.querySelector('.m-kachel-zahl'),zahl=_mDzZahl(m.liste);
+  if(z){if(zahl)z.textContent=zahl;else z.remove();}
+  else if(zahl&&top){var sp=document.createElement('span');sp.className='m-kachel-zahl';sp.textContent=zahl;top.appendChild(sp);}
+  k.classList.toggle('leer',!m.liste.length);k.classList.toggle('voll',!!m.liste.length);
+}
+function _mDzSpeichern(sofort){
+  const t=currentTask();if(!t)return;
+  t.dachzugang=JSON.parse(JSON.stringify(mTaskDachzugang||[]));
+  if(sofort)forceSave();else scheduleSave();
+  _mDzAnzeigeNeu();
+}
+function _mDzUpd(i,feld,wert){
+  const e=(mTaskDachzugang||[])[i];if(!e)return;
+  e[feld]=String(wert==null?'':wert);
+  _mDzSpeichern(false);
+}
+function _mDzHaken(i,an,el){
+  const e=(mTaskDachzugang||[])[i];if(!e)return;
+  e.done=!!an;
+  const z=(el&&el.closest)?el.closest('.dz-item'):null;
+  if(z)z.classList.toggle('dz-fertig',!!an);
+  _mDzSpeichern(true);
+}
+function _mDzNeuZeichnen(){
+  const el=document.getElementById('mDzList');
+  if(el)el.innerHTML=_mDzListeHtml(_mDzModus(currentTask()));
+}
+function _mDzAdd(){
+  if(!Array.isArray(mTaskDachzugang))mTaskDachzugang=[];
+  const e={id:_mDzId(),haus:'',text:'',done:false};
+  mTaskDachzugang.push(e);
+  _mDzNeuZeichnen();
+  _mDzSpeichern(true);
+  const sect=document.querySelector('[data-sect="Dachzugang"]');
+  if(sect&&!sect.classList.contains('open'))sect.classList.add('open');
+  const fo=document.getElementById('mdz_h_'+e.id);if(fo)fo.focus(); // direkt im Antippen: die Handy-Tastatur öffnet sich nur aus einer Berührung heraus, nicht aus einem Zeitgeber
+}
+function _mDzDel(i){
+  const e=(mTaskDachzugang||[])[i];if(!e)return;
+  if(((e.haus||'')+(e.text||'')).trim()&&!confirm('Zeile entfernen?'))return;
+  mTaskDachzugang.splice(i,1);
+  _mDzNeuZeichnen();
+  _mDzSpeichern(true);
 }
 
 // ══ FOTOS & ATTACHMENTS ══
