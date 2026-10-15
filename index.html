@@ -4989,7 +4989,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v408';
+const MOB_VERSION='v409';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -21514,7 +21514,11 @@ function _qaObjektSammle(){
     alle.forEach(function(t){
       if(!t||t.archiviert||t.spaeterBearbeiten)return;
       if(t.objektId)return; // Aufträge AM Objekt sind selbst keine Objekte
-      out.push({id:t.id,board:bn,title:t.title||'',adresse:t.adresse||''});
+      /* v409 (P60): Hausverwaltung und NAS-Pfad MIT in die Liste. _submitQuickAdd erbt sie seit v187 vom Objekt
+         und _objTitelVorspann baut das Kürzel seit v195 aus obj.nas – beides lief ins Leere, weil die Liste nur
+         id/board/title/adresse trug (Befund 14.10.2026, Browserprobe v408). ⛔ Nur lesen/mitgeben: das Objekt selbst
+         bleibt unangetastet. */
+      out.push({id:t.id,board:bn,title:t.title||'',adresse:t.adresse||'',hausverwaltung:t.hausverwaltung||'',nas:t.nas||''});
     });
   });
   out.sort(function(a,b){return String(a.title).localeCompare(String(b.title),'de');});
