@@ -4767,6 +4767,12 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
   <div style="position:absolute;bottom:0;left:0;right:0;background:var(--bg2);border-radius:18px 18px 0 0;padding:20px 16px 32px;box-shadow:0 -4px 24px rgba(0,0,0,0.4);">
     <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 18px;"></div>
     <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px;">⚡ Schnell erfassen</div>
+    <!-- v408: Umschalter – „📝 Nur Info" (wie bisher, Schnell-Board) oder „🛠 Neuer Auftrag" (leere, vollwertige
+         Karte ohne Objekt-Suche; Objekt freiwillig). Beim Öffnen immer „Nur Info". -->
+    <div id="quickAddModus" style="display:flex;gap:6px;margin-bottom:10px;">
+      <button type="button" id="quickAddModusInfo" onclick="_qaModusSetzen('info')" style="flex:1;padding:11px 4px;border-radius:10px;border:2px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;">📝 Nur Info</button>
+      <button type="button" id="quickAddModusAuftrag" onclick="_qaModusSetzen('auftrag')" style="flex:1;padding:11px 4px;border-radius:10px;border:2px solid var(--border);background:var(--bg3);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;">🛠 Neuer Auftrag</button>
+    </div>
     <input id="quickAddTitle" type="text" placeholder="Titel …" autocomplete="off" style="width:100%;box-sizing:border-box;padding:12px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:10px;font-size:15px;margin-bottom:10px;" onkeydown="if(event.key==='Enter')_submitQuickAdd()">
     <!-- v181: Auftrag am Objekt – Objekt aus der Liste wählen, Karte landet in „🛠 Aufträge" auf dem Objekt-Board -->
     <button id="quickAddObjektBtn" onclick="_qaObjektWahl()" style="width:100%;box-sizing:border-box;padding:11px;background:var(--bg3);color:var(--text2);border:1px dashed var(--border);border-radius:10px;font-size:14px;cursor:pointer;margin-bottom:10px;text-align:left;">🏠 Objekt wählen (für Auftrag am Objekt) …</button>
@@ -4787,9 +4793,10 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
       <button onclick="_openAdrPopup('quickadd')" title="Adresse groß bearbeiten" style="flex-shrink:0;padding:11px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:14px;cursor:pointer;">✏️</button>
     </div>
     <div id="quickAddStandortInfo" style="display:none;font-size:11px;color:var(--text2);margin-bottom:14px;"></div>
+    <div id="quickAddZiel" style="font-size:12px;color:var(--text2);background:var(--bg3);border-radius:8px;padding:7px 10px;margin-bottom:10px;line-height:1.5;"></div><!-- v408: wohin die Karte kommt -->
     <div style="display:flex;gap:10px;">
       <button onclick="_closeQuickAdd()" style="flex:1;padding:13px;background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:10px;font-size:15px;cursor:pointer;">Abbrechen</button>
-      <button onclick="_submitQuickAdd()" style="flex:2;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;">✓ Speichern</button>
+      <button id="quickAddSaveBtn" onclick="_submitQuickAdd()" style="flex:2;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;">✓ Speichern</button>
     </div>
   </div>
 </div>
@@ -4895,6 +4902,14 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
           </select>
           <div style="font-size:12px;color:var(--text2);margin-top:4px;">Tasks vom + Button landen in diesem Board.</div>
         </div>
+        <!-- v408: Ziel für „＋ → 🛠 Neuer Auftrag" ohne Objekt. Zur Wahl stehen nur Auftrags-Boards, die am Handy
+             freigegeben sind UND deren erste Spalte am Handy zu sehen ist – sonst verschwände die Karte sofort. -->
+        <div class="field"><label>🛠 Auftrags-Board (+ → Neuer Auftrag)</label>
+          <select id="auftragBoardSelect" style="width:100%;padding:10px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:14px;" onchange="_saveAuftragBoard()">
+            <option value="">– Board wählen –</option>
+          </select>
+          <div id="auftragBoardHinweis" style="font-size:12px;color:var(--text2);margin-top:4px;">Neue Aufträge ohne Objekt landen in der ersten Spalte dieses Boards.</div>
+        </div>
         <div class="field"><label>📷 Standard-Fotoordner</label>
           <input type="url" id="defaultFotoFolderInput" placeholder="https://drive.google.com/drive/folders/…" style="width:100%;box-sizing:border-box;padding:10px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;" autocomplete="off" oninput="_saveDefaultFotoFolder()">
           <div style="font-size:12px;color:var(--text2);margin-top:4px;">Fallback wenn im Task kein Foto-Ordner hinterlegt ist.</div>
@@ -4974,7 +4989,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v407';
+const MOB_VERSION='v408';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10142,7 +10157,7 @@ async function _mobRetryPendingUploads(opts){
       if(!fid){
         const _bn=findBoardByTaskId(task.id);
         const _quickBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
-        if((boardTypes[_bn]||'baustelle')==='notiz'||(!!_quickBoard&&_bn===_quickBoard)){
+        if((boardTypes[_bn]||'baustelle')==='notiz'||(!!_quickBoard&&_bn===_quickBoard)||!!task._qaAuftrag){ // v408: Handy-Auftrag ohne Ordner (offline angelegt) bekommt ihn hier
           try{fid=await _ensureQuickNoteFolder(task,task.title,null);if(fid)scheduleSave();}
           catch(e){console.warn('[MobPhoto] Retry Notiz-Ordner:',e);}
         }
@@ -17854,7 +17869,7 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
     // (Manche Schnell-Boards sind auf dem Desktop nicht als 'notiz' typisiert → sonst fiel der
     //  nachträgliche Foto-Upload fälschlich auf den Standard-Fotoordner zurück.)
     const _quickBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
-    const _isQuickNote=(boardTypes[_bn]||'baustelle')==='notiz'||(!!_quickBoard&&_bn===_quickBoard);
+    const _isQuickNote=(boardTypes[_bn]||'baustelle')==='notiz'||(!!_quickBoard&&_bn===_quickBoard)||!!t._qaAuftrag; // v408: Handy-Auftrag → eigener Ordner statt Standard-Fotoordner
     if(_isQuickNote){
       try{ if(await ensureToken()) folderId=await _ensureQuickNoteFolder(t,t.title,null); }
       catch(e){console.warn('[uploadFoto] Notiz-Ordner:',e);}
@@ -21398,6 +21413,32 @@ function _saveDefaultFotoFolder(){
   const v=(document.getElementById('defaultFotoFolderInput').value||'').trim();
   try{localStorage.setItem(DEFAULT_FOTO_FOLDER_KEY,v);}catch(e){}
 }
+// v408: Auftrags-Board für „＋ → 🛠 Neuer Auftrag" (je Gerät, wie das Schnell-Board)
+function _saveAuftragBoard(){
+  const v=(document.getElementById('auftragBoardSelect')||{}).value||'';
+  try{localStorage.setItem(AUFTRAG_BOARD_KEY,v);}catch(e){}
+  _loadAuftragBoardSelect();
+}
+function _loadAuftragBoardSelect(){
+  const sel=document.getElementById('auftragBoardSelect');
+  if(!sel)return;
+  const saved=_qaAbGespeichert();
+  const wirksam=_qaAuftragBoard(); // gespeichert (wenn freigegeben) oder Vorschlag
+  sel.innerHTML='<option value="">– Board wählen –</option>';
+  _qaAbBoards().forEach(function(name){
+    const o=document.createElement('option');
+    const sp=_qaAbSpalte(name);
+    o.value=name;o.textContent=name+(sp?' → '+sp:'');
+    if(name===wirksam)o.selected=true;
+    sel.appendChild(o);
+  });
+  const h=document.getElementById('auftragBoardHinweis');
+  if(h){
+    const p=_qaAuftragBoardPruefen();
+    h.textContent=p.fehler?('⚠ '+p.fehler):('Neue Aufträge ohne Objekt landen in „'+p.board+'“'+(p.spalte?', Spalte „'+p.spalte+'“':'')+(saved?'':' (Vorschlag – zum Festlegen hier wählen)')+'.');
+    h.style.color=p.fehler?'var(--orange)':'var(--text2)';
+  }
+}
 function _loadQuickBoardSelect(){
   const sel=document.getElementById('quickBoardSelect');
   if(!sel)return;
@@ -21489,12 +21530,17 @@ function _qaObjektSchliessen(){var ov=document.getElementById('qaObjektOverlay')
 function _qaObjektListeZeichnen(){
   var el=document.getElementById('qaObjektListe');if(!el)return;
   var q=((document.getElementById('qaObjektSuche')||{}).value||'').trim().toLowerCase();
+  /* v408: wortweise wie am PC (_objZuordnenListeZeichnen, b820) – jedes Wort muss in Titel oder
+     Adresse vorkommen. „Zeckensee 9" fand bis v407 nichts, weil das Sammelobjekt „… 7,8,9" heißt. */
+  var worte=q?q.split(/\s+/).filter(Boolean):[];
   var liste=_qaObjektSammle().filter(function(o){
-    return !q||o.title.toLowerCase().indexOf(q)>=0||o.adresse.toLowerCase().indexOf(q)>=0;
+    if(!worte.length)return true;
+    var hay=(String(o.title||'')+' '+String(o.adresse||'')).toLowerCase();
+    return worte.every(function(w){return hay.indexOf(w)>=0;});
   });
   var h='';
   if(_qaObjekt)h+='<div onclick="_qaObjektSetzen(\'\')" style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer;color:var(--text2);font-size:14px;">✕ Ohne Objekt (normale Schnellnotiz)</div>';
-  if(!liste.length)h+='<div style="padding:14px;color:var(--text2);font-size:14px;">Kein Objekt gefunden.'+(q?'':'<br>Objekt-Boards (🏠) werden am Desktop angelegt.')+'</div>';
+  if(!liste.length)h+='<div style="padding:14px;color:var(--text2);font-size:14px;">Kein Objekt gefunden.'+(q?'<br>Tipp: nur den Straßennamen eingeben.':'<br>Objekt-Boards (🏠) werden am Desktop angelegt.')+'</div>';
   h+=liste.map(function(o){
     return '<div onclick="_qaObjektSetzen(\''+_jsa(o.id)+'\')" style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer;">'
       +'<div style="font-size:15px;font-weight:600;color:var(--text);">'+esc(o.title)+'</div>'
@@ -21530,6 +21576,7 @@ function _qaObjektSetzen(id){
   else{_qaObjekt=_qaObjektSammle().find(function(x){return x.id===id;})||null;}
   _qaObjektSchliessen();
   _qaObjektKnopf();
+  if(typeof _qaModusZeichnen==='function')_qaModusZeichnen(); // v408: Zeile „Landet in: …" nachziehen (typeof: test_v181 schneidet die Funktion allein aus)
 }
 /* == v252: Aus einem Auftrag ein OBJEKT machen ==============================
    Anlass (Frank, 31.08.): Auf der Baustelle steht er an einem Haus, das noch kein
@@ -21907,6 +21954,83 @@ function _qaObjektRueckweg(t){
   }catch(e){console.warn('[v186] Rückweg:',e);return '';}
 }
 
+// ══ v408: ＋ = „📝 Nur Info" (wie bisher) oder „🛠 Neuer Auftrag" ══════════════════
+// Bis v407 wurde ＋ ohne Objekt IMMER eine Notiz auf dem Schnell-Board (Typ notiz: keine
+// Formulare, keine Kontakte); ein Auftrag ging nur über die Objekt-Suche. Jetzt: Umschalter
+// oben im Fenster. „Neuer Auftrag" ohne Objekt → Auftrags-Board aus den Einstellungen (erste
+// Spalte), MIT Objekt → wie v181 beim Objekt in „🛠 Aufträge".
+// ⛔ Schutz: nur Boards, die am Handy freigegeben sind UND deren erste Spalte im Handy-
+//    Spaltenfilter steht – sonst verschwände die Karte beim nächsten Abgleich. Geprüft in den
+//    Einstellungen UND noch einmal beim Anlegen (die Freigabe kann sich am PC inzwischen
+//    geändert haben): dann Meldung statt Karte, die Eingaben bleiben im Fenster stehen.
+// ⛔ Beim Öffnen immer „Nur Info". Am Handy entstehen weiter keine Aufgaben.
+var _qaModus='info';
+const AUFTRAG_BOARD_KEY='ptpm_auftrag_board'; // je Gerät, wie QUICK_BOARD_KEY
+function _qaAbSpalte(bn){ // erste Spalte des Boards = Ziel-Spalte (wie bei Schnellnotizen)
+  const sts=(typeof _remoteBoardStatuses!=='undefined'&&_remoteBoardStatuses&&Array.isArray(_remoteBoardStatuses[bn])&&_remoteBoardStatuses[bn].length)?_remoteBoardStatuses[bn]:((typeof statuses!=='undefined'&&Array.isArray(statuses))?statuses:[]);
+  return (sts&&sts[0])||'';
+}
+function _qaAbSpalteSichtbar(bn){ // Handy-Spaltenfilter vom PC: leer = alle Spalten
+  const f=(typeof mobileStatusFilter!=='undefined'&&mobileStatusFilter)?mobileStatusFilter[bn]:null;
+  if(!Array.isArray(f)||!f.length)return true;
+  return f.indexOf(_qaAbSpalte(bn))>=0;
+}
+function _qaAbBoardOk(bn){ // freigegeben (steht in boards) + Auftrags-Board + erste Spalte sichtbar
+  if(!bn||bn.charAt(0)==='_'||typeof boards==='undefined'||!boards||!Array.isArray(boards[bn]))return false;
+  if((((typeof boardTypes!=='undefined'&&boardTypes)||{})[bn]||'baustelle')!=='baustelle')return false;
+  return _qaAbSpalteSichtbar(bn);
+}
+function _qaAbBoards(){return Object.keys((typeof boards!=='undefined'&&boards)||{}).filter(_qaAbBoardOk);}
+function _qaAbGespeichert(){let v='';try{v=localStorage.getItem(AUFTRAG_BOARD_KEY)||'';}catch(e){}return v;}
+function _qaAuftragBoard(){ // gespeichertes Board, wenn es (noch) freigegeben ist; ohne Wahl: Vorschlag „Anfragen …"; sonst ''
+  const v=_qaAbGespeichert();
+  if(v)return _qaAbBoardOk(v)?v:'';
+  return _qaAbBoards().find(function(b){return /anfrage/i.test(b);})||'';
+}
+function _qaAuftragBoardPruefen(){ // {board,spalte} oder {fehler:'…'} – ein Wortlaut für Meldung und Einstellungen
+  const v=_qaAbGespeichert(),b=_qaAuftragBoard();
+  if(b)return {board:b,spalte:_qaAbSpalte(b)};
+  if(!v)return {fehler:'Bitte in den Einstellungen ein Auftrags-Board wählen'};
+  const da=(typeof boards!=='undefined'&&boards&&Array.isArray(boards[v]));
+  const typ=(((typeof boardTypes!=='undefined'&&boardTypes)||{})[v]||'baustelle');
+  if(da&&typ!=='baustelle')return {fehler:'„'+v+'“ ist kein Auftrags-Board – in den Einstellungen ein anderes Board wählen'};
+  const sp=_qaAbSpalte(v);
+  if(da&&sp&&!_qaAbSpalteSichtbar(v))return {fehler:'„'+sp+'“ ist am Handy nicht freigegeben – am PC freigeben oder in den Einstellungen ein anderes Board wählen'};
+  return {fehler:'Board „'+v+'“ ist am Handy nicht freigegeben – am PC freigeben oder in den Einstellungen ein anderes Board wählen'};
+}
+function _qaZielText(){ // Zeile „Landet in: …" im ＋-Fenster
+  const e=(typeof esc==='function')?esc:function(s){return String(s==null?'':s);};
+  if(_qaModus!=='auftrag'){let sb='';try{sb=localStorage.getItem(QUICK_BOARD_KEY)||'';}catch(x){}return 'Landet in: <b>'+e(sb||'–')+'</b>';}
+  if(_qaObjekt&&_qaObjekt.id)return 'Landet in: <b>'+e(_qaObjekt.title||'Objekt')+'</b> → „'+e(AUFTRAG_SPALTE)+'“';
+  const p=_qaAuftragBoardPruefen();
+  if(p.fehler)return '<span style="color:var(--orange);">⚠ '+e(p.fehler)+'</span>';
+  return 'Landet in: <b>'+e(p.board)+'</b>'+(p.spalte?' → „'+e(p.spalte)+'“':'');
+}
+function _qaModusZeichnen(){
+  const auftrag=(_qaModus==='auftrag');
+  const bI=document.getElementById('quickAddModusInfo'),bA=document.getElementById('quickAddModusAuftrag');
+  [[bI,!auftrag],[bA,auftrag]].forEach(function(p){
+    const b=p[0];if(!b)return;
+    b.style.background=p[1]?'var(--accent)':'var(--bg3)';
+    b.style.borderColor=p[1]?'var(--accent)':'var(--border)';
+    b.style.color=p[1]?'#fff':'var(--text2)';
+  });
+  const ob=document.getElementById('quickAddObjektBtn');if(ob)ob.style.display=auftrag?'':'none'; // Info hat nie ein Objekt
+  const sv=document.getElementById('quickAddSaveBtn');if(sv)sv.textContent=auftrag?'✓ Auftrag anlegen':'✓ Speichern';
+  const z=document.getElementById('quickAddZiel');if(z)z.innerHTML=_qaZielText();
+}
+function _qaModusSetzen(m){
+  _qaModus=(m==='auftrag')?'auftrag':'info';
+  if(_qaModus==='info'&&_qaObjekt){_qaObjekt=null;_qaObjektKnopf();}
+  _qaModusZeichnen();
+}
+function _qaNeuKarteAuffrischen(id){ // die gerade angelegte Karte ist offen → Fotos/Ordner-Zeile nachziehen, nie in eine Eingabe hinein
+  if(!id||typeof currentTaskId==='undefined'||currentTaskId!==id)return;
+  const ae=document.activeElement;if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName||''))return;
+  if(typeof _mBereichAktiv!=='undefined'&&_mBereichAktiv&&_mBereichAktiv!=='Fotos')return;
+  const t=findTaskById(id);if(t)renderDetail(t);
+}
+
 function newTask(vorObjekt){
   const savedBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
   // v181: mit vorgewähltem Objekt braucht es kein Schnell-Board – Ziel ist das Objekt-Board
@@ -21918,6 +22042,7 @@ function newTask(vorObjekt){
   // Bottom-Sheet öffnen + Reset
   _qaObjekt=(vorObjekt&&vorObjekt.id)?vorObjekt:null; // v181
   _qaObjektKnopf(); // v181
+  _qaModusSetzen(_qaObjekt?'auftrag':'info'); // v408: beim Öffnen „Nur Info" – mit vorgewähltem Objekt (➕ im Objekt) gleich „Neuer Auftrag"
   _quickAddFotoFiles=[];
   _qaStandort=null;
   document.getElementById('quickAddTitle').value='';
@@ -21935,16 +22060,23 @@ function _closeQuickAdd(){
   document.getElementById('quickAddSheet').style.display='none';
   _quickAddFotoFiles=[];
   _qaObjekt=null;_qaObjektKnopf(); // v181: Objekt-Vorwahl zurücksetzen
+  _qaModus='info'; // v408
 }
 async function _submitQuickAdd(){
   const title=(document.getElementById('quickAddTitle').value||'').trim();
   if(!title){toast('Bitte einen Titel eingeben','error');return;}
   const note=(document.getElementById('quickAddNote').value||'').trim();
-  const savedBoard=localStorage.getItem(QUICK_BOARD_KEY)||'';
+  // v408: „🛠 Neuer Auftrag" ohne Objekt → Auftrags-Board aus den Einstellungen, erste Spalte.
+  // Vorher prüfen, dass Board UND Spalte am Handy freigegeben sind (kann sich am PC geändert
+  // haben) – sonst Meldung statt Karte; das Fenster bleibt mit allen Eingaben offen.
+  const _qaNeuerAuftrag=(typeof _qaModus!=='undefined'&&_qaModus==='auftrag');
   // v181: Auftrag am Objekt → aufs Board des Objekts in die Spalte „🛠 Aufträge";
   // ohne Objekt alles wie bisher (Schnell-Board, erste Spalte). Vorwahl HIER
   // festhalten – _closeQuickAdd() unten setzt _qaObjekt zurück.
   const auftragObjekt=(_qaObjekt&&_qaObjekt.id)?_qaObjekt:null;
+  const _qaAbZiel=(_qaNeuerAuftrag&&!auftragObjekt)?_qaAuftragBoardPruefen():null; // v408
+  if(_qaAbZiel&&_qaAbZiel.fehler){toast('⚠ '+_qaAbZiel.fehler,'error',7000);return;}
+  const savedBoard=_qaAbZiel?_qaAbZiel.board:(localStorage.getItem(QUICK_BOARD_KEY)||''); // v408: Auftrags-Board statt Schnell-Board
   if(!savedBoard&&!auftragObjekt){toast('Kein Schnell-Board konfiguriert','error');return;}
   const zielBoard=auftragObjekt?auftragObjekt.board:savedBoard;
   if(!boards[zielBoard])boards[zielBoard]=[];
@@ -21976,6 +22108,7 @@ async function _submitQuickAdd(){
     createdAt:now.toISOString() // v150: echtes Erstell-Datum (Anzeige oben im Task + auf der Karte)
   };
   if(_mobOfflineActive)newT._offlineNeu=true; // v242: im Offline-Start entstanden → wird beim Verbinden gerettet
+  if(_qaNeuerAuftrag)newT._qaAuftrag=true; // v408: Marker – Ordner-Regel wie bei Schnellnotizen (uploadFoto Schritt 2, Nachladen), sonst liefen Formular-Fotos ohne Ziel
   boards[zielBoard].push(newT);
   // v62/v65: Standort (📍) + bearbeitbares Adressfeld übernehmen
   if(_qaStandort){newT.lat=_qaStandort.lat;newT.lon=_qaStandort.lon;newT.standortErfasst=_qaStandort.erfasst||new Date().toISOString();} // v71: Erfassungszeitpunkt
@@ -22006,7 +22139,7 @@ async function _submitQuickAdd(){
   // Foto-Referenzen VOR _closeQuickAdd() sichern – _closeQuickAdd leert _quickAddFotoFiles
   const fotoFiles=_quickAddFotoFiles.slice();
   _closeQuickAdd();
-  toast(auftragObjekt?'✓ Auftrag am Objekt gespeichert':'✓ Notiz gespeichert','success');
+  toast(auftragObjekt?'✓ Auftrag am Objekt gespeichert':(_qaNeuerAuftrag?'✓ Auftrag angelegt':'✓ Notiz gespeichert'),'success'); // v408
   // v144: gleiche Härtung wie uploadFoto (v143) – dieser Weg hat einen EIGENEN Upload-Pfad
   // und hatte das Poll-Loch noch: solange hier gearbeitet wird, darf der Poll die Boards
   // nicht ersetzen; Ergebnisse gehen an den LIVE-Eintrag (_fotoLive); Fotos werden IMMER
@@ -22030,6 +22163,7 @@ async function _submitQuickAdd(){
        schon die neue zeigte (im Browser nachgestellt: Abzeichen 4, Liste 5). */
     try{_qaAufZaehlCache=null;}catch(e){}
     try{renderList();}catch(e){}
+    try{if(_qaNeuerAuftrag)_qaNeuKarteAuffrischen(newT.id);}catch(e){} // v408: die offene neue Karte mitziehen
     try{
       if(auftragObjekt&&currentTaskId&&currentTaskId===auftragObjekt.id){
         const _o=findTaskById(currentTaskId);
@@ -22049,7 +22183,7 @@ async function _submitQuickAdd(){
   }
   // v68: kein Zwischen-Render hier (verhindert Blinken/Sprung); finaler Render unten
   // ── Reine Textnotiz → KEIN Drive-Ordner (v62: lazy, erst beim ersten Foto) ──
-  if(!fotoFiles.length){ forceSave(); _qaRefresh(); return; }
+  if(!fotoFiles.length&&!_qaNeuerAuftrag){ forceSave(); _qaRefresh(); return; } // v408: ein Auftrag bekommt seinen Ordner sofort, auch ohne Foto
   // v74: Diese Notiz im Konflikt-Merge schützen, bis Fotos hochgeladen + synchronisiert sind.
   _qaInFlightIds.add(newT.id);
   setTimeout(()=>{try{_qaInFlightIds.delete(newT.id);}catch(_e){}},120000);
@@ -22067,9 +22201,10 @@ async function _submitQuickAdd(){
   _saveMobileBackup();
   forceSave();
   _fotoPendUpdate();
+  if(_qaNeuerAuftrag){try{openDetail(newT.id);}catch(e){console.warn('[v408] Karte öffnen:',e);}} // v408: Karte gleich öffnen – Formulare/Kontakte sofort erreichbar
   // ── Token/Ordner – schlägt es fehl, bleiben die Fotos „offen" (Warnleuchte + Nachladen) ──
   if(!(await ensureToken())){
-    toast('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung','info',5000);
+    toast(fotoFiles.length?('⚠️ Nicht angemeldet – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung'):'⚠️ Nicht angemeldet – der Drive-Ordner entsteht mit dem ersten Foto','info',5000); // v408: Auftrag ohne Foto
     _qaRefresh();return;
   }
   let _qaFolderId='';
@@ -22082,7 +22217,9 @@ async function _submitQuickAdd(){
     console.warn('[QuickAdd] Ordner:',e);
     // v75: aussagekräftigere Meldung – offline vs. Konto-/Zugriffsproblem.
     const _off=(typeof navigator!=='undefined'&&navigator.onLine===false);
-    const _msg=_off
+    const _msg=!fotoFiles.length // v408: Auftrag ohne Foto
+      ? (_off?'⚠️ Offline – der Drive-Ordner entsteht mit dem ersten Foto':'⚠️ Drive-Ordner nicht erreichbar (Konto/Zugriff prüfen) – er entsteht mit dem ersten Foto')
+      : _off
       ? '⚠️ Offline – '+fotoFiles.length+' Foto(s) lokal gespeichert, Upload bei nächster Verbindung'
       : '⚠️ Schnellnotiz-Ordner nicht erreichbar (Drive-Konto/Zugriff prüfen) – '+fotoFiles.length+' Foto(s) lokal gespeichert';
     toast(_msg,'warning',6000);
@@ -22123,7 +22260,7 @@ async function _submitQuickAdd(){
   for(const o of fotoObjs)_fotoLive(newT.id,o.fo);
   forceSave();_qaRefresh();
   if(_failCount)toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen, '+_failCount+' lokal gesichert','info',5000);
-  else toast('📁 Ordner & '+_okCount+' Foto(s) hochgeladen','success');
+  else toast(fotoObjs.length?('📁 Ordner & '+_okCount+' Foto(s) hochgeladen'):'📁 Drive-Ordner angelegt','success'); // v408
   }finally{
     _fotoUploadInFlight=Math.max(0,_fotoUploadInFlight-1);if(typeof _fotoWakeSync==='function')_fotoWakeSync(); // v370
     _fotoPendUpdate();
@@ -22214,6 +22351,7 @@ function openSettings(){
   document.getElementById('settFileName').textContent=fileName||'(noch nicht verbunden)';
   document.getElementById('settUserEmail').textContent=userEmail||'(unbekannt)';
   _loadQuickBoardSelect();
+  _loadAuftragBoardSelect(); // v408
   try{const el=document.getElementById('defaultFotoFolderInput');if(el)el.value=localStorage.getItem(DEFAULT_FOTO_FOLDER_KEY)||'';}catch(e){}
   try{const _c=document.getElementById('fotoOhneFrageChk');if(_c)_c.checked=_fotoOhneFrage();}catch(e){} // v368 (A)
   try{const _w=document.getElementById('settWake');if(_w)_w.textContent=_fotoWakeDiagnoseText();}catch(e){} // v369
