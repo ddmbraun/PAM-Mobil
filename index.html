@@ -4448,6 +4448,10 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
       <button class="mnu-eintrag" onclick="_mnuZu();_anrufBlattAuf();" title="Offene Anrufe über alle Boards">
         <span class="mnu-ico">📞</span><span class="mnu-txt">Anrufliste <span id="mnuAnrufZahl" style="opacity:.75;font-weight:400;"></span><span class="mnu-sub" id="mnuAnrufSub"></span></span>
       </button>
+      <!-- v411: Neu angelegt - alle neu angelegten Karten ueber alle Boards (Wunsch Frank 15.10.2026), nur lesen. -->
+      <button class="mnu-eintrag" onclick="_mnuZu();_neuBlattAuf();" title="Neu angelegte Karten – heute, 7 oder 30 Tage">
+        <span class="mnu-ico">🆕</span><span class="mnu-txt">Neu angelegt<span class="mnu-sub">Karten von heute, 7 oder 30 Tagen</span></span>
+      </button>
       <!-- v281: Mein Tag - Start/Stopp-Standorte eines Tages auf der Karte (Wunsch Frank). -->
       <button class="mnu-eintrag" onclick="_mnuZu();_tagAuf();" title="Wo war ich wann – Start und Stopp auf der Karte">
         <span class="mnu-ico">🗺</span><span class="mnu-txt">Mein Tag<span class="mnu-sub">Start und Stopp auf der Karte</span></span>
@@ -4699,6 +4703,25 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
     </div>
     <div id="anrufListe"></div>
     <button onclick="_anrufBlattZu()" style="width:100%;margin-top:10px;min-height:46px;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">Schließen</button>
+  </div>
+</div>
+
+<!-- v411: 🆕 Neu angelegt – alle neu angelegten Karten über alle Boards, nur lesen (Frank 15.10.2026). Tippen öffnet die Karte; „nur am PC“-Zeilen sind blass. -->
+<div id="neuBlatt" style="display:none;position:fixed;inset:0;z-index:9400;background:rgba(0,0,0,.55);" onclick="if(event.target===this)_neuBlattZu()">
+  <div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg2);border-radius:16px 16px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px));max-height:84vh;overflow-y:auto;box-shadow:0 -4px 22px rgba(0,0,0,.45);">
+    <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 12px;"></div>
+    <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 2px 4px;">
+      <div style="font-size:calc(17px * var(--m-scale,1));font-weight:700;color:var(--text);">🆕 Neu angelegt</div>
+      <div id="neuKopfZahl" style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);"></div>
+    </div>
+    <div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:0 2px 10px;line-height:1.45;">Alle Karten, die du angelegt hast – egal in welchem Board. Antippen öffnet die Karte.</div>
+    <div style="display:flex;gap:8px;margin:0 2px 6px;">
+      <button id="neuPille1" onclick="_neuTageWahl(1)" style="flex:1;min-height:42px;border-radius:10px;border:1px solid var(--border);background:var(--accent);color:#fff;font-weight:700;font-size:calc(14px * var(--m-scale,1));cursor:pointer;">Heute</button>
+      <button id="neuPille7" onclick="_neuTageWahl(7)" style="flex:1;min-height:42px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">7 Tage</button>
+      <button id="neuPille30" onclick="_neuTageWahl(30)" style="flex:1;min-height:42px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">30 Tage</button>
+    </div>
+    <div id="neuListe"></div>
+    <button onclick="_neuBlattZu()" style="width:100%;margin-top:10px;min-height:46px;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">Schließen</button>
   </div>
 </div>
 
@@ -4973,7 +4996,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F67" charset="utf-8"></script>
+<script src="formulare.js?v=F68" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -4989,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v409';
+const MOB_VERSION='v411';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11023,6 +11046,102 @@ function _mnuAuf(){
 }
 function _mnuZu(){
   const b=document.getElementById('mnuBlatt');if(b)b.style.display='none';
+}
+// ══ v411: 🆕 NEU ANGELEGT – alle neu angelegten Karten über ALLE Boards (Frank 15.10.2026: „gibt es eine Liste, was ich heute neu angelegt habe?“) ═══════════════
+// Nur LESEN: die Liste ändert nichts, legt nichts an, sortiert nichts um. Gegenstück am PC: b1204 („🆕 Neu angelegt“ in der Ansichtsleiste).
+// Anlegedatum wie am PC (_pamAngelegtDate, b620): createdAt, sonst aus der Kennung t_<ms>_… – für alle Karten ableitbar (am 15.10.2026: 135 von 135).
+// ⛔ Nicht dabei: der tägliche „📷 Foto-Eingang“ (Kennung fe_…) und archivierte Karten. Karten aus Boards, die am Handy nicht freigegeben sind (hiddenBoards)
+//    oder vom Spaltenfilter versteckt werden (_mobileFilteredOut), stehen blass mit „nur am PC“ und lassen sich hier nicht öffnen (wie in der Anrufliste, v277).
+// ⛔ Zeitraum: „Heute“ = seit 0 Uhr, „7 Tage“ = heute und die 6 Tage davor, „30 Tage“ = heute und die 29 davor (volle Kalendertage, nicht „vor 168 Stunden“).
+var _neuTage=1; // 1 = Heute · 7 · 30
+function _neuAngelegt(t){
+  if(!t)return null;
+  const iso=String(t.createdAt||'').trim();
+  if(iso){const d=new Date(iso);if(!isNaN(d.getTime()))return d;}
+  const m=/^t_(\d{10,16})_/.exec(String(t.id||''));
+  if(m){const d=new Date(Number(m[1]));if(!isNaN(d.getTime())&&d.getFullYear()>=2020&&d.getTime()<=Date.now()+86400000)return d;}
+  return null;
+}
+function _neuTypText(t,bn){
+  const typ=((typeof boardTypes!=='undefined'&&boardTypes)||{})[bn]||'baustelle';
+  if(typ==='notiz')return 'Info';
+  if(typ==='email')return 'Mail';
+  if(typ==='immobilie')return (t&&t.objektId)?'Auftrag am Objekt':'Objekt';
+  return 'Auftrag';
+}
+// → [{t,board,datum,offen}], neueste zuerst. offen = steht in der Handy-Liste (boards) und lässt sich öffnen.
+function _neuSammle(tage,jetzt){
+  jetzt=jetzt||new Date();
+  const n=Math.max(1,Math.floor(+tage||1));
+  const von=new Date(jetzt.getFullYear(),jetzt.getMonth(),jetzt.getDate()-(n-1)); // 0 Uhr des ersten Tages
+  const bis=jetzt.getTime()+86400000;                                              // Zukunftsdaten (kaputte Kennung) bleiben draußen
+  const out=[],gesehen={};
+  const quellen=[[typeof boards!=='undefined'?boards:null,true],[typeof hiddenBoards!=='undefined'?hiddenBoards:null,false],[typeof _mobileFilteredOut!=='undefined'?_mobileFilteredOut:null,false]];
+  quellen.forEach(q=>{
+    const obj=q[0],offen=q[1];
+    Object.keys(obj||{}).forEach(bn=>{
+      if(!bn||bn.charAt(0)==='_'||!Array.isArray(obj[bn]))return;
+      obj[bn].forEach(t=>{
+        if(!t||!t.id||gesehen[t.id])return;
+        if(String(t.id).indexOf('fe_')===0||t.archiviert)return;
+        const d=_neuAngelegt(t);
+        if(!d||d.getTime()<von.getTime()||d.getTime()>bis)return;
+        gesehen[t.id]=1;out.push({t:t,board:bn,datum:d,offen:offen});
+      });
+    });
+  });
+  out.sort((a,b)=>b.datum.getTime()-a.datum.getTime());
+  return out;
+}
+function _neuTagText(d,jetzt){
+  jetzt=jetzt||new Date();
+  const p=x=>String(x).padStart(2,'0'),tag=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime(),heute=new Date(jetzt.getFullYear(),jetzt.getMonth(),jetzt.getDate()).getTime();
+  const kurz=p(d.getDate())+'.'+p(d.getMonth()+1)+'.';
+  if(tag===heute)return 'Heute · '+kurz;
+  if(tag===heute-86400000)return 'Gestern · '+kurz;
+  return ['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()]+' · '+kurz;
+}
+function _neuZeichnen(jetztX){
+  const el=document.getElementById('neuListe');if(!el)return;
+  [1,7,30].forEach(n=>{
+    const b=document.getElementById('neuPille'+n);if(!b)return;
+    const an=(_neuTage===n);
+    b.style.background=an?'var(--accent)':'var(--bg3)';b.style.color=an?'#fff':'var(--text2)';b.style.borderColor=an?'var(--accent)':'var(--border)';b.style.fontWeight=an?'700':'400';
+  });
+  const jetzt=jetztX||new Date(),liste=_neuSammle(_neuTage,jetzt);
+  const kz=document.getElementById('neuKopfZahl');
+  if(kz)kz.textContent=liste.length===1?'1 Karte':liste.length+' Karten';
+  if(!liste.length){
+    el.innerHTML='<div style="padding:18px 6px;color:var(--text2);font-size:calc(14px * var(--m-scale,1));line-height:1.5;">Keine neu angelegten Karten – '+(_neuTage===1?'heute':'in den letzten '+_neuTage+' Tagen')+'.<br>Neue Karten legst du mit ＋ an.</div>';
+    return;
+  }
+  const p=x=>String(x).padStart(2,'0');
+  let h='',letzte='';
+  liste.forEach(e=>{
+    const t=e.t,tag=_neuTagText(e.datum,jetzt);
+    if(tag!==letzte){h+='<div style="font-size:calc(12px * var(--m-scale,1));font-weight:700;color:var(--accent2);margin:12px 2px 2px;">'+esc(tag)+'</div>';letzte=tag;}
+    const meta=esc(e.board)+' → '+esc(t.status||'–')+' · '+_neuTypText(t,e.board)+(t.spaeterBearbeiten?' · ⏸ später':'')+(e.offen?'':' · nur am PC');
+    h+='<div'+(e.offen?' onclick="_neuKarteAuf(\''+_jsa(String(t.id))+'\')"':'')+' style="display:flex;gap:10px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid var(--border);'+(e.offen?'cursor:pointer;':'opacity:.55;')+'">'
+      +'<div style="width:46px;flex-shrink:0;color:var(--text2);font-size:calc(12px * var(--m-scale,1));padding-top:2px;">'+p(e.datum.getHours())+':'+p(e.datum.getMinutes())+'</div>'
+      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:calc(14px * var(--m-scale,1));color:var(--text);overflow-wrap:anywhere;">'+esc(t.title||'(kein Titel)')+'</div>'
+      +'<div style="font-size:calc(12px * var(--m-scale,1));color:var(--text2);margin-top:2px;">'+meta+'</div></div></div>';
+  });
+  el.innerHTML=h;
+}
+function _neuBlattAuf(){
+  const b=document.getElementById('neuBlatt');if(!b)return;
+  _neuTage=1; // beim Öffnen immer „Heute“
+  _neuZeichnen();
+  b.style.display='block';
+}
+function _neuBlattZu(){
+  const b=document.getElementById('neuBlatt');if(b)b.style.display='none';
+}
+function _neuTageWahl(n){_neuTage=(n===7||n===30)?n:1;_neuZeichnen();}
+// Tippen öffnet die Karte – nur Zeilen aus freigegebenen Boards haben diesen Tipp (die „nur am PC“-Zeilen nicht).
+function _neuKarteAuf(id){
+  _neuBlattZu();
+  try{openDetail(id);}catch(e){console.warn('[Neu angelegt] Karte öffnen:',e);}
 }
 // ══ v282: WAHL-VERMERK AM HANDY (Gegenstück PC b996–b998) ═══════════════════════
 /* Wunsch Frank 13.09.2026: sehen, wann eine Nummer gewählt wurde – auch unterwegs.
