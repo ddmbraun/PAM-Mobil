@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v412';
+const MOB_VERSION='v413';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5645,7 +5645,7 @@ function _gpsAktuellePos(){
   _gpsPosTs=Date.now();
   _gpsPosProm=new Promise(res=>{
     try{navigator.geolocation.getCurrentPosition(
-      p=>res({lat:p.coords.latitude,lon:p.coords.longitude}),
+      p=>res({lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy}),   // v413: + Genauigkeit in Metern (kommt mit ins Foto)
       ()=>res(null),{enableHighAccuracy:true,timeout:8000,maximumAge:60000});}
     catch(e){res(null);}
   });
@@ -5672,7 +5672,7 @@ async function _fotoUebernahme(file){
           }else{
             const pos=await _gpsAktuellePos();
             if(pos){
-              const mitGps=_writeGpsIntoDataUrl(dataUrl,pos.lat,pos.lon);
+              const mitGps=_writeGpsIntoDataUrl(dataUrl,pos.lat,pos.lon,pos.acc);
               if(mitGps&&mitGps!==dataUrl){
                 dataUrl=mitGps;
                 try{f=new File([_dataUrlToBlob(dataUrl)],f.name||'foto.jpg',{type:'image/jpeg',lastModified:file.lastModified||Date.now()});}
@@ -5686,6 +5686,21 @@ async function _fotoUebernahme(file){
       }
     }
   }catch(e){console.warn('[Foto-Übernahme] GPS:',e);}
+  // v413: Fotos aus der Kamera kommen am iPhone OHNE Aufnahmezeit (gemessen 15.10.2026: kein Datum, keine Kamera).
+  // Wie beim Ort nur bei FRISCHEN Fotos nachtragen; ein vorhandenes Datum bleibt immer (_fotoZeitStempeln prüft das).
+  try{
+    if(dataUrl&&/^data:image\/jpe?g/i.test(dataUrl)&&typeof _fotoZeitStempeln==='function'){
+      const frischZ=!file.lastModified||(Date.now()-file.lastModified)<_FOTO_FRISCH_MS;
+      if(frischZ){
+        const mitZeit=_fotoZeitStempeln(dataUrl,file.lastModified||Date.now());
+        if(mitZeit&&mitZeit!==dataUrl){
+          dataUrl=mitZeit;
+          try{f=new File([_dataUrlToBlob(dataUrl)],f.name||'foto.jpg',{type:'image/jpeg',lastModified:file.lastModified||Date.now()});}
+          catch(eF){const b=_dataUrlToBlob(dataUrl);b.name=f.name||'foto.jpg';f=b;}
+        }
+      }
+    }
+  }catch(e){console.warn('[Foto-Übernahme] Zeit:',e);}
   return {file:f,dataUrl};
 }
 function _dataUrlToBlob(dataUrl){
@@ -23339,7 +23354,7 @@ function _gpsDecToRational(dec){
   return [[d,1],[m,1],[s,10000]];
 }
 // GPS in eine JPEG-dataURL schreiben; übriges EXIF bleibt erhalten (Fallback: Minimalsatz)
-function _writeGpsIntoDataUrl(dataUrl,lat,lon){
+function _writeGpsIntoDataUrl(dataUrl,lat,lon,acc){
   let exifObj;
   try{exifObj=piexif.load(dataUrl);}
   catch(e){exifObj={'0th':{},'Exif':{},'GPS':{},'1st':{},'thumbnail':null};}
@@ -23349,6 +23364,8 @@ function _writeGpsIntoDataUrl(dataUrl,lat,lon){
   gpsIfd[piexif.GPSIFD.GPSLatitude]=_gpsDecToRational(lat);
   gpsIfd[piexif.GPSIFD.GPSLongitudeRef]=lon>=0?'E':'W';
   gpsIfd[piexif.GPSIFD.GPSLongitude]=_gpsDecToRational(lon);
+  // v413: Genauigkeit des Standorts in Metern (vom Handy gemeldet) – nur wenn bekannt; beim Korrigieren fehlt sie bewusst
+  if(typeof acc==='number'&&isFinite(acc)&&acc>0)gpsIfd[piexif.GPSIFD.GPSHPositioningError]=[Math.round(acc*10),10];
   exifObj['GPS']=gpsIfd;
   exifObj['1st']={};exifObj['thumbnail']=null; // Thumbnail weglassen (spart KB, kann dump-Fehler auslösen)
   let bytes;
@@ -23361,6 +23378,39 @@ function _writeGpsIntoDataUrl(dataUrl,lat,lon){
     bytes=piexif.dump(mini);
   }
   return piexif.insert(bytes,dataUrl);
+}
+// v413: Aufnahmezeit in eine JPEG-dataURL schreiben – NUR wenn das Foto noch keine hat (vorhandenes Datum wird nie überschrieben).
+// Schreibt Datum/Uhrzeit (Ortszeit des Handys) + Zeitzone + „Software: PAM Mobil …“ (daran erkennt der PC „von PAM eingetragen“);
+// Hersteller/Modell nur, wenn der Browser sich als iPhone/iPad meldet und keins drinsteht. Bei jedem Fehler: Foto unverändert.
+function _fotoZeitStempeln(dataUrl,ms){
+  if(!window.piexif||!dataUrl)return dataUrl;
+  let ex;
+  try{ex=piexif.load(dataUrl);}catch(e){return dataUrl;}   // unlesbar → lieber nichts anfassen (wie v121)
+  const z=ex['0th']=ex['0th']||{},e=ex['Exif']=ex['Exif']||{};
+  const nul=String.fromCharCode(0);
+  const hat=function(v){return String(v==null?'':v).split(nul).join('').trim()!=='';};
+  if(hat(e[piexif.ExifIFD.DateTimeOriginal])||hat(e[piexif.ExifIFD.DateTimeDigitized])||hat(z[piexif.ImageIFD.DateTime]))return dataUrl;
+  const d=new Date(ms);
+  if(isNaN(d.getTime())||d.getFullYear()<2000)return dataUrl;
+  const p2=function(n){return (n<10?'0':'')+n;};
+  const txt=d.getFullYear()+':'+p2(d.getMonth()+1)+':'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());
+  const off=-d.getTimezoneOffset();
+  const zone=(off<0?'-':'+')+p2(Math.floor(Math.abs(off)/60))+':'+p2(Math.abs(off)%60);
+  e[piexif.ExifIFD.DateTimeOriginal]=txt;e[piexif.ExifIFD.DateTimeDigitized]=txt;z[piexif.ImageIFD.DateTime]=txt;
+  const ua=String((typeof navigator!=='undefined'&&navigator.userAgent)||'');
+  const geraet=/iPad/.test(ua)?'iPad':(/iPhone/.test(ua)?'iPhone':'');
+  if(geraet&&!hat(z[piexif.ImageIFD.Make])&&!hat(z[piexif.ImageIFD.Model])){z[piexif.ImageIFD.Make]='Apple';z[piexif.ImageIFD.Model]=geraet;}
+  z[piexif.ImageIFD.Software]='PAM Mobil'+(typeof MOB_VERSION!=='undefined'?' '+MOB_VERSION:'');
+  ex['1st']={};ex['thumbnail']=null;
+  // Die Zeitzonen-Felder (OffsetTimeOriginal/-Digitized) kennt piexif nicht → nur für dieses eine Schreiben anmelden
+  const T=piexif.TAGS&&piexif.TAGS.Exif,neu=[];
+  if(T){[[36881,'OffsetTimeOriginal'],[36882,'OffsetTimeDigitized']].forEach(function(a){if(!T[a[0]]){T[a[0]]={name:a[1],type:'Ascii'};neu.push(a[0]);}});e[36881]=zone;e[36882]=zone;}
+  try{return piexif.insert(piexif.dump(ex),dataUrl);}
+  catch(err){
+    try{delete e[36881];delete e[36882];return piexif.insert(piexif.dump(ex),dataUrl);}   // nochmal ohne Zeitzone – das Datum ist wichtiger
+    catch(err2){console.warn('[Foto-Zeit] nicht schreibbar – Foto bleibt unverändert:',err2);return dataUrl;}
+  }
+  finally{neu.forEach(function(k){delete T[k];});}
 }
 // GPS in eine Foto-Datei auf Drive schreiben (Download → EXIF ändern → zurücklegen)
 async function _mobWriteGpsToDriveFoto(driveId,lat,lon){
