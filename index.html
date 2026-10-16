@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v420';
+const MOB_VERSION='v421';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9084,6 +9084,17 @@ async function saveFile(){
                     // nie bearbeitet und das bei einem Konflikt-Merge sonst überschrieben würde.
                     const _pcOnly=['emailPdfs','emailOriginals','gmailLinks','links','repNr','kundenNr','auftragswert','gdriveOrdner','emailOrdner','sbPdfOrdner','ortstermin','aufgaben','einsaetze','einsaetzeInfo','anfrageEingangDatum','freieTermine','msMessageId','msConversationId','msThreadMessages','fotoNotizen','abgearbeitet','reGeschrieben','hvKarteAus','anrufWahlenAusgeblendetBis']; // v407: abgearbeitet + reGeschrieben (Desktop b1200, Franks zwei Haken ✅/🧾) setzt nur der PC · v392: fotoNotizen (Desktop b1168, Notizen am Foto) setzt nur der PC · v375: hvKarteAus (Desktop b1126, 🏢-Zeile einer Karte zugeklappt aus) setzt nur der PC – steht VOR anrufWahlenAusgeblendetBis (test_v282 ankert am Listenende) · v322: einsaetze (Desktop b1059) steht weiter vorn - nur der PC bearbeitet es · v282: Ausblenden setzt nur der PC · Fix: bauOrdner→sbPdfOrdner; aufgaben, anfrageEingangDatum hinzugefügt (PC-only)
                     for(const f of _pcOnly){if(rt[f]!==undefined)mergedTask[f]=rt[f];}
+                    // v421: Fotoordner, Dokumente-Ordner und NAS-Pfad dreiseitig. Hat das Handy sie seit dem letzten
+                    // Abgleich NICHT selbst geändert (gleich der Momentaufnahme _mobSnap), gilt der Stand vom PC –
+                    // z. B. nach „Richtigen Auftrag daraus machen“. Bis v420 gewann hier die Handy-Fassung
+                    // ({...rt,...localTask}) und eine noch offene Karte schrieb den alten Ordner zurück.
+                    try{
+                      const _v421Basis=(_mobSnap&&_mobSnap.has(_savingTaskId))?JSON.parse(_mobSnap.get(_savingTaskId)):null;
+                      if(_v421Basis)['gdrive','dokOrdner','nas'].forEach(function(f){
+                        const lv=localTask[f]||'',bv=_v421Basis[f]||'',rv=rt[f];
+                        if(lv===bv&&rv!==undefined&&rv!==lv)mergedTask[f]=rv;
+                      });
+                    }catch(e){console.warn('[v421] Ordnerfelder:',e);}
                     // Prüfberichte: echter Merge PC + Mobile (nicht PC-only)
                     // → auf Mobile erstellte Berichte bleiben erhalten, PC-Berichte kommen hinzu
                     mergedTask.pruefberichte=_mergeListByKey(rt.pruefberichte,localTask.pruefberichte,b=>(b.id||((b.titel||'')+'|'+(b.datum||''))));
@@ -13930,11 +13941,13 @@ function openDetail(id){
   document.getElementById('listScreen').classList.add('hidden');
   document.getElementById('detailScreen').classList.remove('hidden');
   renderDetail(t);
+  if(typeof _mobPkPruefen==='function')_mobPkPruefen(t); // v421: Ordner im Drive-Papierkorb? → Band
   // Falls für diese Task ein Timer läuft, Tick-Loop aufnehmen
   if(isTimerRunningForTask(id))_startTickLoop();
   else _stopTickLoop();
 }
 async function closeDetail(){
+  if(typeof _mobPkBand==='function')_mobPkBand(null); // v421
   // WICHTIG: erst auf den Save warten, dann currentTaskId zurücksetzen –
   // sonst verliert der Konflikt-Handler den Bezug zur gerade bearbeiteten Task.
   if(dirty){
@@ -17975,6 +17988,128 @@ async function _uploadOneFotoToDrive(file,folderId,festName){
   const r=await _uploadMitGeduld(_send,{bytes:file.size||0,name:safeName,folderId});
   return await r.json();
 }
+
+// ══ v421: Wächter „Ordner im Drive-Papierkorb“ (wie PAM Desktop b1220; Befund 16.10.2026, fünf Karten) ══
+// Lag der Ordner einer Karte im Papierkorb, landeten Handy-Fotos dort – still: PAM zeigt sie per Kennung
+// weiter an, nach 30 Tagen löscht Drive. Jetzt: (1) Band in der Karte (_mobPkPruefen beim Öffnen).
+// (2) Wache vor fetch: bevor eine Datei IN einen Ordner gelegt wird (neu anlegen, kopieren, verschieben),
+// wird EINMAL nachgefragt, ob er im Papierkorb liegt (10 Min. gemerkt, Papierkorb-Treffer nach 2 Min. neu).
+// Dann Antwort 409 statt Upload → _uploadMitGeduld wirft sofort, das Foto bleibt wie ohne Netz auf dem
+// Handy und wird nachgeladen, sobald der Ordner wieder da ist. Ändern bestehender Dateien (Datendatei)
+// läuft unverändert durch. PAM repariert nichts selbst.
+var _mobPkCache={};
+var _mobPkMeldungZeit=0;
+async function _mobPkImPapierkorb(id){
+  if(!id)return false;
+  const c=_mobPkCache[id], alter=c?(Date.now()-c.zeit):Infinity;
+  if(c&&alter<(c.trashed?120000:600000))return c.trashed;
+  if(typeof gdriveToken==='undefined'||!gdriveToken||(typeof tokenValid==='function'&&!tokenValid()))return c?c.trashed:false;
+  try{
+    const holen=window._mobPkEchtesFetch||window.fetch;
+    const r=await holen.call(window,'https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?fields=id,name,trashed',{headers:{Authorization:'Bearer '+gdriveToken}});
+    if(!r.ok)return c?c.trashed:false;   // keine Aussage → nicht sperren
+    const j=await r.json();
+    _mobPkCache[id]={trashed:!!j.trashed,name:j.name||'',zeit:Date.now()};
+    return !!j.trashed;
+  }catch(e){return c?c.trashed:false;}
+}
+function _mobPkOrdnerIds(t){
+  const ids=[];
+  ['gdriveOrdner','gdrive','dokOrdner','emailOrdner'].forEach(function(k){
+    const m=/folders\/([A-Za-z0-9_-]+)/.exec(String((t&&t[k])||''));
+    if(m&&ids.indexOf(m[1])<0)ids.push(m[1]);
+  });
+  return ids;
+}
+function _mobPkBand(liste){
+  let b=document.getElementById('mobPkBand');
+  if(!b){
+    const vor=document.getElementById('detailBody');
+    if(!vor||!vor.parentNode)return;
+    b=document.createElement('div');
+    b.id='mobPkBand';
+    b.style.cssText='display:none;margin:6px 10px;padding:9px 12px;border-radius:10px;border:2px solid #C0392B;background:#FDECEA;color:#7B1A10;font-size:13.5px;line-height:1.45;';
+    vor.parentNode.insertBefore(b,vor);
+  }
+  if(!liste||!liste.length){b.style.display='none';b.innerHTML='';return;}
+  const namen=liste.map(function(x){return '„'+esc(x.name||x.id)+'“';}).join(', ');
+  b.innerHTML='<b>⚠ Der Ordner dieser Karte liegt im Google-Drive-Papierkorb</b> ('+namen+').<br>'
+    +'Neue Fotos bleiben auf dem Handy und werden erst hochgeladen, wenn der Ordner wiederhergestellt ist. Am PC Claude Bescheid geben.';
+  b.style.display='block';
+}
+async function _mobPkPruefen(t){
+  try{
+    if(!t)return;
+    const kartenId=t.id;
+    _mobPkBand(null);
+    const liste=[];
+    for(const fid of _mobPkOrdnerIds(t)){
+      if(await _mobPkImPapierkorb(fid))liste.push({id:fid,name:(_mobPkCache[fid]||{}).name||''});
+    }
+    if(currentTaskId!==kartenId)return;
+    _mobPkBand(liste);
+  }catch(e){console.warn('[v421] Papierkorb-Prüfung:',e);}
+}
+// Ordner-Kennungen aus "parents":[…] im Text (bei multipart steht die Beschreibung VOR dem Inhalt → erster Treffer)
+function _mobPkParentsAusText(s){
+  const m=/"parents"\s*:\s*\[([^\]]*)\]/.exec(String(s||''));
+  return m?(m[1].match(/[A-Za-z0-9_-]{10,}/g)||[]):[];
+}
+// In welche Ordner würde dieser Drive-Aufruf eine Datei legen? Nur neu anlegen/kopieren (POST) und
+// verschieben (addParents). Ändern bestehender Dateien (z. B. die Datendatei) liefert [] – nie gesperrt.
+async function _mobPkZielOrdner(url,init){
+  const u=String(url||''), m=String((init&&init.method)||'GET').toUpperCase();
+  const ids=[];
+  if(m==='PATCH'||m==='POST'){
+    const q=/[?&]addParents=([^&#]+)/.exec(u);
+    if(q)decodeURIComponent(q[1]).split(',').forEach(function(x){if(x.trim())ids.push(x.trim());});
+  }
+  const neu=m==='POST'&&(/^https:\/\/www\.googleapis\.com\/upload\/drive\/v3\/files(\?|$)/.test(u)
+    ||/^https:\/\/www\.googleapis\.com\/drive\/v3\/files(\?|$)/.test(u)
+    ||/^https:\/\/www\.googleapis\.com\/drive\/v3\/files\/[^/?]+\/copy/.test(u));
+  const b=init&&init.body;
+  if(neu&&b!=null){
+    const anfang=async function(x){
+      if(typeof x==='string')return x.slice(0,20000);
+      if(x&&typeof x.slice==='function'&&typeof x.size==='number')return await x.slice(0,20000).text();
+      if(x instanceof ArrayBuffer||(typeof ArrayBuffer!=='undefined'&&ArrayBuffer.isView&&ArrayBuffer.isView(x)))return new TextDecoder().decode((x.buffer?new Uint8Array(x.buffer,x.byteOffset||0,Math.min(x.byteLength,20000)):new Uint8Array(x,0,Math.min(x.byteLength,20000))));
+      return '';
+    };
+    if(typeof FormData!=='undefined'&&b instanceof FormData){
+      for(const paar of b.entries()){
+        const v=paar[1];
+        if(typeof v==='string'||(v&&/json/i.test(v.type||''))){_mobPkParentsAusText(await anfang(v)).forEach(function(x){ids.push(x);});}
+      }
+    }else{
+      _mobPkParentsAusText(await anfang(b)).forEach(function(x){ids.push(x);});
+    }
+  }
+  return ids;
+}
+(function(){
+  if(typeof window==='undefined'||typeof window.fetch!=='function'||window._mobPkEchtesFetch)return;
+  const echt=window.fetch;
+  window._mobPkEchtesFetch=echt;
+  window.fetch=async function(input,init){
+    try{
+      const url=(typeof input==='string')?input:((input&&input.url)||'');
+      if(url.indexOf('https://www.googleapis.com/')===0){
+        const ziele=await _mobPkZielOrdner(url,init||{});
+        for(const id of ziele){
+          if(await _mobPkImPapierkorb(id)){
+            console.warn('[v421] angehalten – Zielordner im Drive-Papierkorb:',id,url);
+            if(Date.now()-_mobPkMeldungZeit>4000){
+              _mobPkMeldungZeit=Date.now();
+              if(typeof toast==='function')toast('⛔ Nicht hochgeladen: Der Ordner liegt im Google-Drive-Papierkorb. Das Foto bleibt auf dem Handy und wird nachgeladen, sobald der Ordner wiederhergestellt ist.','error',9000);
+            }
+            return new Response(JSON.stringify({error:{code:409,message:'v421: Zielordner liegt im Drive-Papierkorb – nicht ausgeführt'}}),{status:409,statusText:'Ordner im Papierkorb',headers:{'Content-Type':'application/json'}});
+          }
+        }
+      }
+    }catch(e){console.warn('[v421] Wache:',e);}
+    return (init===undefined)?echt.call(window,input):echt.call(window,input,init);
+  };
+})();
 /* v185: Woher kam das Bild – Kamera oder Mediathek? Wird von den Eingabefeldern
    gesetzt (siehe `_fotoQuelle=` dort) und in uploadFoto sofort wieder geleert.
    Ausdrücklich deklariert statt beiläufig entstehen zu lassen. */
