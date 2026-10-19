@@ -10,6 +10,8 @@ ANLEITUNG_Restore.txt
 /Neuer Ordner/
 /Neuer Ordner (2)/
 __probe__.txt
+# v431 (18.10.2026): Probe-Seiten der Bau-Chats bleiben lokal – standen bisher als „??“ in git status
+/_probe/
 
 # ⚠ SICHERUNGSDATEIEN – NIEMALS hochladen!
 # Sie enthalten den kompletten alten Stand, u.a. die ungekuerzte sw.js (v183).
