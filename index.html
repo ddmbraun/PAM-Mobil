@@ -4996,7 +4996,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F88" charset="utf-8"></script>
+<script src="formulare.js?v=F89" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v433';
+const MOB_VERSION='v434';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9684,6 +9684,7 @@ function _wpMobRenderFotos(bericht,grid){
     const l2=document.createElement('div');l2.style.cssText='display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:9px;'+(zu?'font-weight:700;':'opacity:.65;font-style:italic;');l2.textContent=zu?('📍 '+zu):'nicht zugeordnet';
     nl.append(l1,l2);
     cell.append(badge,delB,nl);
+    const _otDk=(typeof _fsOtFotoDatumKnopf==='function')?_fsOtFotoDatumKnopf(bericht,f,()=>_wpMobRenderFotos(bericht,grid)):null; // v434 (F89): Aufnahmedatum unter dem Foto, nur bei mehreren Ortsterminen – antippen = ändern
     // v385/F49: Reihenfolge am Tablet – ‹ › und ✥ (festhalten und ziehen) unter dem Foto, wie am PC; erst ab zwei Fotos
     if(bericht.fotos.length>1&&typeof _fsFotoVerschieben==='function'){
       const box=document.createElement('div');box.setAttribute('data-fs-fotozelle',String(fi));box.style.cssText='display:flex;flex-direction:column;gap:4px;min-width:0;';
@@ -9695,8 +9696,9 @@ function _wpMobRenderFotos(bericht,grid){
       const griff=kn('✥','Festhalten und ziehen = verschieben',true,()=>{});griff.setAttribute('data-fs-ziehgriff','1');griff.style.touchAction='none';griff.style.cursor='grab';
       rw.append(kn('‹','Ein Foto nach vorn',fi>0,()=>{_fsFotoVerschieben(bericht.fotos,fi,fi-1);scheduleSave();neu();}),griff,
         kn('›','Ein Foto nach hinten',fi<bericht.fotos.length-1,()=>{_fsFotoVerschieben(bericht.fotos,fi,fi+1);scheduleSave();neu();}));
-      box.append(cell,rw);grid.appendChild(box);
-    }else grid.appendChild(cell);
+      box.append(cell);if(_otDk)box.appendChild(_otDk);box.appendChild(rw);grid.appendChild(box);
+    }else if(_otDk){const box=document.createElement('div');box.setAttribute('data-fs-fotozelle',String(fi));box.style.cssText='display:flex;flex-direction:column;gap:4px;min-width:0;';box.append(cell,_otDk);grid.appendChild(box);}
+    else grid.appendChild(cell);
   });
   if(typeof _fsFotoZiehenAn==='function')_fsFotoZiehenAn(grid,bericht.fotos,()=>_wpMobRenderFotos(bericht,grid)); // v385/F49: Fotos ziehen und verschieben
 }
@@ -9935,6 +9937,7 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
       // v301: fester Drive-Name schon beim Übernehmen – er geht so auch in den Gerätespeicher
       // und übersteht Abgleich, Neustart und Nachladen (Doppelten-Schutz wie v300).
       const fo={name:file.name,inReport:true,localUrl:blobUrl,localKey,driveId:null,_uploading:false,uploadName:_fotoUploadName(file)};
+      if(typeof _fsFotoAufnahmeAusDatei==='function')_fsFotoAufnahmeAusDatei(fo,file).then(ok=>{if(ok)scheduleSave();}).catch(e=>console.warn('[v434] Aufnahmedatum:',e)); // v434 (F89): Aufnahmedatum aus dem Foto (sonst Zeit der Datei)
       bericht.fotos.push(fo);
       return{file,fo};
     });
@@ -10475,10 +10478,10 @@ async function _wpMobLadeDriveFotos(bericht,grid){
   if(!fid){toast('Kein Foto-Ordner im Task eingetragen','error');return;}
   toast('📂 Lade Drive-Fotos…','info',3000);
   try{
-    const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("'"+fid+"' in parents and mimeType contains 'image/' and trashed=false")+'&fields=files(id,name,mimeType)&pageSize=100',{headers:{Authorization:'Bearer '+gdriveToken}});
+    const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent("'"+fid+"' in parents and mimeType contains 'image/' and trashed=false")+'&fields=files(id,name,mimeType,imageMediaMetadata(time),createdTime)&pageSize=100',{headers:{Authorization:'Bearer '+gdriveToken}}); // v434: mit Aufnahmedatum
     const d=await r.json();const files=d.files||[];
     const ex=new Set((bericht.fotos||[]).map(f=>f.driveId));
-    files.forEach(f=>{if(!ex.has(f.id))bericht.fotos.push({driveId:f.id,name:f.name,inReport:true,localUrl:null});});
+    files.forEach(f=>{if(!ex.has(f.id)){const fo={driveId:f.id,name:f.name,inReport:true,localUrl:null};if(typeof _fsFotoAufnahmeAusDrive==='function')_fsFotoAufnahmeAusDrive(fo,f);bericht.fotos.push(fo);}}); // v434 (F89)
     scheduleSave();_wpMobRenderFotos(bericht,grid);
     toast('✓ '+files.length+' Foto(s) geladen','success');
   }catch(e){toast('Fehler: '+e.message,'error');}
