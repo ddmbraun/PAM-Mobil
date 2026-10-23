@@ -4996,7 +4996,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F87" charset="utf-8"></script>
+<script src="formulare.js?v=F88" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v432';
+const MOB_VERSION='v433';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -19363,6 +19363,7 @@ function _shrWpGruppen(t){
     .filter(b=>b&&(b.fotos||[]).length)
     .map(b=>({bericht:b,
       titel:String((b.kopf&&b.kopf.adresse)||b.titel||'Wartungsprotokoll').trim(),
+      art:(()=>{try{const lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,t):null;return (lz&&lz.lang)?String(lz.lang):'';}catch(e){return '';}})(), // v433 (F88): die echte Art statt immer „Wartungsprotokoll“
       datum:b.datum||'',
       fotos:(b.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.driveId||f.localKey||f.localUrl))}))
     .filter(g=>g.fotos.length);
@@ -19371,7 +19372,7 @@ function _shrWpKopf(g){ // Trennzeile im Teilen-Raster – gleiche Bauart wie _s
   const d=document.createElement('div');
   d.style.cssText='grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:6px 8px;margin-top:6px;border-left:4px solid #1a5c3a;background:rgba(255,255,255,.07);border-radius:0 8px 8px 0;color:#eee;font-size:13px;';
   d.innerHTML='<span style="width:22px;height:22px;border-radius:50%;background:#1a5c3a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;">📋</span>'
-    +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Wartungsprotokoll'
+    +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(g.art||'Protokoll') // v433 (F88): die echte Art
     +(g.datum?' · '+esc(g.datum):'')+(g.titel?' — '+esc(g.titel):'')+'</span>';
   return d;
 }
