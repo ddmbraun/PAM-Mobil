@@ -4996,7 +4996,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
 <script src="https://accounts.google.com/gsi/client" defer onload="onGsiLoaded()"></script>
 <link id="pannellumCSS" rel="stylesheet">
 <!-- piexif und pannellum werden erst bei Bedarf geladen -->
-<script src="formulare.js?v=F94" charset="utf-8"></script>
+<script src="formulare.js?v=F95" charset="utf-8"></script>
 <script>
 /* ═══════════════════════════════════════════════
    PAM Mobile – nutzt dieselbe workboard.json wie PAM
@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v440';
+const MOB_VERSION='v441';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -9411,6 +9411,7 @@ function _pruefMenuShow(e){
     {label:'💧 Begehungsprotokoll – Wohnung',fn:function(){_openFeuchteprotokollMobil();},bg:'#1f5f8b',             border:'#1f5f8b',             color:'#fff'}, // v291, v331: Name wie das Protokoll heißt
     {label:'💧 Begehungsprotokoll – Keller',  fn:function(){_openFeuchteprotokollMobil(undefined,'keller');},bg:'#1f5f8b',border:'#1f5f8b',color:'#fff'}, // v303, v331
     {label:'🔍 Vorabbesichtigung',            fn:function(){_openFeuchteprotokollMobil(undefined,'besichtigung2');},bg:'#1f5f8b',border:'#1f5f8b',color:'#fff'}, // v383/F47: aus „Besichtigung 2“ wird die Vorabbesichtigung – EIN Eintrag (Frank 09.10.2026)
+    {label:'📝 Ortsterminprotokoll',          fn:function(){_openFeuchteprotokollMobil(undefined,'ortstermin');},bg:'#3b4a6b',border:'#3b4a6b',color:'#fff'}, // F95: Ortstermin zum Privatgutachten (25.10.2026)
     {label:'🔧 REP-Auftrag',                  fn:function(){_openRepAuftrag();},bg:'#1f5f8b',border:'#1f5f8b',color:'#fff'}, // F42/v363: kurzer Reparaturauftrag (Frank 05.10.2026)
     {label:'🪝 Prüfprotokoll Anschlageinrichtung',fn:function(){_openAnschlagProtokoll();},bg:'#1f4e79',border:'#1f4e79',color:'#fff'}, // F74/v418: Sekuranten-Prüfung, eigenes Formular (Frank 15.10.2026)
   ];
