@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v443';
+const MOB_VERSION='v444';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -14556,6 +14556,8 @@ function renderKontakt(k,i){
     +'<div class="kontakt-entry-head"><select onchange="updateKontakt('+i+',\'rolle\',this.value)">'+rolleOpts+'</select>'
     +'<button class="rm-btn" onclick="removeKontakt('+i+')">✕</button></div>'
     +'<div class="field"><label>Name</label><input type="text" value="'+escAttr(k.name||'')+'" oninput="updateKontakt('+i+',\'name\',this.value)" autocomplete="off"></div>'
+    // Lage im Haus („DG links", „Whg. 3") – nur bei Mieter und Eigentuemer, wie am PC; eigenes Feld, nie im Namen
+    +(((k.rolle||'mieter')==='mieter'||k.rolle==='eigentuemer')?'<div class="field"><label>Lage im Haus</label><input type="text" value="'+escAttr(k.lage||'')+'" placeholder="DG links" oninput="updateKontakt('+i+',\'lage\',this.value)" autocomplete="off"></div>':'')
     +'<div class="field"><label>Telefon</label><div class="field-row" style="gap:6px"><input type="tel" value="'+escAttr(k.tel||'')+'" oninput="updateKontakt('+i+',\'tel\',this.value)" autocomplete="off"><a class="call-link'+(k.tel?'':' disabled')+'" href="'+telHref+'" data-wahl-kontakt="'+i+'">📞</a></div></div>'
     +((typeof _wahlKontaktZeile==='function')?_wahlKontaktZeile(k,i):'') // v282: „📞 gewählt: …"
     +'<div class="field"><label>E-Mail</label><input type="email" value="'+escAttr(k.email||'')+'" oninput="updateKontakt('+i+',\'email\',this.value)" autocomplete="off"></div>'
@@ -14577,6 +14579,9 @@ function updateKontakt(i,f,v){
   const t=currentTask();if(!t)return;
   if(!t.kontakte||!t.kontakte[i])return;
   t.kontakte[i][f]=v;scheduleSave();
+  // Lage im Haus gibt es nur bei Mieter und Eigentuemer (Regel wie am PC, _kLageSync): wechselt die Rolle weg, wird der
+  // Wert abgeraeumt (kein stiller Rest) und die Karte neu gezeichnet, damit das Feld verschwindet bzw. erscheint
+  if(f==='rolle'){if(!(v==='mieter'||v==='eigentuemer')&&t.kontakte[i].lage)t.kontakte[i].lage='';renderDetail(t);}
 }
 
 // ══ TERMINE ══
@@ -21780,6 +21785,35 @@ function _quickAddRemoveFoto(){ // entfernt alle Fotos (Kompatibilität)
 // Der Spaltenname MUSS wortgleich mit Desktop b642 bleiben.
 var AUFTRAG_SPALTE='🛠 Aufträge';
 var _qaObjekt=null; // {id,board,title,adresse} – gewähltes Objekt im Schnell-Erfassen
+/* Ansprechpartner der Hausverwaltung vom Objekt mitnehmen – Gegenstück zum PC (dort steht der ganze Grund).
+   ⛔ NUR die Rolle hausverwaltung, nur DAZU, nie ersetzen, Kopie. ⛔ ZEICHENGLEICH mit PAM Desktop –
+   die Pruefsuiten beider Apps vergleichen den Text. */
+function _objHvKontakte(obj,vorhanden){
+  var norm=function(s){return String(s==null?'':s).trim().toLowerCase();};
+  var nr=function(s){return norm(s).replace(/[^0-9+]/g,'');};
+  var alt=Array.isArray(vorhanden)?vorhanden:[];
+  var schonDa=function(k){
+    var n=norm(k.name),t=nr(k.tel),t2=nr(k.tel2),e=norm(k.email);
+    return alt.some(function(a){
+      if(!a)return false;
+      if(n&&norm(a.name)===n)return true;
+      if(t&&(nr(a.tel)===t||nr(a.tel2)===t))return true;
+      if(t2&&(nr(a.tel)===t2||nr(a.tel2)===t2))return true;
+      if(e&&norm(a.email)===e)return true;
+      return false;
+    });
+  };
+  var out=[];
+  ((obj&&Array.isArray(obj.kontakte))?obj.kontakte:[]).forEach(function(k){
+    if(!k||String(k.rolle||'')!=='hausverwaltung')return;
+    if(!(norm(k.name)||nr(k.tel)||nr(k.tel2)||norm(k.email)))return;
+    if(schonDa(k))return;
+    var kopie={rolle:'hausverwaltung',name:String(k.name||''),tel:String(k.tel||''),tel2:String(k.tel2||''),email:String(k.email||''),
+      strasse:String(k.strasse||''),plz:String(k.plz||''),ort:String(k.ort||''),anrufKontakt:!!k.anrufKontakt,wohntImObjekt:false,lage:''};
+    out.push(kopie);alt=alt.concat([kopie]);
+  });
+  return out;
+}
 function _qaObjektSammle(){
   var out=[];
   Object.keys(boards||{}).forEach(function(bn){
@@ -21795,7 +21829,8 @@ function _qaObjektSammle(){
          und _objTitelVorspann baut das Kürzel seit v195 aus obj.nas – beides lief ins Leere, weil die Liste nur
          id/board/title/adresse trug (Befund 14.10.2026, Browserprobe v408). ⛔ Nur lesen/mitgeben: das Objekt selbst
          bleibt unangetastet. */
-      out.push({id:t.id,board:bn,title:t.title||'',adresse:t.adresse||'',hausverwaltung:t.hausverwaltung||'',nas:t.nas||''});
+      // Die Kontakte kommen MIT in die Liste (nur lesen): _submitQuickAdd nimmt daraus die der Verwaltung (_objHvKontakte)
+      out.push({id:t.id,board:bn,title:t.title||'',adresse:t.adresse||'',hausverwaltung:t.hausverwaltung||'',nas:t.nas||'',kontakte:Array.isArray(t.kontakte)?t.kontakte:[]});
     });
   });
   out.sort(function(a,b){return String(a.title).localeCompare(String(b.title),'de');});
@@ -22410,6 +22445,8 @@ async function _submitQuickAdd(){
     // die Zeile leer, obwohl sie an allen 31 Objekten gefüllt ist. Damit erben Handy
     // und Rechner jetzt dasselbe: Adresse, NAS-Pfad, Hausverwaltung.
     if(!newT.hausverwaltung&&auftragObjekt.hausverwaltung)newT.hausverwaltung=auftragObjekt.hausverwaltung;
+    // Ansprechpartner der Verwaltung vom Objekt mit – wie am PC (siehe _objHvKontakte; typeof-Wache fuer die Pruefsuiten)
+    if(typeof _objHvKontakte==='function')newT.kontakte=(newT.kontakte||[]).concat(_objHvKontakte(auftragObjekt,newT.kontakte||[]));
     // v195: Titel-Vorspann „<Kürzel> <Objekt> – <Kurztext>", wortgleich zum Rechner
     // (b654). Vorher hieß die Karte nur „Spechtloch" – auf dem Board war nicht zu
     // sehen, an welchem Haus. ⛔ NUR newT.title bekommt den Vorspann: der Drive-Ordner
