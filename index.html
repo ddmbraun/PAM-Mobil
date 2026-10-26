@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v444';
+const MOB_VERSION='v445';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10906,15 +10906,19 @@ function _anrufTelHref(nr){return 'tel:'+String(nr||'').replace(/[^0-9+]/g,'');}
 // (z. B. als Auftraggeber und als Hausverwaltung).
 function _anrufNummern(t){
   const liste=[],gesehen={};
-  const nimm=function(name,rolle,nr,markiert){
+  const nimm=function(name,rolle,nr,markiert,firma){
     nr=_anrufEinzeilig(nr); if(!nr)return;
     const k=nr.replace(/[^0-9+]/g,''); if(!k||gesehen[k])return; gesehen[k]=true;
-    liste.push({name:_anrufEinzeilig(name),rolle:_anrufEinzeilig(rolle),nr:nr,markiert:!!markiert});
+    const e={name:_anrufEinzeilig(name),rolle:_anrufEinzeilig(rolle),nr:nr,markiert:!!markiert};
+    if(_anrufEinzeilig(firma))e.firma=_anrufEinzeilig(firma);   // nur mit Ansprechpartner: die Firma steht dann dahinter
+    liste.push(e);
   };
   ((t&&t.kontakte)||[]).forEach(function(k){
     if(!k)return;
-    nimm(k.name,_anrufRolle(k.rolle),k.tel,k.anrufKontakt);
-    nimm(k.name,_anrufRolle(k.rolle),k.tel2,k.anrufKontakt);
+    // Mit Ansprechpartner (Name = Firma, wie am PC) ist ER die Person in der Liste, die Firma wird mit angezeigt
+    const _p=_anrufEinzeilig(k.ansprechpartner);
+    nimm(_p||k.name,_anrufRolle(k.rolle),k.tel,k.anrufKontakt,_p?k.name:'');
+    nimm(_p||k.name,_anrufRolle(k.rolle),k.tel2,k.anrufKontakt,_p?k.name:'');
   });
   if(liste.length){
     // der markierte Kontakt nach vorn, die Reihenfolge der anderen bleibt wie im Kasten
@@ -11004,7 +11008,7 @@ function _anrufZeichnen(){
   }
   const pille=function(e,quelle,z){
     const ausMails=(quelle==='mails');
-    const wer=[e.name,e.rolle].filter(Boolean).join(' · ');
+    const wer=[e.name,e.firma,e.rolle].filter(Boolean).join(' · ');   // Ansprechpartner · Firma · Rolle
     const stil=e.markiert
       ?'background:#1a6fc4;color:#fff;border:1px solid #1a6fc4;'
       :'background:var(--bg2);color:var(--text);border:1px solid var(--border);';
@@ -14556,6 +14560,8 @@ function renderKontakt(k,i){
     +'<div class="kontakt-entry-head"><select onchange="updateKontakt('+i+',\'rolle\',this.value)">'+rolleOpts+'</select>'
     +'<button class="rm-btn" onclick="removeKontakt('+i+')">✕</button></div>'
     +'<div class="field"><label>Name</label><input type="text" value="'+escAttr(k.name||'')+'" oninput="updateKontakt('+i+',\'name\',this.value)" autocomplete="off"></div>'
+    // Ansprechpartner bei jeder Rolle, wie am PC (Name = Firma, hier die Person) – die Anrufliste zeigt ihn vor der Firma
+    +'<div class="field"><label>Ansprechpartner</label><input type="text" value="'+escAttr(k.ansprechpartner||'')+'" placeholder="Person bei der Firma" oninput="updateKontakt('+i+',\'ansprechpartner\',this.value)" autocomplete="off"></div>'
     // Lage im Haus („DG links", „Whg. 3") – nur bei Mieter und Eigentuemer, wie am PC; eigenes Feld, nie im Namen
     +(((k.rolle||'mieter')==='mieter'||k.rolle==='eigentuemer')?'<div class="field"><label>Lage im Haus</label><input type="text" value="'+escAttr(k.lage||'')+'" placeholder="DG links" oninput="updateKontakt('+i+',\'lage\',this.value)" autocomplete="off"></div>':'')
     +'<div class="field"><label>Telefon</label><div class="field-row" style="gap:6px"><input type="tel" value="'+escAttr(k.tel||'')+'" oninput="updateKontakt('+i+',\'tel\',this.value)" autocomplete="off"><a class="call-link'+(k.tel?'':' disabled')+'" href="'+telHref+'" data-wahl-kontakt="'+i+'">📞</a></div></div>'
@@ -21808,7 +21814,7 @@ function _objHvKontakte(obj,vorhanden){
     if(!k||String(k.rolle||'')!=='hausverwaltung')return;
     if(!(norm(k.name)||nr(k.tel)||nr(k.tel2)||norm(k.email)))return;
     if(schonDa(k))return;
-    var kopie={rolle:'hausverwaltung',name:String(k.name||''),tel:String(k.tel||''),tel2:String(k.tel2||''),email:String(k.email||''),
+    var kopie={rolle:'hausverwaltung',name:String(k.name||''),ansprechpartner:String(k.ansprechpartner||''),tel:String(k.tel||''),tel2:String(k.tel2||''),email:String(k.email||''),
       strasse:String(k.strasse||''),plz:String(k.plz||''),ort:String(k.ort||''),anrufKontakt:!!k.anrufKontakt,wohntImObjekt:false,lage:''};
     out.push(kopie);alt=alt.concat([kopie]);
   });
