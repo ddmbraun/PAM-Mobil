@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v446';
+const MOB_VERSION='v447';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -17261,13 +17261,22 @@ function _wpFotoBeiText(b){
   return bei.indexOf(obj)===0?bei:'bei '+bei;
 }
 // Kopf: groß der eigene Name (sonst die Art), klein Art · Datum · Zusatz der Formular-Liste · bei wem · Anzahl
+// Derselbe Name wie in der Formular-Liste der Karte („📋 Formulare“): der eigene Name, ohne ihn der Kartenname.
+// Gleiche Rechnung wie dort (lz.name, sonst Adresse/Titel) – Frank 27.10.2026: „es muss doch der Formularname mit da sein“.
+function _wpFormularName(b,t){
+  if(!b)return '';
+  let lz=null;try{lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,t):null;}catch(e){lz=null;}
+  const k=b.kopf||{}; // gleiche Rechnung wie die Liste, bewusst anders geschrieben (test_v330 sucht den Listen-Ausdruck genau einmal)
+  const n=lz?lz.name:b.vorlage==='wartungsprotokoll'?(k.objektAdresse||k.adresse||b.titel||'Bericht'):(b.titel||'Bericht');
+  return String(n||'').replace(/\s+/g,' ').trim();
+}
 function _wpGrpKopfText(b,t,n){
   let lz=null;try{lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,t):null;}catch(e){lz=null;}
-  const art=String((lz&&lz.lang)||(b&&b.titel)||'Formular').trim();
-  const eigen=String((b&&b.protName)||'').replace(/\s+/g,' ').trim();
+  const art=String((lz&&lz.lang)||(b&&b.titel)||'').trim();
+  const name=_wpFormularName(b,t)||art||'Formular'; // groß wie in der Formular-Liste, die Art steht klein darunter
   const roh=String((b&&b.kopf&&b.kopf.besuchBei)||'').trim();
   const sub=String((lz&&lz.sub)||'').split(' · ').filter(x=>x.trim()&&x.trim()!==roh).join(' · '); // „bei …“ steht eigens
-  return {name:eigen||art,zeile:[eigen?art:'',String((b&&b.datum)||'').trim(),sub,_wpFotoBeiText(b),n+(n===1?' Foto':' Fotos')].filter(Boolean).join(' · ')};
+  return {name,zeile:[art!==name?art:'',String((b&&b.datum)||'').trim(),sub,_wpFotoBeiText(b),n+(n===1?' Foto':' Fotos')].filter(Boolean).join(' · ')};
 }
 function _wpFotoSektionMob(t){
   let h='';
@@ -19096,8 +19105,6 @@ function _fotoVorschauLaden(f,img,opts){
   const ausSpeicher=!!((f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))
     ||(id&&_fotoBlobCache.get(id))
     ||(_tkVorab&&_thumbBytesCache.has(_tkVorab)));
-  if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))quellen.push(()=>f.localUrl);
-  if(id&&_fotoBlobCache.get(id))quellen.push(()=>_fotoBlobCache.get(id));
   // v155: Reihenfolge – erst alles vom GERÄT, dann das dauerhaft abgelegte Vorschaubild,
   // erst danach gemerkte Adressen und ganz zuletzt der Vollbild-Weg.
   // Wichtig: _thumbBytes MUSS vor _thumbGespeichert stehen. Sonst bedient eine noch
@@ -19143,6 +19150,13 @@ function _fotoVorschauLaden(f,img,opts){
   // Ist nichts da, sagt der Service Worker ab und die Kette geht weiter – das kostet
   // nichts, weil die Anfrage das Gerät gar nicht verlässt.
   if(id&&!_lokalBearbeitet&&_thumbSwAktiv())quellen.push({name:'Vorschau-Speicher',holen:()=>_thumbSwUrl(id)});
+  // Was schon im Arbeitsspeicher liegt (Bild als data:/blob:, Vollbild-Zwischenspeicher): nach allem Kleinen vom
+  // Gerät, vor jedem Netzweg. So bleibt ein Foto nicht leer, das weder im Gerätespeicher noch in Drive liegt, ein
+  // hier bemaltes Foto zeigt nicht die alte Fassung aus Drive – und das kleine Vorschaubild gewinnt weiter vor dem
+  // großen. Bis hierher standen die zwei ganz vorn als nackte Funktionen; die Kette ruft aber q.holen – sie wurden
+  // still übersprungen (gemessen in der echten Seite: ein Foto nur mit data: blieb leer).
+  if(f.localUrl&&(f.localUrl.startsWith('data:')||f.localUrl.startsWith('blob:')))quellen.push({name:'Speicher (Bild)',holen:()=>f.localUrl});
+  if(id&&_fotoBlobCache.get(id))quellen.push({name:'Speicher (Vollbild)',holen:()=>_fotoBlobCache.get(id)});
   if(id&&!_lokalBearbeitet)quellen.push({name:'Drive (Vorschau-Bytes)',holen:()=>_thumbBytes(id)});
   const _ts=_thumbGespeichert(f); // v129: tote blob:-Adressen werden hier bereits verworfen
   if(_ts)quellen.push({name:'gemerkte Adresse',holen:()=>_ts,bauen:true});
@@ -19497,18 +19511,21 @@ function _shrPinFotoTeilen(pinId,idx){ // v222: Abkürzung Pin-Großansicht – 
 function _shrWpGruppen(t){
   return ((t&&t.pruefberichte)||[])
     .filter(b=>b&&(b.fotos||[]).length)
-    .map(b=>({bericht:b,
-      titel:[String(b.protName||'').trim()||String((b.kopf&&b.kopf.adresse)||b.titel||'Wartungsprotokoll').trim(),(typeof _wpFotoBeiText==='function'?_wpFotoBeiText(b):'')].filter(Boolean).join(' · '), // eigener Name + „bei wem“ – zwei Besichtigungen an einer Karte sind so zu unterscheiden
-      art:(()=>{try{const lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,t):null;return (lz&&lz.lang)?String(lz.lang):'';}catch(e){return '';}})(), // v433 (F88): die echte Art statt immer „Wartungsprotokoll“
+    .map(b=>{
+      const art=(()=>{try{const lz=(typeof _fsListeZeile==='function')?_fsListeZeile(b,t):null;return (lz&&lz.lang)?String(lz.lang):'';}catch(e){return '';}})(); // v433 (F88): die echte Art statt immer „Wartungsprotokoll“
+      const name=(typeof _wpFormularName==='function')?_wpFormularName(b,t):(String(b.protName||'').trim()||String((b.kopf&&b.kopf.adresse)||b.titel||'Wartungsprotokoll').trim()); // derselbe Name wie in der Formular-Liste
+      return {bericht:b,
+      titel:[name!==art?name:'',(typeof _wpFotoBeiText==='function'?_wpFotoBeiText(b):'')].filter(Boolean).join(' · '), // Name + „bei wem“ – zwei Besichtigungen an einer Karte sind so zu unterscheiden; die Art steht schon vorn
+      art,
       datum:b.datum||'',
-      fotos:(b.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.driveId||f.localKey||f.localUrl))}))
+      fotos:(b.fotos||[]).filter(f=>f&&!_shrIstVideo(f)&&(f.driveId||f.localKey||f.localUrl))};})
     .filter(g=>g.fotos.length);
 }
 function _shrWpKopf(g){ // Trennzeile im Teilen-Raster – gleiche Bauart wie _shrPinKopf
   const d=document.createElement('div');
   d.style.cssText='grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:6px 8px;margin-top:6px;border-left:4px solid #1a5c3a;background:rgba(255,255,255,.07);border-radius:0 8px 8px 0;color:#eee;font-size:13px;';
   d.innerHTML='<span style="width:22px;height:22px;border-radius:50%;background:#1a5c3a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;">📋</span>'
-    +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(g.art||'Protokoll') // v433 (F88): die echte Art
+    +'<span style="min-width:0;overflow-wrap:anywhere;">'+esc(g.art||'Protokoll') // v433 (F88): die echte Art · bricht um, damit „bei …“ hinter langen Namen zu sehen bleibt
     +(g.datum?' · '+esc(g.datum):'')+(g.titel?' — '+esc(g.titel):'')+'</span>';
   return d;
 }
