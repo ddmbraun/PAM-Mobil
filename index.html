@@ -5021,7 +5021,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v453';
+const MOB_VERSION='v454';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -12200,11 +12200,10 @@ function _ansehenHtml(t,board,art){
   // Notizen – neueste oben
   const not=_ansListe(t.notizVerlauf).filter(n=>n&&n.text).slice().reverse();
   if(not.length)h+=_ansAbschnitt('📝 Notizen ('+not.length+')',not.map(n=>_ansZeile(esc(_ansDatum(n.ts)),esc(n.text))).join(''));
-  // Fotos – Kacheln; Vorschau lädt _ansehenAuf nach (über Kopien); Antippen → Drive-Ansicht
+  // Fotos – Kacheln; Vorschau lädt _ansehenAuf nach (über Kopien); Antippen → Großansicht in PAM (_ansFotoGross – Foto-Großansicht im Ansehen-Blatt 07.11.2026)
   const fot=_ansListe(t.fotos).filter(f=>f&&(f.editedDriveId||f.driveId||f.url));
   if(fot.length)h+=_ansAbschnitt('📷 Fotos ('+fot.length+')','<div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:6px;">'+fot.map((f,i)=>{
-    const did=f.editedDriveId||f.driveId||''; const url=did?('https://drive.google.com/file/d/'+did+'/view'):String(f.url||'');
-    return '<div style="width:calc((100% - 12px) / 3);cursor:pointer;" onclick="_ansFotoAuf(\''+_jsaUrl(url)+'\')">'
+    return '<div style="width:calc((100% - 12px) / 3);cursor:pointer;" onclick="_ansFotoGross('+i+')">'
       +'<div style="aspect-ratio:1/1;background:var(--bg3);border-radius:8px;overflow:hidden;"><img data-ansfoto="'+i+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>'
       +(f.caption?'<div style="font-size:calc(11.5px * var(--m-scale,1));color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.caption)+'</div>':'')+'</div>';
   }).join('')+'</div>');
@@ -12223,6 +12222,48 @@ function _ansehenHtml(t,board,art){
   return h;
 }
 function _ansFotoAuf(url){ url=String(url||''); if(!/^https?:/i.test(url))return; try{window.open(url,'_blank');}catch(e){} }
+/* ── Foto-Großansicht im Ansehen-Blatt 07.11.2026 ─────────────────────────────────────────────
+   Bis dahin öffnete das Antippen einer Foto-Kachel die Drive-Ansicht in einem neuen Fenster (_ansFotoAuf) –
+   und der Rückweg ins Blatt kostete je Foto mehrere Tipper (Frank: „immer 5 mal wieder klicken“). Jetzt geht
+   das Foto in der vorhandenen Großansicht (Lightbox) IN PAM auf – als reine Lese-Fassung: openLightbox OHNE
+   fotoIdx, darum ohne die Leiste Text/Malen/GPS/Leistung und ohne Teilen; „📂 Original öffnen“ bleibt der Weg
+   nach Drive. Geblättert wird über eine EIGENE Liste (_ansehenFotos/_lbAnsFotos), weil _lbNavFoto sonst
+   currentTask() liest – und das ist im Blatt leer. ⛔ Nie openFotoFullscreen(i) aufrufen (liest currentTask()).
+   Videos spielt weiter Drive ab (wie openFotoFullscreen); ein Eintrag ohne Drive-Kennung und ohne Vorschau auch. */
+let _ansehenFotos=[];  // Kopien der Foto-Einträge des offenen Blatts, Reihenfolge wie die Kacheln (data-ansfoto)
+let _lbAnsFotos=null;  // {idx} solange die Großansicht ein Foto des Ansehen-Blatts zeigt; closeLightbox setzt zurück
+let _lbAnsMarke=0;     // ein spät eintreffendes Vollbild darf kein inzwischen anderes Foto überdecken
+function _ansFotoUrl(f){ if(!f)return ''; const did=f.editedDriveId||f.driveId||''; const url=did?('https://drive.google.com/file/d/'+did+'/view'):String(f.url||''); return url; }
+function _ansFotoGross(i){
+  i=Number(i); const f=_ansListe(_ansehenFotos)[i]; if(!f||typeof f!=='object')return;
+  const url=_ansFotoUrl(f);
+  if(typeof _fotoIstVideo==='function'&&_fotoIstVideo(f)){_ansFotoAuf(url);return;} // Videos: Drive kann sie abspielen, die Lightbox nicht
+  const vid=f.editedDriveId||f.driveId||'';
+  const inh=document.getElementById('ansehenInhalt');
+  const kachel=inh?inh.querySelector('img[data-ansfoto="'+i+'"]'):null;
+  const start=(vid&&_fotoBlobCache.get(vid))||(kachel&&kachel.getAttribute('src'))||''; // erst das, was schon da ist (Vollbild aus dem Speicher, sonst die Kachel-Vorschau)
+  if(!vid&&!start){_ansFotoAuf(url);return;} // nur eine fremde Adresse, nichts zum Zeigen: dann wie bisher
+  _lbAnsFotos={idx:i};
+  const n=_ansListe(_ansehenFotos).length;
+  openLightbox(start,(f.caption||f.editedName||f.name||'Foto')+(n>1?' · '+(i+1)+'/'+n:''),url); // OHNE fotoIdx → keine Schreib-Leiste, kein Teilen
+  const p=document.getElementById('lbNavPrev'),nx=document.getElementById('lbNavNext');
+  if(p)p.style.display=n>1?'':'none'; if(nx)nx.style.display=n>1?'':'none';
+  if(vid&&!_fotoBlobCache.get(vid)){
+    const marke=++_lbAnsMarke;
+    _fetchFotoBlob(vid).then(u=>{
+      if(!u||marke!==_lbAnsMarke||!_lbAnsFotos||_lbAnsFotos.idx!==i)return; // inzwischen geblättert oder geschlossen
+      const lb=document.getElementById('lightbox'),img=document.getElementById('lbImg');
+      if(!lb||!img||!lb.classList.contains('open'))return;
+      img.src=u; if(img.style.display==='none')img.style.display='';
+    }).catch(()=>{});
+  }
+}
+function _ansFotoBlaettern(dir){
+  if(!_lbAnsFotos)return;
+  const n=_ansListe(_ansehenFotos).length; if(n<2)return;
+  let ni=_lbAnsFotos.idx+(dir<0?-1:1); if(ni<0)ni=n-1; else if(ni>=n)ni=0; // mit Umlauf wie _lbNavFoto
+  _ansFotoGross(ni);
+}
 function _ansehenAuf(id){
   const f=_ansehenKarteFinden(id);
   if(!f){ if(findTaskById(id)){openDetail(id);return;} toast('Karte nicht gefunden – bitte am PC nachsehen','info',3500); return; } // Sicherheitsnetz: eine freigegebene Karte öffnet normal
@@ -12231,12 +12272,15 @@ function _ansehenAuf(id){
   inh.innerHTML=_ansehenHtml(f.t,f.board,f.art);
   bl.style.display='flex'; try{inh.scrollTop=0;}catch(e){}
   // Vorschaubilder nachladen – über KOPIEN der Foto-Einträge, die Ablage bleibt unberührt
+  _ansehenFotos=[];
   try{
     const fot=_ansListe(f.t.fotos).filter(x=>x&&(x.editedDriveId||x.driveId||x.url));
+    _ansehenFotos=fot.map(x=>Object.assign({},x)); // Foto-Großansicht im Ansehen-Blatt 07.11.2026: Kopien für _ansFotoGross, Reihenfolge = Kacheln
     inh.querySelectorAll('img[data-ansfoto]').forEach(img=>{ const fo=fot[+img.getAttribute('data-ansfoto')]; if(fo&&typeof _fotoVorschauLaden==='function')_fotoVorschauLaden(Object.assign({},fo),img); });
   }catch(e){}
 }
 function _ansehenZu(){
+  _ansehenFotos=[]; if(typeof _lbAnsFotos!=='undefined'&&_lbAnsFotos&&typeof closeLightbox==='function')closeLightbox(); // Foto-Großansicht im Ansehen-Blatt 07.11.2026: Liste leeren, offene Großansicht mit schließen
   const bl=document.getElementById('ansehenBlatt');if(bl)bl.style.display='none';
   const inh=document.getElementById('ansehenInhalt');if(inh)inh.innerHTML='';
   _ansehenOffenId=null;
@@ -24334,6 +24378,7 @@ function closeLightbox(){
   lb.style.zIndex=''; // v215: Pin-Foto-Einsatz hebt die Lightbox über den Dachplan – hier zurück
   _lbPinFoto=null;    // v215: Pin-Bezug gilt nur für diese eine Ansicht
   _lbWpFoto=null;     // v231: dasselbe für den Protokoll-Bezug
+  _lbAnsFotos=null;   // Foto-Großansicht im Ansehen-Blatt 07.11.2026: die Blatt-Liste gilt nur für diese eine Ansicht
   lbDiscardDraw();_lbClosePannellum();_lbResetZoom();
   document.removeEventListener('keydown',_lbOnKey);
   _lbFotoIdx=-1;_lbFotoKey='';
@@ -24364,6 +24409,7 @@ function _lbResetZoom(){_lz={s:1,tx:0,ty:0};const img=document.getElementById('l
 function _lbNavFoto(dir){
   if(_lbPinFoto)return; // v215: Pin-Foto-Ansicht – die Pfeile gehören zu t.fotos, hier wäre Blättern falsch
   if(_lbWpFoto)return;  // v231: dasselbe für Protokoll-Fotos – geblättert wird in der Protokoll-Ansicht
+  if(_lbAnsFotos){_ansFotoBlaettern(dir);return;} // Foto-Großansicht im Ansehen-Blatt 07.11.2026: Blatt-Fotos blättern über die eigene Liste – nie über currentTask()
   if(_lbFotoIdx<0)return;
   const t=currentTask();if(!t||!t.fotos||t.fotos.length<2)return;
   const c=document.getElementById('drawCanvas');
