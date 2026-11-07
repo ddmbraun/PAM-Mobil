@@ -206,10 +206,10 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
 .suche-bereich-hinweis{flex:0 0 100%;font-size:12px;color:var(--text2);padding:2px 2px 0}
 .search-toggle-row .search-bar{flex:1 1 100%}
 .search-toggle-row .view-toggle{flex:0 0 100%;box-sizing:border-box}
-/* v256: graue Treffer (Archiv / nur am PC) – nur zum Ansehen, kein Öffnen */
-.task-card.karte-grau{opacity:.62;cursor:default;border-left-color:#6b7080}
+/* v256: graue Treffer (Archiv / nur am PC) – nur zum Ansehen. Ansehen-Blatt 07.11.2026: antippbar, öffnet das Lese-Blatt (_ansehenAuf) */
+.task-card.karte-grau{opacity:.74;cursor:pointer;border-left-color:#6b7080}
 .task-card.karte-grau:active{background:var(--bg2)}
-.kz.karte-grau{opacity:.62;cursor:default}
+.kz.karte-grau{opacity:.74;cursor:pointer}
 #taskList .badge.status{background:var(--bg3);border-color:var(--border);color:var(--text2)}
 #taskList .card-akt{background:var(--bg3)!important}
 /* Auf dem Tablet das Panel nicht über die volle Breite aufreißen */
@@ -4688,6 +4688,15 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
      ueber dem ⋯-Menue (9300). v274-Lehre: ein Blatt UNTER der Leiste wird von ihr
      zugedeckt, und genau das hat Frank am Bild gesehen ("wo ist die Suche?").
      ⛔ Kein Abhaken in diesem Blatt - Begruendung steht bei _anrufSammle(). -->
+<!-- Ansehen-Blatt 07.11.2026: reines Lese-Blatt für Archiv-Karten und Karten aus Boards ohne Haken „Mobile“ – kein Eingabefeld, nichts wird gespeichert (_ansehenAuf/_ansehenZu) -->
+<div id="ansehenBlatt" style="display:none;position:fixed;inset:0;z-index:9500;background:var(--bg);flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0;">
+    <button type="button" onclick="_ansehenZu()" style="min-height:44px;min-width:44px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(15px * var(--m-scale,1));cursor:pointer;">‹ Zurück</button>
+    <div style="flex:1;min-width:0;font-size:calc(16px * var(--m-scale,1));font-weight:700;color:var(--text);">👁 Ansehen</div>
+    <div style="font-size:calc(12px * var(--m-scale,1));color:var(--text2);white-space:nowrap;">nur lesen</div>
+  </div>
+  <div id="ansehenInhalt" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 12px calc(16px + env(safe-area-inset-bottom,0px));"></div>
+</div>
 <div id="anrufBlatt" style="display:none;position:fixed;inset:0;z-index:9400;background:rgba(0,0,0,.55);" onclick="if(event.target===this)_anrufBlattZu()">
   <div style="position:absolute;left:0;right:0;bottom:0;background:var(--bg2);border-radius:16px 16px 0 0;padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px));max-height:84vh;overflow-y:auto;box-shadow:0 -4px 22px rgba(0,0,0,.45);">
     <div style="width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 12px;"></div>
@@ -5012,7 +5021,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v452';
+const MOB_VERSION='v453';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11100,7 +11109,7 @@ function _anrufZeichnen(){
       h+='<div style="font-size:calc(13px * var(--m-scale,1));color:var(--text2);margin-top:7px;line-height:1.4;">Keine Nummer hinterlegt — weder im Kontakte-Kasten noch aus Mails.</div>';
     }
     h+=z.nurPc
-      ? '<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin-top:9px;line-height:1.4;">💻 nur am PC — dieses Board ist fürs Handy nicht freigegeben, wählen geht trotzdem.</div>'
+      ? '<button type="button" onclick="_ansehenAuf(\''+_jsa(z.id)+'\')" style="width:100%;margin-top:9px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">👁 Ansehen</button><div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin-top:7px;line-height:1.4;">💻 nur am PC — dieses Board ist fürs Handy nicht freigegeben, wählen geht trotzdem.</div>' // Ansehen-Blatt 07.11.2026: Lese-Blatt statt Sackgasse
       : '<button onclick="_anrufKarteAuf(\''+_jsa(z.id)+'\')" style="width:100%;margin-top:9px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>';
     return h+'</div>';
   }).join('');
@@ -11905,7 +11914,7 @@ function _tischZeichnen(el){
       +'<span style="display:block;'+klein+'">'+esc(nebenzeile)+'</span>'
       +'<a class="anruf-feld" href="'+escAttr(_anrufTelHref(a.nummer))+'"'+((karte&&!karte.nurPc)?' data-wahl-task="'+escAttr(karte.id)+'" data-wahl-nr="'+escAttr(a.nummer)+'"':'')+' onclick="event.stopPropagation()" title="'+escAttr('wählen: '+a.nummer)+'" style="display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:5px 12px;margin-top:6px;border-radius:10px;text-decoration:none;background:var(--bg2);color:var(--text);border:1px solid var(--border);font-size:calc(14.5px * var(--m-scale,1));font-weight:600;">📞 '+esc(a.nummer)+'</a>'
       +(karte?(karte.nurPc
-        ?'<span style="display:block;'+klein+'margin-top:5px;">💻 Karte nur am PC</span>'
+        ?'<span style="display:block;'+klein+'margin-top:5px;">💻 Karte nur am PC</span><button type="button" onclick="_ansehenAuf(\''+_jsa(karte.id)+'\')" style="display:block;margin-top:6px;'+knopf+'">👁 Ansehen</button>' // Ansehen-Blatt 07.11.2026
         :'<button type="button" onclick="_anrufKarteAuf(\''+_jsa(karte.id)+'\')" style="display:block;margin-top:6px;'+knopf+'">📂 Karte öffnen</button>'):'')
       +'</span></div>';
   });
@@ -11982,7 +11991,7 @@ function _wahlZeichnen(el){
     if(x.wahlen.length>3)s+='<button class="wahl-mehr" onclick="_wahlAufklappen(\''+_jsa(t.id)+'\')" style="background:none;border:none;color:#1a6fc4;font-size:calc(13.5px * var(--m-scale,1));padding:8px 0 2px;cursor:pointer;">'+(offen?'weniger':'+ '+(x.wahlen.length-3)+' weitere')+'</button>';
     s+=(x.art==='karte')
       ?'<button onclick="_anrufKarteAuf(\''+_jsa(t.id)+'\')" style="width:100%;margin-top:8px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">📂 Karte öffnen</button>'
-      :((x.art==='pc')?'<div style="'+klein+'margin-top:8px;">💻 nur am PC – hier nicht zu öffnen.</div>':'');
+      :((x.art==='pc'||x.art==='archiv')?'<button type="button" onclick="_ansehenAuf(\''+_jsa(t.id)+'\')" style="width:100%;margin-top:8px;min-height:44px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:calc(14px * var(--m-scale,1));cursor:pointer;">👁 Ansehen</button>'+((x.art==='pc')?'<div style="'+klein+'margin-top:6px;">💻 nur am PC – nur zum Ansehen.</div>':''):''); // Ansehen-Blatt 07.11.2026
     return s+'</div>';
   }).join('');
   el.innerHTML=h;
@@ -12088,16 +12097,149 @@ function _sucheScopeToggle(){_sucheScopeSetzen(_sucheScope==='board'?'alle':'boa
 function _grauKarte(t,art,board){
   const lbl=(art==='archiv')?'📦 Archiv':'💻 nur am PC';
   const bd=board?'<span style="opacity:.75">'+esc(board)+'</span>':'';
+  // Ansehen-Blatt 07.11.2026: die graue Karte ist antippbar – sie öffnet das LESE-Blatt (_ansehenAuf), nie das Bearbeiten-Fenster.
+  const tipp=' onclick="_ansehenAuf(\''+_jsa(t.id)+'\')"';
   if(_mobView==='kompakt'){
-    return '<div class="kz karte-grau"><div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
-      +'<div class="kz-info">'+[bd,'<span>'+lbl+'</span>',t.status?'<span>'+esc(t.status)+'</span>':''].filter(Boolean).join(' · ')+'</div></div>';
+    return '<div class="kz karte-grau"'+tipp+'><div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
+      +'<div class="kz-info">'+[bd,'<span>'+lbl+'</span>',t.status?'<span>'+esc(t.status)+'</span>':'','<span>👁 Ansehen</span>'].filter(Boolean).join(' · ')+'</div></div>';
   }
-  return '<div class="task-card karte-grau" title="Nur zum Ansehen – bearbeiten am PC"><div class="task-card-body">'
+  return '<div class="task-card karte-grau" title="Nur zum Ansehen – bearbeiten am PC"'+tipp+'><div class="task-card-body">'
     +'<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;"><span style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(board||'')+'</span></div>'
     +'<div class="task-card-title" style="color:var(--text)">'+esc(t.title||'(ohne Titel)')+'</div>'
     +(t.adresse?'<div style="font-size:12px;color:var(--text2);margin-top:2px;">'+esc(t.adresse)+'</div>':'')
-    +'<div class="task-card-meta"><span class="badge">'+lbl+'</span>'+(t.status?'<span class="badge status">'+esc(t.status)+'</span>':'')+'</div>'
+    +'<div class="task-card-meta"><span class="badge">'+lbl+'</span>'+(t.status?'<span class="badge status">'+esc(t.status)+'</span>':'')+'<span class="badge" style="background:#E8EEF5;color:#2F5F8F;border:1px solid #C9D8E8;" title="Nur lesen – nichts wird gespeichert">👁 Ansehen</span></div>'
     +'</div></div>';
+}
+/* ── Ansehen-Blatt 07.11.2026 ─────────────────────────────────────────────────────────────────────
+   Frank: „Ich möchte nichts reinschreiben in die Archiv-Karten. Es geht darum, dass ich unterwegs nachsehen
+   kann: wir waren damals dort und da wurde das und das gemacht.“
+   Reines LESE-Blatt für Karten, die das Handy nicht öffnen darf: die Archiv-Ablage des PCs (_remoteArchivedTasks,
+   nur durchgereicht), Karten mit Archiv-Haken im Filter-Topf (_mobileFilteredOut) und Boards ohne Haken „Mobile“
+   (hiddenBoards). Kein Eingabefeld, kein Speichern – die Funktionen hier kennen saveFile/scheduleSave/dirty/
+   currentTaskId nicht. Fotos werden über KOPIEN der Einträge geladen (_fotoVorschauLaden setzt bei totem Link
+   f.thumbnail=null – das darf die Ablage nicht treffen). Antippen eines Fotos öffnet die Drive-Ansicht (wie Videos
+   in openFotoFullscreen). Telefon-Links OHNE data-wahl-task → kein Wahl-Vermerk (wäre ein Schreiben). Die
+   Archiv-Ablage enthält neben Karten auch Merkzettel-Texte („endgültig gelöscht“, Desktop b1240) – übersprungen.
+   Entwurf: 04_Dokumentation\ENTWURF_2026-11-07_PAM-Mobil-Archiv-Ansehen-Blatt.md · OFFENE_PUNKTE P121 (c). */
+let _ansehenOffenId=null;
+function _ansehenKarteFinden(id){
+  if(!id)return null;
+  // 1) Archiv-Ablage des PCs (Array; Merkzettel-Texte ohne id überspringen)
+  try{
+    const a=(typeof _remoteArchivedTasks!=='undefined'&&Array.isArray(_remoteArchivedTasks))?_remoteArchivedTasks:[];
+    for(const t of a){ if(t&&typeof t==='object'&&!Array.isArray(t)&&t.id===id)return {t:t,board:String(t._archivProjekt||''),art:'archiv'}; }
+  }catch(e){}
+  // 2) Filter-Topf: nur mit Archiv-Haken (eine Spalten-Karte ohne Haken öffnet normal – seit v452)
+  try{
+    const o=(typeof _mobileFilteredOut!=='undefined'&&_mobileFilteredOut)||{};
+    for(const k of Object.keys(o)){ if(k.charAt(0)==='_'||!Array.isArray(o[k]))continue; const f=o[k].find(t=>t&&t.id===id); if(f)return f.archiviert?{t:f,board:k,art:'archiv'}:null; }
+  }catch(e){}
+  // 3) Boards ohne Haken „Mobile“
+  try{
+    const h=(typeof hiddenBoards!=='undefined'&&hiddenBoards)||{};
+    for(const k of Object.keys(h)){ if(k.charAt(0)==='_'||!Array.isArray(h[k]))continue; const f=h[k].find(t=>t&&t.id===id); if(f)return {t:f,board:k,art:(f.archiviert?'archiv':'pc')}; }
+  }catch(e){}
+  return null;
+}
+function _ansDatum(s){ // 'JJJJ-MM-TT' → 'TT.MM.JJJJ'; mit Uhrzeit → 'TT.MM.JJJJ, HH:MM'; anderes roh
+  s=String(s||'').trim(); if(!s)return '';
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if(!m)return s;
+  if(m[4]&&/T\d{2}:\d{2}(:\d{2})?(\.\d+)?Z$/.test(s)){ // UTC-Zeitstempel → Ortszeit
+    try{const d=new Date(s);if(!isNaN(d))return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})+', '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}catch(e){}
+  }
+  return m[3]+'.'+m[2]+'.'+m[1]+(m[4]?(', '+m[4]+':'+m[5]):'');
+}
+function _ansUhr(s){ s=String(s||''); const m=s.match(/[T ](\d{2}):(\d{2})/); if(!m)return ''; if(/Z$/.test(s)){try{const d=new Date(s);if(!isNaN(d))return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}catch(e){}} return m[1]+':'+m[2]; }
+function _ansListe(x){return Array.isArray(x)?x:[];} // Ansehen-Blatt 07.11.2026: ein Feld, das kein Array ist, zählt als leer
+function _ansZeile(kopf,text){
+  return '<div style="padding:7px 0;border-top:1px solid var(--border);">'
+    +(kopf?'<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);">'+kopf+'</div>':'')
+    +'<div style="font-size:calc(14.5px * var(--m-scale,1));color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4;">'+text+'</div></div>';
+}
+function _ansAbschnitt(titel,inhalt){
+  if(!inhalt)return '';
+  return '<div style="margin-top:14px;"><div style="font-size:calc(15px * var(--m-scale,1));font-weight:700;color:var(--text);margin-bottom:2px;">'+titel+'</div>'+inhalt+'</div>';
+}
+function _ansLink(url,text){ return url?'<a href="'+escAttr(url)+'" target="_blank" rel="noopener" style="color:#1a6fc4;text-decoration:none;">'+text+'</a>':text; }
+function _ansehenHtml(t,board,art){
+  t=t||{};
+  const lbl=(art==='archiv')?'📦 Archiv':'💻 nur am PC';
+  const kopf=[lbl,board?esc(board):'',t.status?esc(t.status):'',(art==='archiv'&&t.archiviertAm)?('archiviert am '+esc(_ansDatum(t.archiviertAm))):''].filter(Boolean).join(' · ');
+  let h='<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:0 2px 4px;overflow-wrap:anywhere;">'+kopf+'</div>';
+  h+='<div style="font-size:calc(18px * var(--m-scale,1));font-weight:700;color:var(--text);line-height:1.3;margin:0 2px 6px;overflow-wrap:anywhere;">'+esc(t.title||'(ohne Titel)')+'</div>';
+  h+='<div style="font-size:calc(12.5px * var(--m-scale,1));color:var(--text2);margin:0 2px 8px;line-height:1.4;">'+((art==='archiv')?'Liegt im Archiv des PCs':'Liegt in einem Board ohne Handy-Freigabe')+' – hier nur zum Nachlesen, nichts wird gespeichert. Ändern am PC.</div>';
+  const adr=String(t.adresse||'').trim();
+  if(adr)h+='<div style="margin:0 2px 4px;font-size:calc(14.5px * var(--m-scale,1));">'+_ansLink('https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent((typeof _pamGeoQuery==='function'&&_pamGeoQuery(adr))||adr),'📍 '+esc(adr))+'</div>';
+  if(t.hausverwaltung)h+='<div style="font-size:calc(13.5px * var(--m-scale,1));color:var(--text2);margin:0 2px 4px;">🏢 '+esc(t.hausverwaltung)+'</div>';
+  // Objekt-Rückweg nur, wenn die Objektkarte am Handy sichtbar ist (das ist das normale Öffnen einer freigegebenen Karte)
+  try{
+    if(t.objektId){
+      let o=null; Object.keys(boards||{}).forEach(b=>{ if(o||b.charAt(0)==='_')return; (boards[b]||[]).forEach(x=>{ if(!o&&x&&x.id===t.objektId)o=x; }); });
+      if(o)h+='<button type="button" onclick="_ansehenZu();openDetail(\''+_jsa(o.id)+'\')" style="display:block;width:100%;margin:6px 0 2px;min-height:44px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:calc(14px * var(--m-scale,1));text-align:left;cursor:pointer;">🏠 '+esc(o.title||t.objektName||'Objekt')+' ›</button>';
+      else if(t.objektName)h+='<div style="font-size:calc(13.5px * var(--m-scale,1));color:var(--text2);margin:0 2px 4px;">🏠 '+esc(t.objektName)+'</div>';
+    }
+  }catch(e){}
+  // Kontakte – wählen geht, aber OHNE Wahl-Vermerk (kein data-wahl-task)
+  const kon=_ansListe(t.kontakte).filter(k=>k&&(k.name||k.tel||k.tel2||k.email));
+  if(kon.length)h+=_ansAbschnitt('👤 Kontakte',kon.map(k=>{
+    const tels=[k.tel,k.tel2].filter(Boolean).map(n=>'<a href="'+escAttr(_anrufTelHref(n))+'" style="color:#1a6fc4;text-decoration:none;">📞 '+esc(n)+'</a>').join(' · ');
+    return _ansZeile(esc([k.rolle,k.lage].filter(Boolean).join(' · ')),esc(k.name||'')+(tels?'<br>'+tels:'')+(k.email?'<br><span style="color:var(--text2);">'+esc(k.email)+'</span>':''));
+  }).join(''));
+  const besch=String(t.schadensbild||t.desc||'').trim();
+  if(besch)h+=_ansAbschnitt('📄 Beschreibung',_ansZeile('',esc(besch)));
+  // Termine / Zeiten / Einsätze – neueste oben
+  const neuOben=(arr,f)=>arr.slice().sort((a,b)=>String(f(b)||'').localeCompare(String(f(a)||'')));
+  const term=neuOben(_ansListe(t.ausserhausTermine).filter(x=>x&&(x.date||x.beschreibung)),x=>x.date);
+  if(term.length)h+=_ansAbschnitt('🗓 Termine ('+term.length+')',term.map(x=>_ansZeile(esc(_ansDatum(x.date))+((x.von||x.bis)?' · '+esc([x.von,x.bis].filter(Boolean).join('–')):'')+(x.erledigt?' · ✓ erledigt':''),esc(x.beschreibung||''))).join(''));
+  const zeit=neuOben(_ansListe(t.zeitEntries).filter(x=>x&&(x.date||x.beschreibung)).map(x=>({d:x.date,von:x.von,bis:x.bis,text:x.beschreibung,art:x.art}))
+    .concat(_ansListe(t.timeEntries).filter(x=>x&&x.start).map(x=>({d:String(x.start).slice(0,10),von:_ansUhr(x.start),bis:_ansUhr(x.end),text:x.beschreibung,art:'Uhr'}))),x=>x.d);
+  if(zeit.length)h+=_ansAbschnitt('⏱ Zeiten ('+zeit.length+')',zeit.map(x=>_ansZeile(esc(_ansDatum(x.d))+((x.von||x.bis)?' · '+esc([x.von,x.bis].filter(Boolean).join('–')):'')+(x.art?' · '+esc(x.art):''),esc(x.text||''))).join(''));
+  const eins=neuOben(_ansListe(t.einsaetze).filter(x=>x&&(x.datum||x.leistung)),x=>x.datum);
+  if(eins.length)h+=_ansAbschnitt('🔧 Einsätze ('+eins.length+')',eins.map(x=>_ansZeile(esc(_ansDatum(x.datum))+((x.von||x.bis)?' · '+esc([x.von,x.bis].filter(Boolean).join('–')):'')+(x.min?' · '+esc(String(x.min))+' min':''),esc(x.leistung||'')+(x.maschine?'<br><span style="color:var(--text2);">'+esc(x.maschine)+'</span>':'')+(x.material?'<br><span style="color:var(--text2);">'+esc(x.material)+'</span>':'')+(x.info?'<br>'+esc(x.info):''))).join(''));
+  // Notizen – neueste oben
+  const not=_ansListe(t.notizVerlauf).filter(n=>n&&n.text).slice().reverse();
+  if(not.length)h+=_ansAbschnitt('📝 Notizen ('+not.length+')',not.map(n=>_ansZeile(esc(_ansDatum(n.ts)),esc(n.text))).join(''));
+  // Fotos – Kacheln; Vorschau lädt _ansehenAuf nach (über Kopien); Antippen → Drive-Ansicht
+  const fot=_ansListe(t.fotos).filter(f=>f&&(f.editedDriveId||f.driveId||f.url));
+  if(fot.length)h+=_ansAbschnitt('📷 Fotos ('+fot.length+')','<div style="display:flex;flex-wrap:wrap;gap:6px;padding-top:6px;">'+fot.map((f,i)=>{
+    const did=f.editedDriveId||f.driveId||''; const url=did?('https://drive.google.com/file/d/'+did+'/view'):String(f.url||'');
+    return '<div style="width:calc((100% - 12px) / 3);cursor:pointer;" onclick="_ansFotoAuf(\''+_jsaUrl(url)+'\')">'
+      +'<div style="aspect-ratio:1/1;background:var(--bg3);border-radius:8px;overflow:hidden;"><img data-ansfoto="'+i+'" alt="" style="width:100%;height:100%;object-fit:cover;display:block;"></div>'
+      +(f.caption?'<div style="font-size:calc(11.5px * var(--m-scale,1));color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+esc(f.caption)+'</div>':'')+'</div>';
+  }).join('')+'</div>');
+  // Anhänge + Mail-PDFs – Antippen öffnet die Datei in Drive
+  const anh=_ansListe(t.attachments).concat(_ansListe(t.emailPdfs)).filter(a=>a&&(a.name||a.url||a.fileId||a.webLink));
+  if(anh.length)h+=_ansAbschnitt('📎 Anhänge ('+anh.length+')',anh.map(a=>{
+    const fid=a.fileId||a.driveId||''; const url=String(a.webLink||a.url||(fid?('https://drive.google.com/file/d/'+fid+'/view'):''));
+    return _ansZeile(esc(_ansDatum(a.uploadedAt||a.date||'')),_ansLink(/^https?:/i.test(url)?url:'',esc(a.name||'Datei')));
+  }).join(''));
+  // Aufgaben / Checkliste / Prüfberichte – nur Text
+  const auf=_ansListe(t.checkliste).filter(x=>x&&x.text).map(x=>({text:x.text,ok:!!x.done,datum:''}))
+    .concat(_ansListe(t.aufgaben).filter(x=>x&&(x.typ||x.text)).map(x=>({text:x.text||x.typ,ok:!!x.erledigt,datum:x.datum||''})));
+  if(auf.length)h+=_ansAbschnitt('✅ Aufgaben ('+auf.length+')',auf.map(x=>_ansZeile(esc(_ansDatum(x.datum)),(x.ok?'☑ ':'☐ ')+esc(x.text))).join(''));
+  const pb=_ansListe(t.pruefberichte).filter(x=>x&&(x.titel||x.vorlage));
+  if(pb.length)h+=_ansAbschnitt('🧾 Protokolle ('+pb.length+')',pb.map(x=>_ansZeile(esc(_ansDatum(x.datum||x.createdAt||'')),esc(x.titel||x.vorlage||'Protokoll'))).join(''));
+  return h;
+}
+function _ansFotoAuf(url){ url=String(url||''); if(!/^https?:/i.test(url))return; try{window.open(url,'_blank');}catch(e){} }
+function _ansehenAuf(id){
+  const f=_ansehenKarteFinden(id);
+  if(!f){ if(findTaskById(id)){openDetail(id);return;} toast('Karte nicht gefunden – bitte am PC nachsehen','info',3500); return; } // Sicherheitsnetz: eine freigegebene Karte öffnet normal
+  const bl=document.getElementById('ansehenBlatt'),inh=document.getElementById('ansehenInhalt');if(!bl||!inh)return;
+  _ansehenOffenId=id;
+  inh.innerHTML=_ansehenHtml(f.t,f.board,f.art);
+  bl.style.display='flex'; try{inh.scrollTop=0;}catch(e){}
+  // Vorschaubilder nachladen – über KOPIEN der Foto-Einträge, die Ablage bleibt unberührt
+  try{
+    const fot=_ansListe(f.t.fotos).filter(x=>x&&(x.editedDriveId||x.driveId||x.url));
+    inh.querySelectorAll('img[data-ansfoto]').forEach(img=>{ const fo=fot[+img.getAttribute('data-ansfoto')]; if(fo&&typeof _fotoVorschauLaden==='function')_fotoVorschauLaden(Object.assign({},fo),img); });
+  }catch(e){}
+}
+function _ansehenZu(){
+  const bl=document.getElementById('ansehenBlatt');if(bl)bl.style.display='none';
+  const inh=document.getElementById('ansehenInhalt');if(inh)inh.innerHTML='';
+  _ansehenOffenId=null;
 }
 function renderList(resetScroll){
   // v133: Sichtbarkeit richtet sich nach der aktiven Ansicht – vorher wurde die Liste hier
@@ -22401,12 +22543,12 @@ function _qaObjektAuftragListe(t){
         var wo=e.archiv?'\uD83D\uDCE6 Archiv':(e.sichtbar?(esc(e.board)+(e.t.status?' \u00b7 '+esc(e.t.status):'')):'nur am PC');
         return '<div style="display:flex;align-items:center;gap:8px;padding:'+_tuMs(9)+' 2px '+_tuMs(9)+' '+_tuMs(20)+';border-top:0.5px solid var(--border);'
           +(e.sichtbar?'':'opacity:.55;')+'"'
-          +(e.sichtbar?' onclick="openDetail(\''+_jsa(e.t.id)+'\')"':'')+'>'
+          +(e.sichtbar?' onclick="openDetail(\''+_jsa(e.t.id)+'\')"':' onclick="_ansehenAuf(\''+_jsa(e.t.id)+'\')"')+'>'
           +'<span style="flex:1;min-width:0;">'
             +'<span style="display:block;font-size:'+_tuMs(14)+';font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+esc(e.t.title||'(ohne Titel)')+((_hier&&e.t.id===_hier)?' <span style="font-weight:400;color:var(--accent);">\u2190 hier</span>':'')+'</span>'
             +'<span style="display:block;font-size:'+_tuMs(11)+';color:var(--text2);">'+wo+(datum?' \u00b7 '+datum:'')+'</span>'
           +'</span>'
-          +(e.sichtbar?'<span style="flex-shrink:0;color:var(--text2);font-size:'+_tuMs(16)+';">\u203A</span>':'')
+          +'<span style="flex-shrink:0;color:var(--text2);font-size:'+_tuMs(16)+';">'+(e.sichtbar?'\u203A':'👁')+'</span>'
           +'</div>';
       }).join('');
     });
