@@ -4503,7 +4503,7 @@ $,!1),g.removeEventListener("mouseleave",ma,!1));s.innerHTML="";s.classList.remo
   <div class="suche-bereich" id="sucheBereich">
     <button class="suche-pille" id="suchePilleBoard" onclick="_sucheScopeSetzen('board')">Dieses Board</button>
     <button class="suche-pille" id="suchePilleAlle" onclick="_sucheScopeSetzen('alle')">🌐 Überall</button>
-    <div class="suche-bereich-hinweis" id="sucheBereichHinweis">Überall = alle Boards, 📦 Archiv, ⏸ Später bearbeiten und alles, was nur am PC liegt</div>
+    <div class="suche-bereich-hinweis" id="sucheBereichHinweis">Überall = alle Boards, 📋 Spalten ohne Handy-Freigabe (öffnen geht), 📦 Archiv, ⏸ Später bearbeiten und alles, was nur am PC liegt (nur ansehen)</div>
   </div>
   <div class="view-toggle">
     <button id="tabListeBtn" onclick="switchMobView('liste')" style="flex:1;padding:8px 0;border-radius:8px;border:1px solid var(--border);background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer;">☰ Liste</button>
@@ -5012,7 +5012,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v451';
+const MOB_VERSION='v452';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10731,8 +10731,39 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 
 // ══ LISTE ══
-function findTaskById(id){for(const k of Object.keys(boards)){const f=(boards[k]||[]).find(t=>t.id===id);if(f)return f;}console.warn('Task nicht gefunden:',id);return null;}
-function findBoardByTaskId(id){for(const k of Object.keys(boards)){if((boards[k]||[]).some(t=>t.id===id))return k;}return null;}
+/* ── Spalten-Karten (06.11.2026) – Karten aus Spalten, die der PC nicht fürs Handy freigibt ──────────────────
+   Sie liegen in _mobileFilteredOut (_applyMobileFilter) und bleiben aus der Liste draußen.
+   Öffnen und Bearbeiten ist erlaubt: der Konflikt-Abgleich in saveFile teilt den Drive-Stand
+   nur nach Board-Haken auf (remoteVisible trägt alle Spalten), die Momentaufnahme (v257) und
+   das Zurückschreiben (v182/v210) umfassen den Topf längst. NICHT erlaubt bleiben
+   hiddenBoards (Board ohne Haken „Mobile“ – dort führt der Abgleich nichts zusammen) und
+   alles mit Archiv-Haken. Die Töpfe werden nur GELESEN. */
+function _mobSpaltenKarte(id){
+  if(!id)return null;
+  try{
+    const o=(typeof _mobileFilteredOut!=='undefined'&&_mobileFilteredOut)||{};
+    for(const k of Object.keys(o)){
+      if(k.charAt(0)==='_'||!Array.isArray(o[k]))continue;
+      const f=o[k].find(t=>t&&t.id===id);
+      if(f)return f.archiviert?null:f;
+    }
+  }catch(e){}
+  return null;
+}
+function _mobSpaltenBoard(id){
+  if(!id)return null;
+  try{
+    const o=(typeof _mobileFilteredOut!=='undefined'&&_mobileFilteredOut)||{};
+    for(const k of Object.keys(o)){
+      if(k.charAt(0)==='_'||!Array.isArray(o[k]))continue;
+      const f=o[k].find(t=>t&&t.id===id);
+      if(f)return f.archiviert?null:k;
+    }
+  }catch(e){}
+  return null;
+}
+function findTaskById(id){for(const k of Object.keys(boards)){const f=(boards[k]||[]).find(t=>t.id===id);if(f)return f;}const _sp=(typeof _mobSpaltenKarte==='function')?_mobSpaltenKarte(id):null;if(_sp)return _sp;console.warn('Task nicht gefunden:',id);return null;} // Spalten-Karten 06.11.2026: danach Spalten-Karten (typeof: Prüfsuiten schneiden die Funktion einzeln aus)
+function findBoardByTaskId(id){for(const k of Object.keys(boards)){if((boards[k]||[]).some(t=>t.id===id))return k;}return (typeof _mobSpaltenBoard==='function')?_mobSpaltenBoard(id):null;} // Spalten-Karten 06.11.2026: Board einer Spalten-Karte (gleicher Schlüssel)
 // Deep-Link aus Outlook: wartet bis die (freigegebenen) Boards geladen sind, öffnet dann den Task
 function _pamTryOpenPendingTaskMobile(){
   if(!window._pamPendingTaskId){
@@ -10954,7 +10985,7 @@ function _anrufSammle(){
   try{
     durch(boards,false);
     durch(hiddenBoards,true);        // Board ist fuers Handy nicht freigegeben
-    durch(_mobileFilteredOut,true);  // Board ja, Spalte weggefiltert
+    durch(_mobileFilteredOut,false); // Spalten-Karten 06.11.2026: Board ja, Spalte weggefiltert – öffnen geht (Archivierte fallen oben raus)
   }catch(e){console.warn('[Anrufliste] Sammeln:',e);return raus;}
   raus.sort(function(a,b){
     const ab=(a.board||'').toLowerCase(),bb=(b.board||'').toLowerCase();
@@ -11086,8 +11117,8 @@ function _mnuZu(){
 // ══ v411: 🆕 NEU ANGELEGT – alle neu angelegten Karten über ALLE Boards (Frank 15.10.2026: „gibt es eine Liste, was ich heute neu angelegt habe?“) ═══════════════
 // Nur LESEN: die Liste ändert nichts, legt nichts an, sortiert nichts um. Gegenstück am PC: b1204 („🆕 Neu angelegt“ in der Ansichtsleiste).
 // Anlegedatum wie am PC (_pamAngelegtDate, b620): createdAt, sonst aus der Kennung t_<ms>_… – für alle Karten ableitbar (am 15.10.2026: 135 von 135).
-// ⛔ Nicht dabei: der tägliche „📷 Foto-Eingang“ (Kennung fe_…) und archivierte Karten. Karten aus Boards, die am Handy nicht freigegeben sind (hiddenBoards)
-//    oder vom Spaltenfilter versteckt werden (_mobileFilteredOut), stehen blass mit „nur am PC“ und lassen sich hier nicht öffnen (wie in der Anrufliste, v277).
+// ⛔ Nicht dabei: der tägliche „📷 Foto-Eingang“ (Kennung fe_…) und archivierte Karten. Karten aus Boards, die am Handy nicht freigegeben sind (hiddenBoards),
+//    stehen blass mit „nur am PC“ und lassen sich hier nicht öffnen (wie in der Anrufliste, v277). Spalten-Karten 06.11.2026: vom Spaltenfilter versteckte Karten (_mobileFilteredOut) öffnen sich normal.
 // ⛔ Zeitraum: „Heute“ = seit 0 Uhr, „7 Tage“ = heute und die 6 Tage davor, „30 Tage“ = heute und die 29 davor (volle Kalendertage, nicht „vor 168 Stunden“).
 var _neuTage=1; // 1 = Heute · 7 · 30
 function _neuAngelegt(t){
@@ -11112,7 +11143,7 @@ function _neuSammle(tage,jetzt){
   const von=new Date(jetzt.getFullYear(),jetzt.getMonth(),jetzt.getDate()-(n-1)); // 0 Uhr des ersten Tages
   const bis=jetzt.getTime()+86400000;                                              // Zukunftsdaten (kaputte Kennung) bleiben draußen
   const out=[],gesehen={};
-  const quellen=[[typeof boards!=='undefined'?boards:null,true],[typeof hiddenBoards!=='undefined'?hiddenBoards:null,false],[typeof _mobileFilteredOut!=='undefined'?_mobileFilteredOut:null,false]];
+  const quellen=[[typeof boards!=='undefined'?boards:null,true],[typeof hiddenBoards!=='undefined'?hiddenBoards:null,false],[typeof _mobileFilteredOut!=='undefined'?_mobileFilteredOut:null,true]]; // Spalten-Karten 06.11.2026: Spalten-Karten offen (Archivierte fallen unten raus)
   quellen.forEach(q=>{
     const obj=q[0],offen=q[1];
     Object.keys(obj||{}).forEach(bn=>{
@@ -11174,7 +11205,7 @@ function _neuBlattZu(){
   const b=document.getElementById('neuBlatt');if(b)b.style.display='none';
 }
 function _neuTageWahl(n){_neuTage=(n===7||n===30)?n:1;_neuZeichnen();}
-// Tippen öffnet die Karte – nur Zeilen aus freigegebenen Boards haben diesen Tipp (die „nur am PC“-Zeilen nicht).
+// Tippen öffnet die Karte – nur Zeilen aus freigegebenen Boards haben diesen Tipp (die „nur am PC“-Zeilen nicht). Spalten-Karten 06.11.2026: Spalten-Karten haben ihn auch.
 function _neuKarteAuf(id){
   _neuBlattZu();
   try{openDetail(id);}catch(e){console.warn('[Neu angelegt] Karte öffnen:',e);}
@@ -11774,7 +11805,7 @@ async function _tischLaden(erzwingen){
   }catch(e){_tischLadeFehler=String((e&&e.message)||e);return false;}
   finally{_tischLaedt=false;}
 }
-// Karten nach Nummer und nach Kennung – aus allen Töpfen (sichtbar, nur-PC-Boards, weggefilterte Spalten)
+// Karten nach Nummer und nach Kennung – aus allen Töpfen (sichtbar, nur-PC-Boards, weggefilterte Spalten). Spalten-Karten 06.11.2026: weggefilterte Spalten zählen als sichtbar (öffnen geht).
 function _tischKartenIndex(){
   const nachNr={},nachId={};
   const durch=function(topf,nurPc){
@@ -11791,7 +11822,7 @@ function _tischKartenIndex(){
       });
     });
   };
-  try{durch(boards,false);durch(hiddenBoards,true);durch(_mobileFilteredOut,true);}catch(e){console.warn('[v373] Kartenindex:',e);}
+  try{durch(boards,false);durch(hiddenBoards,true);durch(_mobileFilteredOut,false);}catch(e){console.warn('[v373] Kartenindex:',e);} // Spalten-Karten 06.11.2026: Spalten-Karten nurPc=false (Archivierte fallen oben raus)
   return {nachNr:nachNr,nachId:nachId};
 }
 // Aufbereiten wie am PC: neueste zuerst; „nicht zurückgerufen" = entgangen, ohne Haken, ohne späteren Anruf derselben Nummer
@@ -11893,6 +11924,7 @@ function _wahlGruppen(){
   const nimm=function(t,board,art){
     if(!t||!t.id||gesehen[t.id])return;
     gesehen[t.id]=1;
+    if(art==='spalte')art=t.archiviert?'archiv':'karte'; // Spalten-Karten 06.11.2026: Spalten-Karte je nach Archiv-Haken
     if(!Array.isArray(t.anrufWahlen)||!t.anrufWahlen.length)return;
     const bis=t.anrufWahlenAusgeblendetBis;
     const alle=t.anrufWahlen.filter(function(x){return x&&x.ts;});
@@ -11911,7 +11943,7 @@ function _wahlGruppen(){
   try{
     durch(boards,'karte');
     durch(hiddenBoards,'pc');
-    durch(_mobileFilteredOut,'pc');
+    durch(_mobileFilteredOut,'spalte'); // Spalten-Karten 06.11.2026: je Karte karte/archiv (siehe nimm)
     ((typeof _remoteArchivedTasks!=='undefined'&&Array.isArray(_remoteArchivedTasks))?_remoteArchivedTasks:[]).forEach(function(t){nimm(t,'','archiv');});
   }catch(e){console.warn('[v282] Gewählt sammeln:',e);}
   reihe.sort(function(a,b){
@@ -11999,7 +12031,7 @@ function _mkToggleSearch(){
 // abgeschnitten), farbiger Seitenstreifen wie auf der Karte und bei Bedarf EINE kleine
 // Zusatzzeile (nächster Termin / laufende Uhr / Herkunfts-Board bei „Überall"-Suche).
 // Bewusst ohne Foto, Abzeichen, Terminkästen und Rundknöpfe – dafür ~3× mehr Tasks je Bildschirm.
-function _kompaktZeile(t,isRunning,boardHerkunft){
+function _kompaktZeile(t,isRunning,boardHerkunft,zusatz){ // Spalten-Karten 06.11.2026: zusatz = Abzeichen aus der Suche (📋 Spalte), kommt HINTER _teile – die _teile-Zeile bleibt wortgleich (test_v219/v243)
   const _df=iso=>{if(!iso)return'';try{return new Date(iso).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(_){return iso;}};
   const ov=!!(t.due&&isOverdue(t.due));
   const aufgOv=(typeof _mtKarteUeberfaellig==='function')?_mtKarteUeberfaellig(t):(t.aufgaben||[]).some(a=>a.datum&&new Date(a.datum)<new Date()); // v377
@@ -12022,8 +12054,9 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
   const _aufK=(()=>{try{const _n=t.objektId?0:_qaAufAnzahl(t.id);return _n?'<span>🛠 '+_n+'</span>':'';}catch(e){return '';}})();
   const _amObjK=t.objektId?'<span>🛠 Auftrag am Objekt</span>':'';
   const _teile=[info,herkunft,erstelltHtml,_mobAusK,_aufK,_amObjK].filter(Boolean).join(' · ');
-  const infoZeile=_teile
-    ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+_teile+'</div>'
+  const _teileZ=zusatz?(_teile?_teile+' · '+zusatz:zusatz):_teile; // Spalten-Karten 06.11.2026
+  const infoZeile=_teileZ
+    ?'<div class="kz-info'+(warn&&!isRunning?' kz-warn':'')+'">'+_teileZ+'</div>'
     :'';
   return '<div class="kz'+(warn?' kz-rot':'')+(t.mobilAusblenden?' mob-aus':'')+'" onclick="openDetail(\''+_jsa(t.id)+'\')">'
     +'<div class="kz-titel">'+esc(t.title||'(ohne Titel)')+'</div>'
@@ -12031,7 +12064,9 @@ function _kompaktZeile(t,isRunning,boardHerkunft){
     +'</div>';
 }
 // ── v140: Suchbereich „Board" (wie bisher) / „Überall" (alle Boards + Notizen + Foto-Texte) ──
-let _sucheScope='board';
+// Spalten-Karten 06.11.2026: Start auf „Überall“; die zuletzt gewählte Pille merkt sich das Gerät (nur hier, nie in Drive).
+const _SUCHE_SCOPE_KEY='ptpm_suche_scope';
+let _sucheScope=(function(){try{const v=localStorage.getItem(_SUCHE_SCOPE_KEY);if(v==='board'||v==='alle')return v;}catch(e){}return 'alle';})();
 // v256: zwei Pillen statt eines Knopfes; der Merker _sucheScope bleibt derselbe wie seit v140.
 function _suchePillenZeichnen(){
   const pb=document.getElementById('suchePilleBoard'),pa=document.getElementById('suchePilleAlle');
@@ -12040,6 +12075,7 @@ function _suchePillenZeichnen(){
 }
 function _sucheScopeSetzen(v){
   _sucheScope=(v==='alle'?'alle':'board');
+  try{localStorage.setItem((typeof _SUCHE_SCOPE_KEY==='string')?_SUCHE_SCOPE_KEY:'ptpm_suche_scope',_sucheScope);}catch(e){} // Spalten-Karten 06.11.2026: merken (typeof: Prüfsuiten führen die Funktion allein aus)
   _suchePillenZeichnen();
   renderList();
 }
@@ -12098,8 +12134,10 @@ function renderList(resetScroll){
      die bleiben antippbar), _mobileFilteredOut (Archiv-Haken + Spalten, die die
      Board-Einstellung nicht ans Handy gibt), hiddenBoards (fürs Handy nicht freigegeben),
      _remoteArchivedTasks (Archiv-Ablage des PCs). Dieselbe Kennung zählt nur EINMAL,
-     der erste Topf gewinnt (wie _qaAufZaehlung, v243). Die Töpfe werden nur GELESEN. */
-  const _sucheArtVon=new Map(); // id → 'aktiv' | 'spaeter' | 'pc' | 'archiv'
+     der erste Topf gewinnt (wie _qaAufZaehlung, v243). Die Töpfe werden nur GELESEN.
+     Spalten-Karten 06.11.2026: Karten aus _mobileFilteredOut OHNE Archiv-Haken (Spalte nicht freigegeben) sind
+     Art 'spalte' – normale, antippbare Karte mit Abzeichen „📋 Spalte: …“ (_mobSpaltenKarte). */
+  const _sucheArtVon=new Map(); // id → 'aktiv' | 'spaeter' | 'spalte' (Spalten-Karten 06.11.2026) | 'pc' | 'archiv'
   let filtered;
   if(_sucheAlle){
     filtered=[];
@@ -12121,11 +12159,11 @@ function renderList(resetScroll){
       }
     };
     _nimm(boards,t=>t.spaeterBearbeiten?'spaeter':'aktiv');
-    try{_nimm(_mobileFilteredOut,t=>t.archiviert?'archiv':'pc');}catch(e){}
+    try{_nimm(_mobileFilteredOut,t=>t.archiviert?'archiv':'spalte');}catch(e){} // Spalten-Karten 06.11.2026: Spalte ohne Handy-Freigabe → normale Karte, öffnen geht
     try{_nimm(hiddenBoards,t=>t.archiviert?'archiv':'pc');}catch(e){}
     try{_nimm(_remoteArchivedTasks,()=>'archiv');}catch(e){}
-    // Reihenfolge: bearbeitbar oben, dann Später, dann nur-am-PC, Archiv ganz unten (stabil)
-    const _rang={aktiv:0,spaeter:1,pc:2,archiv:3};
+    // Reihenfolge: bearbeitbar oben, dann Später, dann Spalten-Karten, dann nur-am-PC, Archiv ganz unten (stabil)
+    const _rang={aktiv:0,spaeter:1,spalte:2,pc:3,archiv:4};
     filtered.sort((a,b)=>(_rang[_sucheArtVon.get(a.id)]||0)-(_rang[_sucheArtVon.get(b.id)]||0));
   }else{
     filtered=_csTrim?tasks.filter(t=>(t.status||'').trim()===_csTrim):tasks;
@@ -12163,7 +12201,7 @@ function renderList(resetScroll){
     const _art=_sucheArtVon.get(t.id)||'aktiv';
     if(_art==='pc'||_art==='archiv')return _grauKarte(t,_art,_sucheBoardVon.get(t.id)||'');
     // v141: Kompakt-Ansicht – schlanke Titel-Zeile statt großer Karte
-    if(_mobView==='kompakt')return _kompaktZeile(t,isRunning,_sucheBoardVon.get(t.id)||'');
+    if(_mobView==='kompakt')return _kompaktZeile(t,isRunning,_sucheBoardVon.get(t.id)||'',(_art==='spalte')?'<span>📋 Spalte: '+esc(t.status||'–')+'</span>':''); // Spalten-Karten 06.11.2026: Spalten-Abzeichen
     // Tel/Maps-Buttons für Karten-Vorschau
     const cardTelK=(t.kontakte||[]).find(c=>c.tel);
     const cardAdr=(t.adresse||'').trim();
@@ -12223,6 +12261,7 @@ function renderList(resetScroll){
       +(_mobIsOfflinePinned(t.id)?'<span class="badge" style="background:#0f5132;color:#fff;border:1px solid #1a8a3c;">📴 Offline</span>':'')
       +(t.mobilAusblenden?'<span class="badge" style="background:#F3EEFB;color:#7A4FB5;border:1px solid #D5C6EE;">📱🚫 ausgeblendet</span>':'') // v219
       +(t.spaeterBearbeiten?'<span class="badge" style="background:#FDF1E4;color:#9A4E0A;border:1px solid #F2C9A0;">⏸ Später</span>':'') // v256
+      +((_art==='spalte')?'<span class="badge" style="background:#F3EEFB;color:#7A4FB5;border:1px solid #D5C6EE;" title="Diese Spalte ist am Handy nicht freigegeben – darum steht die Karte nicht in der Liste. Öffnen und Bearbeiten geht.">📋 Spalte: '+esc(t.status||'–')+'</span>':'') // Spalten-Karten 06.11.2026
       /* v243 (B): "an diesem Haus haengen n Auftraege" - dasselbe blaue Abzeichen wie
          am Rechner (_tuBadgeAufHtml, b652/b681). Am Handy fehlte es ganz; man sah einer
          Objekt-Karte nicht an, ob etwas dranhaengt. Die Karte selbst oeffnet das Objekt,
@@ -20451,7 +20490,7 @@ async function _skizzeSave(){
   const dataUrl=canvas.toDataURL('image/jpeg',0.85);
   const bn=findBoardByTaskId(_skizzeEditingTaskId);
   if(!bn){toast('Task nicht gefunden','error');return;}
-  const t=(boards[bn]||[]).find(x=>x.id===_skizzeEditingTaskId);
+  const t=(boards[bn]||[]).find(x=>x.id===_skizzeEditingTaskId)||findTaskById(_skizzeEditingTaskId); // Spalten-Karten 06.11.2026: auch Spalten-Karte
   if(!t){toast('Task nicht gefunden','error');return;}
   if(!t.skizzen)t.skizzen=[];
   const now=new Date();
@@ -22209,13 +22248,13 @@ function _qaObjektAuftraegeSammle(objektId){
         if(!t||t.objektId!==objektId)return;
         if(t.id&&gesehen[t.id])return;
         if(t.id)gesehen[t.id]=1;
-        treffer.push({t:t,board:b,sichtbar:sichtbar,archiv:!!archiv});
+        treffer.push({t:t,board:b,sichtbar:(sichtbar==='spalte')?!t.archiviert:!!sichtbar,archiv:(sichtbar==='spalte')?!!t.archiviert:!!archiv}); // Spalten-Karten 06.11.2026: Spalten-Karte: öffnen geht, Archiv-Haken zählt als Archiv
       });
     });
   };
   nimm(boards,true);
   try{nimm(hiddenBoards,false);}catch(e){}
-  try{nimm(_mobileFilteredOut,false);}catch(e){}
+  try{nimm(_mobileFilteredOut,'spalte');}catch(e){} // Spalten-Karten 06.11.2026
   /* v243: Das Archiv des Rechners lag bisher nur als Durchreiche-Ablage da
      (_remoteArchivedTasks, v215) und wurde NIE durchsucht - ein am PC archivierter
      Auftrag verschwand am Handy still aus der Liste, waehrend er am PC weiter mit
@@ -22749,7 +22788,7 @@ async function deleteTask(){
       }catch(e){console.warn('[deleteTask] Ordner-Papierkorb:',e);toast('Ordner konnte nicht gelöscht werden','warning');}
     }
   }
-  if(bn){boards[bn]=boards[bn].filter(x=>x.id!==t.id);}
+  if(bn){boards[bn]=boards[bn].filter(x=>x.id!==t.id);if(typeof _mobileFilteredOut!=='undefined'&&_mobileFilteredOut&&Array.isArray(_mobileFilteredOut[bn]))_mobileFilteredOut[bn]=_mobileFilteredOut[bn].filter(x=>!(x&&x.id===t.id));} // Spalten-Karten 06.11.2026: Spalten-Karte auch aus dem Filter-Topf nehmen – sonst käme sie beim Speichern zurück
   _mobMarkDeleted(t.id); // v257: Lösch-Merker – der Konflikt-Abgleich darf den Auftrag nicht aus der Drive-Basis zurückholen
   // currentTaskId bleibt gesetzt bis nach dem Save, damit _savingTaskId im Konflikt-Merge
   // den richtigen Task referenziert und PC-Änderungen an anderen Tasks erhalten bleiben.
