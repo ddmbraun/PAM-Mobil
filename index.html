@@ -5021,7 +5021,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v464';
+const MOB_VERSION='v465';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -11290,8 +11290,58 @@ function _wahlHorcher(ev){
 document.addEventListener('click',_wahlHorcher,true);
 // Wahlen einer Karte, die neueste zuerst (ISO-Zeiten lassen sich als Text sortieren).
 function _wahlenListe(t){
-  return ((t&&Array.isArray(t.anrufWahlen))?t.anrufWahlen:[]).filter(function(w){return w&&w.ts;})
+  const ers=(typeof _wahlErsetzt==='function')?_wahlErsetzt(t):null; // am PC berichtigte Uhrzeit eines Anrufs: die ersetzte Wahl bleibt in den Daten, wird aber nicht mehr gezeigt
+  return ((t&&Array.isArray(t.anrufWahlen))?t.anrufWahlen:[]).filter(function(w){return w&&w.ts&&!(ers&&ers[String(w.ts)+'|'+_wahlNorm(w.nr)]);})
     .slice().sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
+}
+// ── Am PC berichtigte Uhrzeit eines Anrufs (Gegenstück PC _pamWahlErsetzt) ──
+// Der PC löscht eine gewählte Nummer nie: wird die Uhrzeit eines Anrufs berichtigt, kommt eine NEUE Wahl mit der richtigen Zeit dazu, und an ihr
+// steht in „statt“, welche Zeiten sie ersetzt. Die ersetzten bleiben in den Daten (auch das Handy hängt nur an), werden aber nicht mehr gezeigt.
+// Das Handy berichtigt selbst nichts – es zeigt nur dasselbe wie der PC. ⛔ Keine Regex-Literale: die Prüfsuiten schneiden mit einem Zeichenketten-Zähler aus.
+// Ersetzte Wahlen einer Karte: „Zeit|Nummer“ → Zeit der Wahl, die sie ersetzt. null, wenn an der Karte nichts berichtigt wurde.
+function _wahlErsetzt(t){
+  const aus={}; let n=0;
+  ((t&&Array.isArray(t.anrufWahlen))?t.anrufWahlen:[]).forEach(function(w){
+    if(!w||!w.ts||!Array.isArray(w.statt))return;
+    const k=_wahlNorm(w.nr);
+    w.statt.forEach(function(s){if(s&&String(s)!==String(w.ts)){aus[String(s)+'|'+k]=String(w.ts);n++;}});
+  });
+  return n?aus:null;
+}
+// Die Zeit der Wahl, die heute für eine ersetzte Zeit gilt – oder '' wenn diese Zeit nicht ersetzt ist.
+function _wahlKopf(t,nr,ts,ers){
+  const m=ers||_wahlErsetzt(t); if(!m)return '';
+  const k=_wahlNorm(nr);
+  let z=String(ts),n=0;
+  while(m[z+'|'+k]&&n<50){z=m[z+'|'+k];n++;}
+  return z===String(ts)?'':z;
+}
+// Freie Zeit für eine neue Wahl dieser Nummer: die gewünschte – trägt sie schon eine Wahl (auch eine ersetzte), eine Millisekunde später, bis sie frei ist.
+function _wahlFreieTs(t,nr,ts){
+  const k=_wahlNorm(nr),da={};
+  ((t&&Array.isArray(t.anrufWahlen))?t.anrufWahlen:[]).forEach(function(w){if(w&&w.ts&&_wahlNorm(w.nr)===k)da[String(w.ts)]=true;});
+  let ms=Date.parse(ts); if(isNaN(ms))return String(ts);
+  let z=new Date(ms).toISOString(),n=0;
+  while(da[z]&&n<999){ms++;z=new Date(ms).toISOString();n++;}
+  return z;
+}
+// Die Anruf-Zeilen aus _anrufErgListe (neueste zuerst) nach einer am PC berichtigten Uhrzeit richtigstellen: Die Zeile eines eigenen Anrufs zur Zeit
+// einer ERSETZTEN Wahl ist die frühere Fassung. Steht die berichtigte Zeile da, zählt die frühere nicht mit (nach einem Abgleich kann sie wieder
+// dastehen); fehlt sie, gilt die frühere für den Nachfolger – ein Ergebnis verschwindet nie. Rückrufe bleiben, wie sie sind.
+function _anrufListeBerichtigt(t,out){
+  const ers=_wahlErsetzt(t); if(!ers)return out;
+  const istRueck=function(r){return typeof _anrufRueckTeile==='function'&&_anrufRueckTeile(r.notiz,r.rueck).rueck;};
+  const da={}; out.forEach(function(r){da[r.ts+'|'+_wahlNorm(r.nr)]=true;});
+  const liste=[]; let umgestellt=false;
+  out.forEach(function(r){
+    const k=_wahlNorm(r.nr);
+    if(istRueck(r)||!ers[r.ts+'|'+k]){liste.push(r);return;}
+    const kopf=_wahlKopf(t,r.nr,r.ts,ers);
+    if(!kopf||da[kopf+'|'+k])return;
+    da[kopf+'|'+k]=true; r.ts=kopf; umgestellt=true; liste.push(r);
+  });
+  if(umgestellt)liste.sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
+  return liste;
 }
 // ══ v339: GERÄT im Wahl-Vermerk + ANRUF-ERGEBNIS im Bautagebuch (Gegenstück PC b1079) ═══════
 /* Frank 02.10.2026: „einen erreicht, den anderen nicht – wie sage ich, welchen? … nachweisen, dass ich ihn fünfmal angerufen
@@ -11359,7 +11409,7 @@ function _anrufErgListe(t,nr){
     r.ts=String(n.ts); out.push(r);
   });
   out.sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
-  return out;
+  return (typeof _anrufListeBerichtigt==='function')?_anrufListeBerichtigt(t,out):out; // am PC berichtigte Uhrzeit eines Anrufs: die frühere Fassung der Zeile nicht doppelt zählen
 }
 function _anrufErgStatus(t,nr){
   const l=_anrufErgListe(t,nr); if(!l.length)return null;
@@ -11691,8 +11741,12 @@ function _wahlHandMerken(taskId,nr,name,tag,zeit){
     const d=_wahlHandZeit(tag,zeit);
     if(!d){sag('Bitte Datum und Uhrzeit eintragen');return false;}
     if(d.getTime()>Date.now()+60000){sag('Diese Uhrzeit liegt in der Zukunft – bitte prüfen');return false;}
-    const ts=d.toISOString();
+    let ts=d.toISOString();
     if(!Array.isArray(t.anrufWahlen))t.anrufWahlen=[];
+    if(typeof _wahlErsetzt==='function'&&typeof _wahlFreieTs==='function'){ // diese Zeit trägt nur noch eine ersetzte Wahl (am PC berichtigte Uhrzeit, nicht mehr zu sehen) und in der Minute steht kein anderer Anruf: eine Millisekunde daneben, die Kennung bleibt eindeutig
+      const _ers=_wahlErsetzt(t),_min=Math.floor(d.getTime()/60000);
+      if(_ers&&_ers[ts+'|'+k]&&!_wahlenListe(t).some(function(w){return _wahlNorm(w.nr)===k&&Math.floor(Date.parse(w.ts)/60000)===_min;}))ts=_wahlFreieTs(t,nr,ts);
+    }
     if(t.anrufWahlen.some(function(w){return w&&String(w.ts)===ts&&_wahlNorm(w.nr)===k;})){sag('Diese Wahl steht schon da: '+_wahlZeit(ts,false));return false;}
     let wer=String(name==null?'':name).trim();
     if(!wer){
@@ -11961,7 +12015,8 @@ function _wahlGruppen(){
     if(art==='spalte')art=t.archiviert?'archiv':'karte'; // Spalten-Karten 06.11.2026: Spalten-Karte je nach Archiv-Haken
     if(!Array.isArray(t.anrufWahlen)||!t.anrufWahlen.length)return;
     const bis=t.anrufWahlenAusgeblendetBis;
-    const alle=t.anrufWahlen.filter(function(x){return x&&x.ts;});
+    const ers=(typeof _wahlErsetzt==='function')?_wahlErsetzt(t):null; // am PC berichtigte Uhrzeit eines Anrufs: die ersetzte Wahl steht nicht in der Liste
+    const alle=t.anrufWahlen.filter(function(x){return x&&x.ts&&!(ers&&ers[String(x.ts)+'|'+_wahlNorm(x.nr)]);});
     const w=alle.filter(function(x){return !bis||String(x.ts)>String(bis);})
       .sort(function(a,b){return a.ts<b.ts?1:(a.ts>b.ts?-1:0);});
     if(w.length<alle.length)ausgeblendet++;
