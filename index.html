@@ -5021,7 +5021,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v462';
+const MOB_VERSION='v463';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -14791,7 +14791,7 @@ function renderKontakt(k,i){
     +'<div class="field"><label>Ansprechpartner</label><input type="text" value="'+escAttr(k.ansprechpartner||'')+'" placeholder="Person bei der Firma" oninput="updateKontakt('+i+',\'ansprechpartner\',this.value)" autocomplete="off"></div>'
     // Lage im Haus („DG links", „Whg. 3") – nur bei Mieter und Eigentuemer, wie am PC; eigenes Feld, nie im Namen
     +(((k.rolle||'mieter')==='mieter'||k.rolle==='eigentuemer')?'<div class="field"><label>Lage im Haus</label><input type="text" value="'+escAttr(k.lage||'')+'" placeholder="DG links" oninput="updateKontakt('+i+',\'lage\',this.value)" autocomplete="off"></div>':'')
-    +'<div class="field"><label>Telefon</label><div class="field-row" style="gap:6px"><input type="tel" value="'+escAttr(k.tel||'')+'" oninput="updateKontakt('+i+',\'tel\',this.value)" autocomplete="off"><a class="call-link'+(k.tel?'':' disabled')+'" href="'+telHref+'" data-wahl-kontakt="'+i+'">📞</a></div></div>'
+    +'<div class="field"><label>Telefon</label><div class="field-row" style="gap:6px"><input type="tel" value="'+escAttr(k.tel||'')+'" oninput="updateKontakt('+i+',\'tel\',this.value)" autocomplete="off"><a class="call-link'+(k.tel?'':' disabled')+'" href="'+escAttr(telHref)+'" data-wahl-kontakt="'+i+'">📞</a></div></div>'
     +((typeof _wahlKontaktZeile==='function')?_wahlKontaktZeile(k,i):'') // v282: „📞 gewählt: …"
     +'<div class="field"><label>E-Mail</label><input type="email" value="'+escAttr(k.email||'')+'" oninput="updateKontakt('+i+',\'email\',this.value)" autocomplete="off"></div>'
     +'</div>';
