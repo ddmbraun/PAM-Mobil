@@ -5021,7 +5021,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v467';
+const MOB_VERSION='v468';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -6795,6 +6795,89 @@ function _mobRetrySoonThenWarn(){
     if(ok)_mobAfterSilentReconnect();
     else if(navigator.onLine!==false)_showMobDriveWarnBanner();
   },6000);
+}
+// ── Laufende Version und geholtes Paket auseinanderhalten ──────────────
+// MOB_VERSION = die Seite, die gerade laeuft. Der Name des Zwischenspeichers = das Paket,
+// das der Hintergrund-Lader zuletzt geholt hat. Beides kann auseinanderliegen, solange
+// die App nicht neu geladen wurde.
+function _mobVersNr(s){const m=/v(\d+)/.exec(String(s||''));return m?Number(m[1]):0;}
+async function _mobPaketStand(){
+  const aus={neu:'',bereit:false};
+  try{
+    if(!('caches' in window))return aus;
+    const keys=await caches.keys();
+    let best='',eigenesDa=false;
+    keys.forEach(function(k){
+      k=String(k);
+      if(k.indexOf('pam-mobil-v')!==0)return;
+      const v=k.slice(10);
+      if(v===MOB_VERSION)eigenesDa=true;
+      if(_mobVersNr(v)>_mobVersNr(best))best=v;
+    });
+    if(_mobVersNr(best)>_mobVersNr(MOB_VERSION)){aus.neu=best;aus.bereit=!eigenesDa;}
+  }catch(e){console.warn('[PTP-Mobile]',e);}
+  return aus;
+}
+async function _mobVersionZeile(){
+  const el=document.getElementById('settAppVersion');if(!el)return;
+  el.textContent='PAM Mobile – '+MOB_VERSION;
+  const st=await _mobPaketStand();
+  if(!st.neu)return;
+  const z=document.createElement('div');z.id='settAppVersionNeu';z.style.cssText='margin-top:8px;color:var(--text)';
+  z.textContent=st.bereit?('Neue Version '+st.neu+' liegt bereit – noch nicht aktiv.'):('Neue Version '+st.neu+' wird gerade geholt.');
+  el.appendChild(z);
+  if(!st.bereit)return;
+  const b=document.createElement('button');b.id='settAppVersionLaden';b.className='inline-btn';b.style.cssText='margin-top:8px;width:100%';
+  b.textContent='Jetzt neu laden';b.onclick=function(){_mobNeuLaden();};
+  el.appendChild(b);
+}
+let _mobNeuLadenLaeuft=false;
+async function _mobNeuLaden(){
+  if(_mobNeuLadenLaeuft)return;_mobNeuLadenLaeuft=true;
+  try{
+    if(typeof dirty!=='undefined'&&dirty){
+      toast('Speichere …');
+      try{_saveMobileBackup();}catch(e){console.warn('[PTP-Mobile]',e);}
+      try{await saveFile();}catch(e){console.warn('[PTP-Mobile]',e);}
+      if(dirty){_mobNeuLadenLaeuft=false;toast('Speichern hat nicht geklappt – nicht neu geladen.','error',5000);return;}
+    }
+  }catch(e){console.warn('[PTP-Mobile]',e);}
+  location.reload();
+}
+let _mobUpdateSpaeterBei='';
+function _mobUpdateHinweis(paket){
+  if(document.getElementById('_mobUpdateHinweis'))return;
+  if(_mobUpdateSpaeterBei===paket)return;
+  const h=document.createElement('div');h.id='_mobUpdateHinweis';
+  h.style.cssText='position:fixed;left:10px;right:10px;bottom:90px;z-index:100040;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,.4)';
+  const t=document.createElement('div');t.textContent='Neue Version '+paket+' liegt bereit. Erst speichern, dann neu laden.';
+  const r=document.createElement('div');r.style.cssText='display:flex;gap:8px;margin-top:10px';
+  const b1=document.createElement('button');b1.className='inline-btn';b1.style.cssText='flex:1';b1.textContent='Neu laden';
+  b1.onclick=function(){_mobNeuLaden();};
+  const b2=document.createElement('button');b2.className='inline-btn';b2.style.cssText='flex:1';b2.textContent='Später';
+  b2.onclick=function(){_mobUpdateSpaeterBei=paket;try{h.remove();}catch(e){}};
+  r.appendChild(b1);r.appendChild(b2);h.appendChild(t);h.appendChild(r);document.body.appendChild(h);
+}
+async function _mobUpdatePruefen(){
+  try{const st=await _mobPaketStand();if(st.neu&&st.bereit)_mobUpdateHinweis(st.neu);}catch(e){console.warn('[PTP-Mobile]',e);}
+}
+let _mobUpdateGefragtUm=0;
+function _mobUpdateHolen(){
+  try{
+    if(!('serviceWorker' in navigator)||navigator.onLine===false)return;
+    const jetzt=Date.now();if(jetzt-_mobUpdateGefragtUm<600000)return;_mobUpdateGefragtUm=jetzt;
+    navigator.serviceWorker.getRegistration().then(function(reg){if(reg&&reg.update)return reg.update();})
+      .catch(function(e){console.warn('[PTP-Mobile] Update-Abfrage:',e&&e.message);});
+  }catch(e){console.warn('[PTP-Mobile]',e);}
+}
+function _mobUpdateWaechterStart(){
+  if(!('serviceWorker' in navigator))return;
+  navigator.serviceWorker.addEventListener('controllerchange',function(){setTimeout(_mobUpdatePruefen,1500);});
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState!=='visible')return;
+    _mobUpdateHolen();_mobUpdatePruefen();
+  });
+  setTimeout(_mobUpdatePruefen,20000);
 }
 function forceAppUpdate(){
   if('serviceWorker' in navigator){
@@ -23177,16 +23260,7 @@ function openSettings(){
   try{const _c=document.getElementById('fotoOhneFrageChk');if(_c)_c.checked=_fotoOhneFrage();}catch(e){} // v368 (A)
   try{const _w=document.getElementById('settWake');if(_w)_w.textContent=_fotoWakeDiagnoseText();}catch(e){} // v369
   try{const _s=document.getElementById('settSicherung');if(_s)_s.textContent=_mobBackupDiagnoseText();}catch(e){} // v372
-  // Versionsnummer aus Service-Worker-Cache-Namen auslesen (z.B. "pam-mobil-v9" → "v9")
-  (async()=>{
-    try{
-      const el=document.getElementById('settAppVersion');if(!el)return;
-      if(!('caches' in window)){el.textContent='PAM Mobile';return;}
-      const keys=await caches.keys();
-      const k=keys.find(k=>k.startsWith('pam-mobil-'));
-      el.textContent=k?'PAM Mobile – '+k.replace('pam-mobil-',''):'PAM Mobile';
-    }catch(e){const el=document.getElementById('settAppVersion');if(el)el.textContent='PAM Mobile';}
-  })();
+  try{_mobVersionZeile();}catch(e){console.warn('[PTP-Mobile]',e);} // laufende Version, nicht das geholte Paket
   _speicherAnzeigeAktualisieren(); // v157
   _offlineUebersichtAktualisieren(); // v166
 }
@@ -24334,6 +24408,7 @@ if ('serviceWorker' in navigator) {
       .catch(e  => console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message));
   });
 }
+try{_mobUpdateWaechterStart();}catch(e){console.warn('[PTP-Mobile]',e);}
 // ── v156: Geräte-Ablage als DAUERHAFT anmelden ───────────────────────────────
 // Ohne diese Anmeldung gilt die Ablage der App für Android/iOS als „verzichtbar":
 // wird der Gerätespeicher knapp, darf das Betriebssystem sie KOMPLETT wegwerfen –
