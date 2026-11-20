@@ -5021,7 +5021,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v465';
+const MOB_VERSION='v466';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -10262,8 +10262,10 @@ async function _mobRetryPendingUploads(opts){
     _fotoPendUpdate();
     toast('📤 '+pending.length+' Foto-Upload'+(pending.length!==1?'s':'')+' ausstehend – lade hoch…','info',3000);
     for(const it of pending){
-      const {fo,folderId,task}=it;
+      const {fo,task}=it;
+      let folderId=it.folderId;
       if(fo&&fo.driveId){_fotoPendUpdate();continue;} // v298: inzwischen anderswo hochgeladen → nicht ein zweites Mal
+      if(!it.dp&&fo&&fo.tuLeistung&&typeof _tuWartungsZielMob==='function')folderId=await _tuWartungsZielMob(task,fo,folderId);
       try{
         if(it.dp)await _dpUploadFromKey(fo,folderId); // v211: eigener Weg, siehe dort
         else await _mobUploadFromKey(fo,folderId,task); // v189: task mitgeben – siehe _tuDateiNachtragen
@@ -10405,6 +10407,53 @@ async function _fotoOrphanReattach(){
 /* v189: `task` kam neu dazu — nur, um beim Nachladen die Leistung wiederzufinden,
    zu der das Foto gehört. Ohne diesen Weg bliebe ein ohne Empfang aufgenommenes
    Leistungs-Foto zwar erhalten, aber unzugeordnet. */
+/* Wartungsordner je Jahr (wie am PC). Ein Foto, das an einem TERMIN einer wiederkehrenden
+   Leistung hängt (fo.tuLeistung.datum), gehört in den Wartungsordner des Jahres, in dem der
+   Termin liegt – nicht des Tages, an dem es hochgeladen wird. Gesucht wird im Hausordner
+   (task.gdriveOrdner) ein Ordner, dessen Name mit „<Jahr>_Wartung" oder „<Jahr> Wartung"
+   beginnt; gibt es keinen, entsteht „<Jahr>_Wartung".
+   Gibt IMMER einen Ordner zurück: ohne Termin (vorab), ohne Hausordner, ohne Anmeldung oder
+   bei einem Drive-Fehler den übergebenen bisherigen Ordner.
+   ⛔ Beide Upload-Wege (sofort und Nachladen) fragen HIER – sonst sucht der
+   Doppelten-Schutz beim Nachladen im falschen Ordner. */
+const _tuWoMerkMob={};
+async function _tuWartungsZielMob(task,fo,folderId){
+  try{
+    const datum=(fo&&fo.tuLeistung&&fo.tuLeistung.datum)||'';
+    const jahr=String(datum).substring(0,4);
+    if(!(jahr.length===4&&jahr>='1900'&&jahr<='2099'&&String(Number(jahr))===jahr))return folderId;
+    const url=(task&&task.gdriveOrdner)||'';
+    const haus=extractDriveFolderId(url)||(typeof _extractFolderIdMob==='function'?_extractFolderIdMob(url):'');
+    if(!haus||!gdriveToken)return folderId;
+    const key=haus+'|'+jahr;
+    if(!_tuWoMerkMob[key]){
+      const lauf=(async function(){
+        let alle=[],seite='';
+        do{
+          const q="'"+haus+"' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false";
+          const r=await fetch('https://www.googleapis.com/drive/v3/files?q='+encodeURIComponent(q)
+            +'&fields=nextPageToken,files(id,name)&orderBy=name&spaces=drive&pageSize=1000'+(seite?'&pageToken='+encodeURIComponent(seite):''),
+            {headers:{Authorization:'Bearer '+gdriveToken}});
+          if(!r.ok)throw new Error('Wartungsordner suchen: HTTP '+r.status);
+          const j=await r.json();
+          alle=alle.concat(j.files||[]);
+          seite=j.nextPageToken||'';
+        }while(seite);
+        const a=(jahr+'_wartung'),b=(jahr+' wartung');
+        const treffer=alle.filter(function(f){
+          const n=String((f&&f.name)||'').trim().toLowerCase();
+          return !!(f&&f.id)&&(n.indexOf(a)===0||n.indexOf(b)===0);
+        });
+        treffer.sort(function(x,y){return String(x.name||'').localeCompare(String(y.name||''));});
+        if(treffer.length)return treffer[0].id;
+        return await _mobDriveCreateFolder(jahr+'_Wartung',haus);
+      })();
+      _tuWoMerkMob[key]=lauf;
+      lauf.catch(function(){if(_tuWoMerkMob[key]===lauf)delete _tuWoMerkMob[key];});
+    }
+    return (await _tuWoMerkMob[key])||folderId;
+  }catch(e){console.warn('[TU] Wartungsordner – es gilt der bisherige Ordner:',e);return folderId;}
+}
 async function _mobUploadFromKey(fo,folderId,task){
   const dataUrl=await _mobPhotoGet(fo.localKey);
   // v144: Bild-Daten liegen NUR auf dem Aufnahme-Gerät – auf anderen Geräten wurde das
@@ -18718,6 +18767,8 @@ async function uploadFoto(files,_zielTaskId,_tuZiel){
       if(!_vorab.uploadName)_vorab.uploadName=_fotoUploadName(file);
       if(_vorab!==fo)fo.uploadName=_vorab.uploadName;
       await _mobPhotoSetMeta(fo.localKey,{uploadName:_vorab.uploadName});
+      // Foto an einem Termin einer wiederkehrenden Leistung → Wartungsordner des Termin-Jahres (alle Fotos dieses Aufrufs haben dasselbe Ziel)
+      if(fo.tuLeistung&&typeof _tuWartungsZielMob==='function')folderId=await _tuWartungsZielMob(findTaskById(_taskId)||t,fo,folderId);
       const meta=await _uploadOneFotoToDrive(file,folderId,_vorab.uploadName);
       // v146: die HOCHGELADENE Fassung cachen (komprimiert + ggf. GPS-gestempelt) – vorher
       // lag das rohe Kamera-Original im Cache und der 📍-Dialog zeigte „KEIN Aufnahmeort",
