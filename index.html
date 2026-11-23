@@ -5021,7 +5021,7 @@ let mobETag = null;  // ETag für Optimistic Locking
    Wirft künftig ein Gerät fremde Daten weg, steht der Täter in der Datei.
    MOB_VERSION bei jedem Build zusammen mit sw.js CACHE_NAME hochzählen –
    die Prüf-Suite vergleicht beide. */
-const MOB_VERSION='v468';
+const MOB_VERSION='v469';
 // v240: Zustands-Variablen des Zettels (die Funktionen stehen beim ZETTEL-Block weiter
 // unten). Bewusst var statt const/let und bewusst HIER, weit vor jedem Zeichen-Aufruf:
 // am Desktop (b802) standen sie HINTER dem INIT – der allererste render()-Lauf traf die
@@ -5584,6 +5584,8 @@ async function _compressFoto(file){
     const cv=document.createElement('canvas');cv.width=w;cv.height=h;
     cv.getContext('2d').drawImage(img,0,0,w,h);
     const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',FOTO_JPEG_QUALITY));
+    try{cv.width=0;cv.height=0;}catch(_e){} // Bildspeicher sofort freigeben – bei vielen Bildern nacheinander lief er sonst voll
+    try{img.onload=null;img.onerror=null;img.removeAttribute('src');}catch(_e){}
     if(!blob||blob.size>=file.size)return file; // Kompression brachte nichts → Original
     // v118: KOMPLETTES EXIF aus dem Original in die verkleinerte Datei übernehmen (Wunsch Frank).
     // v98 kopierte nur GPS + Datum + Make/Model – Belichtung, ISO, Blende, Brennweite usw. gingen
@@ -10007,6 +10009,90 @@ function _wpFotoLive(taskId,bericht,fo){
     return f||fo;
   }catch(e){return fo;}
 }
+/* Anzeige „Bild 7 von 25 wird vorbereitet …“ während der Übernahme mehrerer Bilder; nr 0 nimmt sie weg. */
+function _wpFotoFortschritt(nr,gesamt){
+  let el=document.getElementById('wpFotoFortschritt');
+  if(!nr){if(el)el.remove();return;}
+  if(!el){
+    el=document.createElement('div');el.id='wpFotoFortschritt';
+    el.setAttribute('role','status');
+    el.style.cssText='position:fixed;left:0;right:0;margin:0 auto;width:fit-content;max-width:calc(100vw - 24px);box-sizing:border-box;top:calc(64px + env(safe-area-inset-top,0px));z-index:100040;padding:12px 18px;border-radius:14px;background:rgba(20,22,30,.94);color:#fff;font-size:15px;font-weight:700;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.45);pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.textContent='⏳ Bild '+nr+' von '+gesamt+' wird vorbereitet …';
+}
+/* Bildname ohne Endung, klein, mit denselben Ersatzzeichen wie der Drive-Name. ohneStempel: der beim Hochladen
+   vorangestellte Zeitstempel („20261123_083314_“ oder „20261123_083314-2_“) fällt weg – übrig bleibt der Name aus dem Handy. */
+function _wpFotoNameKern(name,ohneStempel){
+  let s=String(name||'').trim().toLowerCase().replace(/[^\w.\-]+/g,'_');
+  if(ohneStempel)s=s.replace(/^\d{8}_\d{6}(-\d+)?_/,'');
+  return s.replace(/\.(heic|heif|png|webp|jpeg|jpg)$/,'');
+}
+/* Welche der gewählten Dateien stecken schon in diesem Formular? Gleich heißt: gleicher Bildname UND gleiche Aufnahmezeit.
+   Ohne verlässliche Aufnahmezeit (von Hand gesetzt oder nur „jetzt“) wird nie ein Doppel gemeldet. */
+async function _wpFotoSchonDa(bericht,files){
+  const doppelt=[];
+  if(typeof _fsFotoAufnahmeAusDatei!=='function')return doppelt;
+  const da=new Map();
+  ((bericht&&Array.isArray(bericht.fotos))?bericht.fotos:[]).forEach(function(f){
+    if(!f||!f.aufnahme||f.aufnahmeQuelle==='pam'||f.aufnahmeQuelle==='hand')return;
+    [f.uploadName,f.name].forEach(function(n){
+      if(!n)return;
+      [_wpFotoNameKern(n,true),_wpFotoNameKern(n,false)].forEach(function(k){
+        if(!k)return;
+        if(!da.has(k))da.set(k,new Set());
+        da.get(k).add(String(f.aufnahme));
+      });
+    });
+  });
+  if(!da.size)return doppelt;
+  for(const file of (Array.isArray(files)?files:[])){
+    const zeiten=da.get(_wpFotoNameKern(file&&file.name,false));
+    if(!zeiten)continue;
+    const probe={};
+    try{await _fsFotoAufnahmeAusDatei(probe,file);}catch(e){continue;}
+    if(probe.aufnahme&&probe.aufnahmeQuelle!=='pam'&&zeiten.has(String(probe.aufnahme)))doppelt.push(file);
+  }
+  return doppelt;
+}
+/* Fragt bei doppelten Bildern nach. Ergebnis: die Dateien, die übernommen werden sollen (leer = abgebrochen).
+   Ohne Doppelte kommt keine Frage und alle Dateien gehen durch. */
+async function _wpFotoDoppelteFragen(bericht,files){
+  const doppelt=await _wpFotoSchonDa(bericht,files);
+  if(!doppelt.length)return files;
+  const neue=files.filter(function(f){return doppelt.indexOf(f)<0;});
+  const alt=document.getElementById('wpFotoDoppelFrage');if(alt)alt.remove();
+  return new Promise(function(res){
+    const ov=document.createElement('div');ov.id='wpFotoDoppelFrage';
+    ov.style.cssText='position:fixed;inset:0;z-index:100050;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
+    const k=document.createElement('div');
+    k.style.cssText='width:min(92vw,420px);max-height:86vh;overflow:auto;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:14px;padding:16px;box-sizing:border-box;box-shadow:0 8px 30px rgba(0,0,0,.5);';
+    const kopf=document.createElement('div');kopf.style.cssText='font-size:16px;font-weight:700;margin-bottom:8px;';
+    const n=doppelt.length,alle=files.length;
+    kopf.textContent=!neue.length
+      ?(n===1?'Dieses Bild ist schon im Formular.':'Alle '+n+' Bilder sind schon im Formular.')
+      :(n===1?'1 von '+alle+' Bildern ist schon im Formular.':n+' von '+alle+' Bildern sind schon im Formular.');
+    const liste=document.createElement('div');liste.style.cssText='font-size:13px;opacity:.85;margin-bottom:14px;word-break:break-word;';
+    liste.textContent=doppelt.slice(0,6).map(function(f){return String((f&&f.name)||'Bild');}).join(' · ')+(n>6?' … und '+(n-6)+' weitere':'');
+    k.appendChild(kopf);k.appendChild(liste);
+    const fertig=function(wahl){try{ov.remove();}catch(e){}res(wahl);};
+    const knopf=function(text,haupt,wahl){
+      const b=document.createElement('button');b.type='button';b.textContent=text;
+      b.style.cssText='display:block;width:100%;min-height:48px;margin-top:8px;padding:10px 14px;border-radius:10px;border:'+(haupt?'none':'1px solid var(--border)')+';background:'+(haupt?'#2e4fc4':'transparent')+';color:'+(haupt?'#fff':'var(--text)')+';font-size:15px;font-weight:700;cursor:pointer;';
+      b.onclick=function(){fertig(wahl);};
+      k.appendChild(b);
+    };
+    if(neue.length){
+      knopf(neue.length===1?'Nur das eine neue Bild übernehmen':'Nur die '+neue.length+' neuen übernehmen',true,neue);
+      knopf(alle===2?'Beide übernehmen':'Alle '+alle+' übernehmen',false,files);
+      knopf('Abbrechen',false,[]);
+    }else{
+      knopf('Abbrechen',true,[]);
+      knopf('Trotzdem übernehmen',false,files);
+    }
+    ov.appendChild(k);document.body.appendChild(ov);
+  });
+}
 /* v231: `onBehalten` – Rückruf mit den Fotos, die die Entscheidung überlebt haben.
    Nur so kann der Mangel-Picker frisch Aufgenommenes gleich verknüpfen, ohne ein
    verworfenes Bild zu verknüpfen (der Verweis bliebe sonst als Karteileiche stehen). */
@@ -10015,27 +10101,64 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
   if(!camera)inp.multiple=true; // Galerie: Mehrfachauswahl erlauben
   if(camera)inp.setAttribute('capture','environment');inp.style.display='none';
   inp.onchange=async()=>{
-    const files=Array.from(inp.files||[]);if(!files.length)return;
+    let files=Array.from(inp.files||[]);if(!files.length)return;
+    // Galerie: Bilder, die schon in diesem Formular stecken, vorher melden (gleicher Bildname + gleiche Aufnahmezeit)
+    if(!camera&&typeof _wpFotoDoppelteFragen==='function'){
+      try{files=await _wpFotoDoppelteFragen(bericht,files);}catch(_e){console.warn('[WP-Foto] Doppelte:',_e);}
+      if(!Array.isArray(files)||!files.length)return;
+    }
     // v174: verkleinern + GPS-Auffüllung wie auf allen Foto-Wegen – vorher gingen
     // Berichts-Fotos in Originalgröße und ohne GPS-Behandlung zu Drive.
-    for(let _wi=0;_wi<files.length;_wi++){
-      try{files[_wi]=(await _fotoUebernahme(files[_wi])).file;}catch(_e){}
+    /* Jedes Bild kommt EINZELN an: verkleinern → ins Formular → Vorschau → Gerätespeicher.
+       Vorher wurden erst ALLE verkleinert und dann alle auf einmal eingetragen – brach die Seite
+       bei vielen Bildern mittendrin ab, war keines da und nichts gespeichert. */
+    const fotoObjs=[];
+    const _wpGesamt=files.length;
+    let _wpSaveUm=0,_wpSicherKette=Promise.resolve();
+    /* Gerätespeicher (IndexedDB, persistent über Neuladen hinaus): eins nach dem anderen, und NIE darauf
+       warten – er kam schon einmal nicht zurück. Nach 15 s geht die Kette ohne dieses Bild weiter. */
+    const _wpSichern=(file,fo)=>{
+      // v203: ein verworfenes Bild wird gar nicht erst abgelegt (wie in uploadFoto)
+      if(fo._entscheidung==='verworfen')return;
+      if(fo.driveId)return; // liegt schon in Drive – keine Gerätekopie mehr nötig
+      let abgelegt=false;
+      return Promise.race([
+        _fileToDataUrl(file).then(dataUrl=>{
+          if(fo._entscheidung==='verworfen'||fo.driveId)return null; // während des Einlesens verworfen oder schon oben
+          fo.localUrl=dataUrl; // blob-URL durch persistente data-URL ersetzen
+          abgelegt=true;
+          return _mobPhotoSave(fo.localKey,dataUrl,{uploadName:fo.uploadName||''}); // v301: fester Name mit in den Gerätespeicher
+        }).then(()=>{
+          // Der Upload war schneller als die Ablage: die Gerätekopie wird nicht mehr gebraucht
+          if(abgelegt&&fo.driveId&&fo.localKey){try{_mobPhotoDelete(fo.localKey).catch(()=>{});}catch(_e){}}
+        }),
+        new Promise(r=>setTimeout(r,15000))
+      ]).catch(e=>console.warn('[MobPhoto]',e));
+    };
+    try{
+      for(let _wi=0;_wi<files.length;_wi++){
+        if(_wpGesamt>1&&typeof _wpFotoFortschritt==='function'){try{_wpFotoFortschritt(_wi+1,_wpGesamt);}catch(_e){}}
+        let file=files[_wi];
+        try{file=(await _fotoUebernahme(file)).file;}catch(_e){}
+        files[_wi]=file;
+        // blob-URL für sofortige Vorschau, localKey als dauerhafter Schlüssel
+        const blobUrl=URL.createObjectURL(file);
+        const localKey='photo_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
+        // v301: fester Drive-Name schon beim Übernehmen – er geht so auch in den Gerätespeicher
+        // und übersteht Abgleich, Neustart und Nachladen (Doppelten-Schutz wie v300).
+        const fo={name:file.name,inReport:true,localUrl:blobUrl,localKey,driveId:null,_uploading:false,uploadName:_fotoUploadName(file)};
+        if(typeof _fsFotoAufnahmeAusDatei==='function'){try{await _fsFotoAufnahmeAusDatei(fo,file);}catch(e){console.warn('[v434] Aufnahmedatum:',e);}} // v434 (F89): Aufnahmedatum aus dem Foto (sonst Zeit der Datei)
+        bericht.fotos.push(fo);
+        fotoObjs.push({file,fo});
+        _wpSicherKette=_wpSicherKette.then(()=>_wpSichern(file,fo));
+        // Speichern: gleich beim ersten Bild, danach höchstens alle 4 s (die Datendatei ist mehrere MB groß) und beim letzten
+        if(_wi===files.length-1||Date.now()-_wpSaveUm>=4000){_wpSaveUm=Date.now();scheduleSave();}
+        _wpMobRenderFotos(bericht,grid); // Vorschau sofort sichtbar (blob-URL)
+        if(_wpGesamt>1)await new Promise(r=>setTimeout(r,0)); // dem Bildschirm Luft lassen (Zähler, Vorschau)
+      }
+    }finally{
+      if(typeof _wpFotoFortschritt==='function'){try{_wpFotoFortschritt(0,0);}catch(_e){}}
     }
-
-    // ── 1. Alle Vorschaubilder SOFORT anzeigen + IndexedDB sichern ───────────
-    // Schritt A: blob-URL für sofortige Vorschau, localKey als dauerhafter Schlüssel
-    const fotoObjs=files.map(file=>{
-      const blobUrl=URL.createObjectURL(file);
-      const localKey='photo_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
-      // v301: fester Drive-Name schon beim Übernehmen – er geht so auch in den Gerätespeicher
-      // und übersteht Abgleich, Neustart und Nachladen (Doppelten-Schutz wie v300).
-      const fo={name:file.name,inReport:true,localUrl:blobUrl,localKey,driveId:null,_uploading:false,uploadName:_fotoUploadName(file)};
-      if(typeof _fsFotoAufnahmeAusDatei==='function')_fsFotoAufnahmeAusDatei(fo,file).then(ok=>{if(ok)scheduleSave();}).catch(e=>console.warn('[v434] Aufnahmedatum:',e)); // v434 (F89): Aufnahmedatum aus dem Foto (sonst Zeit der Datei)
-      bericht.fotos.push(fo);
-      return{file,fo};
-    });
-    scheduleSave();
-    _wpMobRenderFotos(bericht,grid); // Vorschau sofort sichtbar (blob-URL)
 
     /* ⛔ v203: DAS TOR AUS v191 — hier fehlte es bis v202. Der Berichts-Weg lud jede
        Aufnahme sofort nach Drive; wer danach „verwerfen" wollte, hatte die Datei bereits
@@ -10075,16 +10198,7 @@ function _wpMobFotoAufnehmen(bericht,grid,camera,onBehalten){
       })||Promise.resolve();
     }catch(e){console.warn('[WP-Foto] Vorschau:',e);}
 
-    // Schritt B: Parallel in IndexedDB sichern (persistent über Neuladen hinaus)
-    fotoObjs.forEach(({file,fo})=>{
-      // v203: ein verworfenes Bild wird gar nicht erst abgelegt (wie in uploadFoto)
-      if(fo._entscheidung==='verworfen')return;
-      _fileToDataUrl(file).then(dataUrl=>{
-        if(fo._entscheidung==='verworfen')return null; // während des Einlesens verworfen
-        fo.localUrl=dataUrl; // blob-URL durch persistente data-URL ersetzen
-        return _mobPhotoSave(fo.localKey,dataUrl,{uploadName:fo.uploadName||''}); // v301: fester Name mit in den Gerätespeicher
-      }).then(()=>{scheduleSave();}).catch(e=>console.warn('[MobPhoto]',e));
-    });
+    // Schritt B (Gerätespeicher) läuft schon oben je Bild mit (_wpSichern) – nicht mehr alle gleichzeitig.
 
     /* ⛔ Erst hier weiter: solange der Dialog offen ist, geht nichts nach Drive. Genau
        das ist das Tor. Der Notausgang aus v191 (ein neuer Dialog erfüllt das Versprechen
